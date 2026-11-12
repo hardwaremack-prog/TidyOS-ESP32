@@ -1,0 +1,11 @@
+{
+  "name": "TidyOS for ESP32",
+  "version": "1.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [{ "path": "firmware/TidyOS-ESP32-full.bin", "offset": 0 }]
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TidyOS for ESP32 - Web Flasher</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root { --accent:#0055aa; --teal:#00aaaa; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--teal); color:#111; }
+  header { background:var(--accent); color:#fff; padding:28px 20px; text-align:center; }
+  header h1 { margin:0 0 6px; font-size:2.2rem; letter-spacing:.5px; }
+  header p { margin:0; opacity:.9; }
+  main { max-width:860px; margin:24px auto; padding:0 16px; }
+  .card { background:#fff; border:2px solid #000; box-shadow:6px 6px 0 #000; padding:22px; margin-bottom:24px; }
+  .card h2 { margin-top:0; color:var(--accent); }
+  esp-web-install-button button[slot=activate] { font-size:1.15rem; padding:14px 28px; background:var(--accent); color:#fff; border:2px solid #000; box-shadow:4px 4px 0 #000; cursor:pointer; }
+  ol li { margin:6px 0; }
+  table { border-collapse:collapse; width:100%; font-size:.95rem; }
+  td, th { border:1px solid #999; padding:6px 8px; text-align:left; }
+  th { background:#eee; }
+  img { max-width:100%; border:1px solid #999; }
+  code { background:#eef; padding:1px 4px; }
+  .note { color:#555; font-size:.9rem; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>TidyOS for ESP32</h1>
+  <p>A tiny computer: 640×480 VGA desktop, Bluetooth keyboard &amp; mouse, SD card, Wi-Fi, and Lite versions of the Tidy Suite.</p>
+</header>
+<main>
+  <div class="card">
+    <h2>1. Install</h2>
+    <p>Plug your NodeMCU ESP32 into this computer with USB, then click the button. Works in <b>Chrome or Edge</b> on a computer.</p>
+    <esp-web-install-button manifest="manifest.json">
+      <button slot="activate">Install TidyOS</button>
+      <span slot="unsupported">Your browser can't flash boards. Please use Chrome or Edge on a computer.</span>
+      <span slot="not-allowed">Please open this page over https.</span>
+    </esp-web-install-button>
+    <p class="note">Can't connect? Hold the <b>BOOT</b> button on the board while you click Install. Installing erases the board.</p>
+  </div>
+
+  <div class="card">
+    <h2>2. Wire it</h2>
+    <img src="wiring.png" alt="Wiring diagram: ESP32 to VGA socket through resistors, and to a microSD module">
+    <table>
+      <tr><th>ESP32</th><th>Through</th><th>To</th></tr>
+      <tr><td>GPIO 22 / GPIO 21</td><td>270 Ω / 820 Ω</td><td>VGA pin 1 (red)</td></tr>
+      <tr><td>GPIO 19 / GPIO 18</td><td>270 Ω / 820 Ω</td><td>VGA pin 2 (green)</td></tr>
+      <tr><td>GPIO 5 / GPIO 4</td><td>270 Ω / 820 Ω</td><td>VGA pin 3 (blue)</td></tr>
+      <tr><td>GPIO 23</td><td>100 Ω</td><td>VGA pin 13 (H-sync)</td></tr>
+      <tr><td>GPIO 15</td><td>100 Ω</td><td>VGA pin 14 (V-sync)</td></tr>
+      <tr><td>GND</td><td>–</td><td>VGA pins 5, 6, 7, 8, 10 and SD GND</td></tr>
+      <tr><td>GPIO 16 / 17 / 14 / 13</td><td>–</td><td>SD MISO / MOSI / SCK / CS</td></tr>
+      <tr><td>3V3 (VIN for 5 V modules)</td><td>–</td><td>SD VCC</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>3. First start</h2>
+    <ol>
+      <li>Put your Bluetooth <b>keyboard</b> in pairing mode. TidyOS connects to it automatically.</li>
+      <li>Then put your Bluetooth <b>mouse</b> in pairing mode.</li>
+      <li>Open <b>Settings</b>, find your Wi-Fi, type the password, then <b>Connect</b> and <b>Save</b>.</li>
+    </ol>
+    <p class="note">Bluetooth LE keyboards and mice only. With no Bluetooth device you can type in a serial monitor at 115200.</p>
+  </div>
+
+  <div class="card">
+    <h2>Apps</h2>
+    <p>Calculator · <b>Neat Lite</b> (writing) · <b>Tidy Lite</b> (spreadsheet) · <b>Ready Lite</b> (to-do) · <b>Steady Lite</b> (bills) · Browser · Files · Settings · System</p>
+    <p>For better web pages, run <code>helper/tidyos_proxy.py</code> on a Raspberry Pi and enter its address in Settings → Browser.
+       See the <a href="https://github.com/hardwaremack-prog/TidyOS-ESP32#readme">README</a> for everything else.</p>
+  </div>
+</main>
+</body>
+</html>

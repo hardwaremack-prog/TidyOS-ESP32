@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="700" viewBox="0 0 1040 700" font-family="Helvetica, Arial, sans-serif">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="40" y="44" font-size="26" font-weight="700" fill="#1a1a1a">TidyOS wiring - ESP32 NodeMCU to VGA + microSD</text>
+<text x="40" y="70" font-size="15" fill="#555">2 resistors per colour (270 + 820 ohm) join into one VGA pin. Sync lines use 100 ohm. All grounds connect together.</text>
+<rect x="40" y="100" width="210" height="572" rx="10" fill="#2b2b2b"/>
+<text x="145.0" y="126" font-size="16" font-weight="700" fill="#fff" text-anchor="middle">ESP32 NodeMCU</text>
+<circle cx="250" cy="150" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="155" font-size="15" fill="#fff" text-anchor="end">3V3</text>
+<circle cx="250" cy="188" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="193" font-size="15" fill="#fff" text-anchor="end">GND</text>
+<circle cx="250" cy="226" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="231" font-size="15" fill="#fff" text-anchor="end">GPIO 22</text>
+<circle cx="250" cy="264" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="269" font-size="15" fill="#fff" text-anchor="end">GPIO 21</text>
+<circle cx="250" cy="302" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="307" font-size="15" fill="#fff" text-anchor="end">GPIO 19</text>
+<circle cx="250" cy="340" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="345" font-size="15" fill="#fff" text-anchor="end">GPIO 18</text>
+<circle cx="250" cy="378" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="383" font-size="15" fill="#fff" text-anchor="end">GPIO 5</text>
+<circle cx="250" cy="416" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="421" font-size="15" fill="#fff" text-anchor="end">GPIO 4</text>
+<circle cx="250" cy="454" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="459" font-size="15" fill="#fff" text-anchor="end">GPIO 23</text>
+<circle cx="250" cy="492" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="497" font-size="15" fill="#fff" text-anchor="end">GPIO 15</text>
+<circle cx="250" cy="530" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="535" font-size="15" fill="#fff" text-anchor="end">GPIO 16</text>
+<circle cx="250" cy="568" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="573" font-size="15" fill="#fff" text-anchor="end">GPIO 17</text>
+<circle cx="250" cy="606" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="611" font-size="15" fill="#fff" text-anchor="end">GPIO 14</text>
+<circle cx="250" cy="644" r="6" fill="#d4af37" stroke="#000"/>
+<text x="236" y="649" font-size="15" fill="#fff" text-anchor="end">GPIO 13</text>
+<rect x="760" y="100" width="240" height="330" rx="10" fill="#e8eef7" stroke="#345" stroke-width="2"/>
+<text x="880.0" y="126" font-size="16" font-weight="700" fill="#123" text-anchor="middle">VGA socket (DE-15)</text>
+<circle cx="760" cy="170" r="6" fill="#d4af37" stroke="#000"/>
+<text x="776" y="175" font-size="15" fill="#123">pin 5,6,7,8,10 GND</text>
+<circle cx="760" cy="216" r="6" fill="#d4af37" stroke="#000"/>
+<text x="776" y="221" font-size="15" fill="#123">pin 1 Red</text>
+<circle cx="760" cy="262" r="6" fill="#d4af37" stroke="#000"/>
+<text x="776" y="267" font-size="15" fill="#123">pin 2 Green</text>
+<circle cx="760" cy="308" r="6" fill="#d4af37" stroke="#000"/>
+<text x="776" y="313" font-size="15" fill="#123">pin 3 Blue</text>
+<circle cx="760" cy="354" r="6" fill="#d4af37" stroke="#000"/>
+<text x="776" y="359" font-size="15" fill="#123">pin 13 H-sync</text>
+<circle cx="760" cy="400" r="6" fill="#d4af37" stroke="#000"/>
+<text x="776" y="405" font-size="15" fill="#123">pin 14 V-sync</text>
+<rect x="760" y="470" width="240" height="200" rx="10" fill="#fff3e0" stroke="#a60" stroke-width="2"/>
+<text x="880.0" y="496" font-size="16" font-weight="700" fill="#630" text-anchor="middle">microSD module (3.3 V)</text>
+<circle cx="760" cy="520" r="5" fill="#d4af37" stroke="#000"/>
+<text x="774" y="525" font-size="14" fill="#630">VCC</text>
+<circle cx="760" cy="545" r="5" fill="#d4af37" stroke="#000"/>
+<text x="774" y="550" font-size="14" fill="#630">GND</text>
+<circle cx="760" cy="570" r="5" fill="#d4af37" stroke="#000"/>
+<text x="774" y="575" font-size="14" fill="#630">MISO</text>
+<circle cx="760" cy="595" r="5" fill="#d4af37" stroke="#000"/>
+<text x="774" y="600" font-size="14" fill="#630">MOSI</text>
+<circle cx="760" cy="620" r="5" fill="#d4af37" stroke="#000"/>
+<text x="774" y="625" font-size="14" fill="#630">SCK</text>
+<circle cx="760" cy="645" r="5" fill="#d4af37" stroke="#000"/>
+<text x="774" y="650" font-size="14" fill="#630">CS</text>
+<polyline points="256,188 300,188 300,170 754,170" fill="none" stroke="#000" stroke-width="3" stroke-linejoin="round"/>
+<polyline points="256,188 300,188 300,545 755,545" fill="none" stroke="#000" stroke-width="3" stroke-linejoin="round"/>
+<polyline points="256,150 280,150 280,520 755,520" fill="none" stroke="#d33" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="300" cy="188" r="5" fill="#000"/>
+<line x1="256" y1="226" x2="392" y2="226" stroke="#d22" stroke-width="3"/>
+<rect x="392" y="217" width="56" height="18" rx="3" fill="#f5deb3" stroke="#5a3" stroke-width="1.5"/>
+<rect x="406" y="217" width="4" height="18" fill="#d22"/><rect x="416" y="217" width="4" height="18" fill="#d22"/>
+<text x="420" y="212" font-size="13" fill="#333" text-anchor="middle">270 ohm</text>
+<polyline points="448,226 560,226 560,216 754,216" fill="none" stroke="#d22" stroke-width="3" stroke-linejoin="round"/>
+<line x1="256" y1="264" x2="392" y2="264" stroke="#d22" stroke-width="3"/>
+<rect x="392" y="255" width="56" height="18" rx="3" fill="#f5deb3" stroke="#5a3" stroke-width="1.5"/>
+<rect x="406" y="255" width="4" height="18" fill="#d22"/><rect x="416" y="255" width="4" height="18" fill="#d22"/>
+<text x="420" y="250" font-size="13" fill="#333" text-anchor="middle">820 ohm</text>
+<polyline points="448,264 560,264 560,216 754,216" fill="none" stroke="#d22" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="560" cy="216" r="5" fill="#d22"/>
+<line x1="256" y1="302" x2="392" y2="302" stroke="#1a1" stroke-width="3"/>
+<rect x="392" y="293" width="56" height="18" rx="3" fill="#f5deb3" stroke="#5a3" stroke-width="1.5"/>
+<rect x="406" y="293" width="4" height="18" fill="#1a1"/><rect x="416" y="293" width="4" height="18" fill="#1a1"/>
+<text x="420" y="288" font-size="13" fill="#333" text-anchor="middle">270 ohm</text>
+<polyline points="448,302 600,302 600,262 754,262" fill="none" stroke="#1a1" stroke-width="3" stroke-linejoin="round"/>
+<line x1="256" y1="340" x2="392" y2="340" stroke="#1a1" stroke-width="3"/>
+<rect x="392" y="331" width="56" height="18" rx="3" fill="#f5deb3" stroke="#5a3" stroke-width="1.5"/>
+<rect x="406" y="331" width="4" height="18" fill="#1a1"/><rect x="416" y="331" width="4" height="18" fill="#1a1"/>
+<text x="420" y="326" font-size="13" fill="#333" text-anchor="middle">820 ohm</text>
+<polyline points="448,340 600,340 600,262 754,262" fill="none" stroke="#1a1" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="600" cy="262" r="5" fill="#1a1"/>
+<line x1="256" y1="378" x2="392" y2="378" stroke="#22c" stroke-width="3"/>
+<rect x="392" y="369" width="56" height="18" rx="3" fill="#f5deb3" stroke="#5a3" stroke-width="1.5"/>
+<rect x="406" y="369" width="4" height="18" fill="#22c"/><rect x="416" y="369" width="4" height="18" fill="#22c"/>
+<text x="420" y="364" font-size="13" fill="#333" text-anchor="middle">270 ohm</text>
+<polyline points="448,378 640,378 640,308 754,308" fill="none" stroke="#22c" stroke-width="3" stroke-linejoin="round"/>
+<line x1="256" y1="416" x2="392" y2="416" stroke="#22c" stroke-width="3"/>
+<rect x="392" y="407" width="56" height="18" rx="3" fill="#f5deb3" stroke="#5a3" stroke-width="1.5"/>
+<rect x="406" y="407" width="4" height="18" fill="#22c"/><rect x="416" y="407" width="4" height="18" fill="#22c"/>
+<text x="420" y="402" font-size="13" fill="#333" text-anchor="middle">820 ohm</text>
+<polyline points="448,416 640,416 640,308 754,308" fill="none" stroke="#22c" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="640" cy="308" r="5" fill="#22c"/>
+<line x1="256" y1="454" x2="392" y2="454" stroke="#777" stroke-width="3"/>
+<rect x="392" y="445" width="56" height="18" rx="3" fill="#f5deb3" stroke="#5a3" stroke-width="1.5"/>
+<rect x="406" y="445" width="4" height="18" fill="#777"/><rect x="416" y="445" width="4" height="18" fill="#777"/>
+<text x="420" y="440" font-size="13" fill="#333" text-anchor="middle">100 ohm</text>
+<polyline points="448,454 680,454 680,354 754,354" fill="none" stroke="#777" stroke-width="3" stroke-linejoin="round"/>
+<line x1="256" y1="492" x2="392" y2="492" stroke="#777" stroke-width="3"/>
+<rect x="392" y="483" width="56" height="18" rx="3" fill="#f5deb3" stroke="#5a3" stroke-width="1.5"/>
+<rect x="406" y="483" width="4" height="18" fill="#777"/><rect x="416" y="483" width="4" height="18" fill="#777"/>
+<text x="420" y="478" font-size="13" fill="#333" text-anchor="middle">100 ohm</text>
+<polyline points="448,492 700,492 700,400 754,400" fill="none" stroke="#777" stroke-width="3" stroke-linejoin="round"/>
+<polyline points="256,530 740,530 740,570 755,570" fill="none" stroke="#e80" stroke-width="3" stroke-linejoin="round"/>
+<polyline points="256,568 726,568 726,595 755,595" fill="none" stroke="#e80" stroke-width="3" stroke-linejoin="round"/>
+<polyline points="256,606 712,606 712,620 755,620" fill="none" stroke="#e80" stroke-width="3" stroke-linejoin="round"/>
+<polyline points="256,644 698,644 698,645 755,645" fill="none" stroke="#e80" stroke-width="3" stroke-linejoin="round"/>
+<text x="40" y="690" font-size="13" fill="#555">If your SD module has a 5 V regulator (blue board with 6 pins and a little chip), power it from VIN/5V instead of 3V3.</text>
+</svg>
