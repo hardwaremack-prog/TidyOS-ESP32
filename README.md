@@ -11,6 +11,8 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Messages, Browser, Files, Settings, System**
 - **Printing** to network printers (found automatically), through a Pi with CUPS, or Save as PDF
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
+- **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
+- **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 
 > Status: version 1.0. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
@@ -83,7 +85,8 @@ No Bluetooth yet? Typing in the Arduino Serial Monitor (115200 baud) also works 
 | **Steady Lite** | Monthly bills: amount, due day, paid. Shows total, paid and left, plus encouragement. "New month" resets paid flags | `/SD/tidyos/steady.csv` |
 | Messages | Chat with The Shelf on your PCs and Pis, and with Shelf boards, over Wi-Fi. Second tab: the Shelf boards' 2.4 GHz Coms mesh | `/SD/tidyos/msg-*.txt` |
 | Browser | Text web browser with numbered links. Click a `[number]` or type it in the address box. Backspace = back | – |
-| Files | Browse the SD card. Open, new folder, rename, delete | – |
+| Files | Browse the SD card. Open, new folder, rename, delete. **Wi-Fi sharing** button | – |
+| Games | Sammy the Snake (arrow keys), Minesweeper (click, right-click to flag), Blocks (falling blocks: arrows, Up turns, Space drops, P pauses), 2048 (arrow keys). Best scores are kept | – |
 | Settings | Wi-Fi, Bluetooth, browser helper, clock, screen colours | saved in ESP32 flash |
 | System | Free RAM, uptime, Wi-Fi signal, storage | – |
 
@@ -95,11 +98,19 @@ Neat, Tidy, Ready and Steady all have a **Print** button.
 - **Through the Pi helper:** if the helper (below) runs on a Pi that has CUPS with your printer added (`sudo apt install cups`), pick *Through the Pi helper*. Any printer the Pi can use will work.
 - **Save as PDF:** writes `Documents/<name>.pdf` to the SD card.
 
-## 7. Spell check
+## 7. Wi-Fi file sharing
+
+Turn on **Wi-Fi sharing** in Files (or *File sharing* in Settings). Then open the address it shows (like `http://192.168.1.40`, or `http://tidyos.local`) in any browser on the same Wi-Fi: phone, PC or Pi.
+- Browse folders, download files, upload many files at once (button or drag and drop), make folders, rename and delete.
+- Uploads go straight to the SD card in small pieces, so big files are fine.
+- It stays off until you switch it on, and TidyOS remembers your choice after a restart.
+- Anyone on your Wi-Fi can reach it while it's on, so switch it off when you're done.
+
+## 8. Spell check
 
 Neat underlines words it doesn't know as you type, using a built-in ~78,000-word English dictionary. **Spelling** steps through each word and offers *Change*, *Ignore* or *Add to dictionary*. Words you add are kept in `/SD/tidyos/mywords.txt`.
 
-## 8. Messages and The Shelf
+## 9. Messages and The Shelf
 
 **The Shelf (Wi-Fi):** TidyOS speaks The Shelf's messaging protocol (presence on UDP 41234, HTTP on port 8080).
 - It shows up in the Messages list of every Shelf on your network: the PC/Pi version and the Heltec/ESP32 boards.
@@ -113,7 +124,7 @@ Neat underlines words it doesn't know as you type, using a built-in ~78,000-word
 - ESP-NOW only hears boards on the same Wi-Fi channel. Boards running their own Wi-Fi use channel 1; boards on your home Wi-Fi use its channel.
 - With no LoRa radio, it doesn't hear the 900 MHz side directly; a Heltec board carries messages between the two.
 
-## 9. Browser: two ways to use it
+## 10. Browser: two ways to use it
 
 **On its own:** plain `http://` sites load directly. Secure `https://` sites and searches go through
 [FrogFind](http://frogfind.com), a free service that turns modern pages into simple HTML for old computers.
@@ -147,7 +158,7 @@ EOF
 sudo systemctl enable --now tidyos-helper
 ```
 
-## 10. Limits (the honest list)
+## 11. Limits (the honest list)
 
 - **RAM is the boss.** The ESP32 has 520 KB, and Wi-Fi plus Bluetooth use about half of it. A 640×480 screen takes 77 KB at 4 colours or 115 KB at 8 colours. TidyOS tries 8 colours first and falls back to 4 if the memory isn't there. You can force a choice in Settings.
 - Only **Bluetooth LE** keyboards and mice work. Classic Bluetooth would need about 60 KB more RAM.
@@ -157,7 +168,7 @@ sudo systemctl enable --now tidyos-helper
 - Printouts are plain monospaced text (Courier). Very old or driver-only printers with no IPP/AirPrint support need the Pi helper with CUPS.
 - Spell check is English only. Capitalised names it doesn't know get underlined; use *Add to dictionary*.
 
-## 11. Building from source
+## 12. Building from source
 
 **PlatformIO:** open this folder and click Build/Upload (`platformio.ini` is included).
 
@@ -169,6 +180,7 @@ sudo systemctl enable --now tidyos-helper
 
 Source map: `core.cpp` (start-up, desktop, theme), `input.cpp` (Bluetooth HID host),
 `net.cpp` (Wi-Fi, web fetching, HTML→text), `widgets.cpp` (text area, spreadsheet engine), `apps.cpp` (all apps),
-`print.cpp` (PDF / PWG raster / IPP), `spell.cpp` + `dict.cpp` (spell check), `shelfmsg.cpp` (The Shelf messaging + Coms mesh).
+`print.cpp` (PDF / PWG raster / IPP), `spell.cpp` + `dict.cpp` (spell check), `shelfmsg.cpp` (The Shelf messaging + Coms mesh),
+`fileserver.cpp` (Wi-Fi file sharing page), `games.cpp` (the games).
 
 Built on [FabGL](https://github.com/fdivitto/FabGL) (GPL v3) and [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) (Apache 2.0).

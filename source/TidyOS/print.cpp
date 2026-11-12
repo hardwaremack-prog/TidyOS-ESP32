@@ -7,6 +7,7 @@
 #include "core.h"
 #include "style.h"
 #include "net.h"
+#include "fileserver.h"
 
 using namespace fabgl;
 
@@ -310,10 +311,9 @@ static volatile bool s_finding = false;
 
 static void findTask(void *)
 {
-  static bool mdnsUp = false;
-  if (!mdnsUp) mdnsUp = MDNS.begin("tidyos");
+  netMdnsBegin();
   std::vector<FoundPrinter> list;
-  if (mdnsUp) {
+  {
     int n = MDNS.queryService("ipp", "tcp");
     for (int i = 0; i < n; ++i) {
       String rp = MDNS.txt(i, "rp");

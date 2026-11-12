@@ -12,6 +12,7 @@
 #include "print.h"
 #include "spell.h"
 #include "shelfmsg.h"
+#include "fileserver.h"
 
 using namespace fabgl;
 
@@ -981,6 +982,15 @@ public:
   static AppFrame * inst;
   uiFileBrowser * fb;
   uiLabel * info;
+  uiButton * shareBtn;
+
+  void updateShare() {
+    shareBtn->setText(fileServerOn() ? "Wi-Fi sharing: ON" : "Wi-Fi sharing: off");
+    shareBtn->buttonStyle().backgroundColor = fileServerOn() ? T.accent : T.face;
+    shareBtn->buttonStyle().textColor = fileServerOn() ? T.accentText : T.text;
+    shareBtn->repaint();
+    updateInfo();
+  }
 
   FilesApp() : AppFrame("Files", nextPos(470, 360), Size(470, 360), &inst) {
     fb = S(new uiFileBrowser(this, Point(cx, cy), Size(320, 300)));
@@ -994,6 +1004,9 @@ public:
     button("Delete",     bx, cy + 84,  122)->onClick = [this]() { del(); };
     button("New note",   bx, cy + 124, 122)->onClick = []() { openNeat(nullptr); };
     button("New sheet",  bx, cy + 152, 122)->onClick = []() { openTidy(nullptr); };
+    shareBtn = button("", bx, cy + 192, 122, 40);
+    shareBtn->onClick = [this]() { fileServerSet(!fileServerOn()); updateShare(); };
+    updateShare();
     info = label("", cx, cy + 306, 440, 18);
     info->labelStyle().textFont = &FONT_std_12;
     updateInfo();
@@ -1041,7 +1054,10 @@ public:
     int64_t total = 0, used = 0;
     bool sd = strncmp(fb->directory(), SD_MOUNT, strlen(SD_MOUNT)) == 0;
     char b[96];
-    if (FileBrowser::getFSInfo(sd ? DriveType::SDCard : DriveType::SPIFFS, 0, &total, &used))
+    std::string url = fileServerUrl();
+    if (!url.empty())
+      snprintf(b, sizeof(b), "Sharing on Wi-Fi: open %s in a browser", url.c_str());
+    else if (FileBrowser::getFSInfo(sd ? DriveType::SDCard : DriveType::SPIFFS, 0, &total, &used))
       snprintf(b, sizeof(b), "%s   %lld MB free of %lld MB", fb->directory(), (total - used) >> 20, total >> 20);
     else
       snprintf(b, sizeof(b), "%s", fb->directory());
@@ -1065,14 +1081,15 @@ public:
   uiTextEdit * ssidEd, * passEd, * proxyEd, * homeEd, * tzEd;
   uiListBox  * nets, * devs;
   uiLabel    * wifiLbl, * btLbl;
-  uiCheckBox * dstCb;
+  uiCheckBox * dstCb, * shareCb;
+  uiLabel    * shareLbl;
   uiButton   * colorsBtn;
   std::vector<std::string> scan;
   bool scanning = false;
   int  devCount = -1;
   int  colors;
 
-  SettingsApp() : AppFrame("Settings", Point(20, 8), Size(600, 446), &inst) {
+  SettingsApp() : AppFrame("Settings", Point(20, 2), Size(600, 454), &inst) {
     colors = gSet.colors;
     int y = cy;
     head("Wi-Fi", y);
@@ -1106,7 +1123,7 @@ public:
     btLbl = label("", cx + 118, y + 76, 468, 18);
     btLbl->labelStyle().textFont = &FONT_std_12;
 
-    y += 102;
+    y += 100;
     head("Browser", y);
     label("Helper address", cx, y + 22, 100, 18);
     proxyEd = edit(gSet.proxy.c_str(), cx + 104, y + 19, 180);
@@ -1114,7 +1131,7 @@ public:
     label("Home page", cx, y + 48, 100, 18);
     homeEd = edit(gSet.home.c_str(), cx + 104, y + 45, 300);
 
-    y += 76;
+    y += 74;
     head("Clock and screen", y);
     label("UTC offset (hours)", cx, y + 22, 120, 18);
     char tz[12];
@@ -1127,7 +1144,16 @@ public:
     colorsBtn->onClick = [this]() { colors = colors == 0 ? 8 : colors == 8 ? 4 : 0; showColors(); };
     showColors();
 
-    y += 52;
+    y += 50;
+    head("File sharing", y);
+    shareCb = S(new uiCheckBox(this, Point(cx, y + 22), Size(16, 16)));
+    shareCb->setChecked(fileServerOn());
+    shareCb->onChange = [this]() { fileServerSet(shareCb->checked()); };
+    label("Share the SD card on Wi-Fi (open the address in any browser)", cx + 22, y + 22, 380, 18);
+    shareLbl = label("", cx + 404, y + 22, 182, 18);
+    shareLbl->labelStyle().textColor = T.accent;
+
+    y += 48;
     button("Save",           cx + 300, y, 136, 26)->onClick = [this]() { saveAll(); gApp->messageBox("Settings", "Saved.", "OK", nullptr, nullptr, uiMessageBoxIcon::Info); };
     button("Save + restart", cx + 450, y, 136, 26)->onClick = [this]() { saveAll(); delay(300); ESP.restart(); };
     label("Screen colours apply after restart.", cx, y + 5, 280, 18)->labelStyle().textFont = &FONT_std_12;
@@ -1196,6 +1222,9 @@ public:
       if (sel >= 0 && sel < n) devs->selectItem(sel);
       devs->repaint();
     }
+    std::string u = fileServerUrl();
+    std::string sh = fileServerOn() ? (u.empty() ? std::string("waiting for Wi-Fi") : u) : std::string("off");
+    if (sh != shareLbl->text()) { shareLbl->setText(sh.c_str()); shareLbl->repaint(); }
     std::string s = inputStatus();
     if (inputScanning()) s += "   (searching - put the device in pairing mode)";
     btLbl->setText(s.c_str());

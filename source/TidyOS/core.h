@@ -43,6 +43,7 @@ struct Settings {
   int    colors;      // 0 = auto, else 16 / 8 / 4
   String btNames;     // ';' separated names of paired keyboards / mice
   String printer;     // last network printer address (ipp://...)
+  bool   fileShare;   // file sharing web page on
 };
 extern Settings gSet;
 void settingsLoad();
@@ -67,6 +68,7 @@ void openFiles();
 void openSettings();
 void openSystem();
 void openMessages();
+void openGames();
 
 extern fabgl::uiApp * gApp;
 

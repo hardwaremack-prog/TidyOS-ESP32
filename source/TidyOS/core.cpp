@@ -9,6 +9,7 @@
 #include "style.h"
 #include "spell.h"
 #include "shelfmsg.h"
+#include "fileserver.h"
 
 using namespace fabgl;
 
@@ -37,6 +38,7 @@ void settingsLoad()
   gSet.colors    = s_prefs.getInt("colors", 0);
   gSet.btNames   = s_prefs.getString("bt", "");
   gSet.printer   = s_prefs.getString("printer", "");
+  gSet.fileShare = s_prefs.getBool("share", false);
 }
 
 void settingsSave()
@@ -50,6 +52,7 @@ void settingsSave()
   s_prefs.putInt("colors", gSet.colors);
   s_prefs.putString("bt", gSet.btNames);
   s_prefs.putString("printer", gSet.printer);
+  s_prefs.putBool("share", gSet.fileShare);
 }
 
 // ====================================================================== storage
@@ -214,6 +217,12 @@ static const char * ART_MSG[16] = {
   "#wwwwwwwwwwwwww#", ".######ww######.", "......#ww#......", ".......#w#......",
   "........##......", "................", "................", "................" };
 
+static const char * ART_GAMES[16] = {
+  "................", "................", "................", "...##########...",
+  "..#gggggggggg#..", ".#gg#gggggggag#.", ".#g###ggggagga#.", ".#gg#ggggggaag#.",
+  ".#ggggg##gggggg#", ".#gggg#..#ggggg#", "..####....#####.", "................",
+  "................", "................", "................", "................" };
+
 struct DeskIcon {
   const char *  label;
   const char ** art;      // pixel art, or nullptr for a glyph tile
@@ -236,6 +245,7 @@ static const DeskIcon ICONS[] = {
   { "Settings",   ART_GEAR,  nullptr, openSettings },
   { "System",     ART_SYS,   nullptr, openSystem },
   { "Messages",   ART_MSG,   nullptr, openMessages },
+  { "Games",      ART_GAMES, nullptr, openGames },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
 
@@ -278,10 +288,10 @@ public:
           // refresh the welcome / pairing hint only when something changed
           std::string sig = inputStatus() + char('0' + inputKeyboards()) + char('0' + inputMice()) + (gSet.ssid.length() ? "w" : "-");
           int unread = msgUnreadTotal() + comsUnread();
-          if (unread != m_unread) { m_unread = unread; repaintIcon(NICONS - 1); }
+          if (unread != m_unread) { m_unread = unread; for (int k = 0; k < NICONS; ++k) if (ICONS[k].open == openMessages) repaintIcon(k); }
           if (sig != m_hintSig) {
             m_hintSig = sig;
-            repaint(Rect(CELL_W * 2 + 20, 140, SCREEN_W - 1, 330));
+            repaint(Rect(CELL_W * 3 + 16, 140, SCREEN_W - 1, 330));
           }
         }
         break;
@@ -296,7 +306,7 @@ private:
   std::string m_hintSig;
 
   Rect iconRect(int i) {
-    int col = i % 2, row = i / 2;
+    int col = i % 3, row = i / 3;
     int x = X0 + col * CELL_W, y = Y0 + row * CELL_H;
     return Rect(x, y, x + CELL_W - 1, y + CELL_H - 1);
   }
@@ -367,18 +377,18 @@ private:
     // welcome / pairing hint
     bool needKbd = inputKeyboards() == 0, needMouse = inputMice() == 0;
     if (needKbd || needMouse || !gSet.ssid.length()) {
-      int x = CELL_W * 2 + 40, y = 150;
+      int x = CELL_W * 3 + 24, y = 150;
       cv->setPenColor(T.deskText);
       cv->setBrushColor(T.desk);
-      cv->drawText(&FONT_std_24, x, y, "Welcome to TidyOS");
+      cv->drawText(&FONT_std_22, x, y, "Welcome to TidyOS");
       y += 34;
       if (needKbd)
-        cv->drawText(&FONT_std_14, x, y, "1. Put your Bluetooth keyboard in pairing mode.");
+        cv->drawText(&FONT_std_14, x, y, "1. Put your keyboard in pairing mode.");
       else
         cv->drawText(&FONT_std_14, x, y, "1. Keyboard connected!");
       y += 20;
       if (needMouse)
-        cv->drawText(&FONT_std_14, x, y, "2. Then put your Bluetooth mouse in pairing mode.");
+        cv->drawText(&FONT_std_14, x, y, "2. Then put your mouse in pairing mode.");
       else
         cv->drawText(&FONT_std_14, x, y, "2. Mouse connected!");
       y += 20;
@@ -390,7 +400,7 @@ private:
       cv->drawText(&FONT_std_14, x, y, st.c_str());
       y += 24;
       if (needKbd && needMouse)
-        cv->drawText(&FONT_std_12, x, y, "No Bluetooth? Type in the Arduino Serial Monitor (115200).");
+        cv->drawText(&FONT_std_12, x, y, "No Bluetooth? Type in a serial monitor (115200).");
     }
     // status bar
     int by = SCREEN_H - BAR_H;
@@ -404,6 +414,7 @@ private:
       cv->drawText(&FONT_std_14, 6, by + 3, "TidyOS");
       char b[96];
       std::string ns = netStatus();
+      if (fileServerOn()) ns += "  - sharing files";
       snprintf(b, sizeof(b), "%s", ns.c_str());
       cv->drawText(&FONT_std_12, 70, by + 4, b);
       std::string notice = msgLastNotice();
@@ -518,6 +529,7 @@ void setup()
   makeDirs();
   spellBegin();
   msgBegin();       // The Shelf messaging + Coms mesh
+  if (gSet.fileShare) fileServerSet(true);
   splash("Starting...");
 }
 
