@@ -223,6 +223,12 @@ static const char * ART_GAMES[16] = {
   ".#ggggg##gggggg#", ".#gggg#..#ggggg#", "..####....#####.", "................",
   "................", "................", "................", "................" };
 
+static const char * ART_RUGGED[16] = {
+  ".......##.......", "......#gg#......", ".....#gggg#.....", "....#gg##gg#....",
+  "...#gg#aa#gg#...", "..#gg#aaaa#gg#..", ".#gg#aaaaaa#gg#.", "#ggg#aaaaaa#ggg#",
+  "#ggg#aaaaaa#ggg#", "#gggg######gggg#", "#gggggggggggggg#", "#gggggg##gggggg#",
+  "#gggggg##gggggg#", "#gggggg##gggggg#", "################", "................" };
+
 struct DeskIcon {
   const char *  label;
   const char ** art;      // pixel art, or nullptr for a glyph tile
@@ -240,6 +246,7 @@ static const DeskIcon ICONS[] = {
   { "Tidy",       ART_TIDY,  nullptr, openTidy0 },
   { "Ready",      ART_READY, nullptr, openReady },
   { "Steady",     nullptr,   "$",     openSteady },
+  { "Rugged",     ART_RUGGED, nullptr, openRugged },
   { "Browser",    nullptr,   "www",   openBrowser0 },
   { "Files",      ART_FILES, nullptr, openFiles },
   { "Settings",   ART_GEAR,  nullptr, openSettings },

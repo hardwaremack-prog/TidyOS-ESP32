@@ -8,7 +8,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Bluetooth keyboard and mouse** (Bluetooth LE)
 - **microSD card** for your files (falls back to internal flash with no card)
 - **Wi-Fi** with a clock that sets itself from the internet
-- Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Messages, Browser, Files, Settings, System**
+- Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Messages, Browser, Files, Settings, System**
 - **Printing** to network printers (found automatically), through a Pi with CUPS, or Save as PDF
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
 - **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
@@ -84,6 +84,7 @@ No Bluetooth yet? Typing in the Arduino Serial Monitor (115200 baud) also works 
 | **Ready Lite** | To-do list with done/undo and a progress count. Saves automatically | `/SD/tidyos/ready.txt` |
 | **Steady Lite** | Monthly bills: amount, due day, paid. Shows total, paid and left, plus encouragement. "New month" resets paid flags | `/SD/tidyos/steady.csv` |
 | Messages | Chat with The Shelf on your PCs and Pis, and with Shelf boards, over Wi-Fi. Second tab: the Shelf boards' 2.4 GHz Coms mesh | `/SD/tidyos/msg-*.txt` |
+| **Rugged Lite** | The Rugged app's offline guide for when the grid is down. **If this happens:** 33 emergency cards (bleeding, CPR, CO, pipes freezing, tornado...). **Field guide:** 60 topics in 11 groups, with search. **How long can we last?:** water, food, firewood and fuel in days, flagging anything under a week. **Barter board:** have / need / trades made. All of it can be printed | `/SD/tidyos/rugged.txt` |
 | Browser | Text web browser with numbered links. Click a `[number]` or type it in the address box. Backspace = back | – |
 | Files | Browse the SD card. Open, new folder, rename, delete. **Wi-Fi sharing** button | – |
 | Games | Sammy the Snake (arrow keys), Minesweeper (click, right-click to flag), Blocks (falling blocks: arrows, Up turns, Space drops, P pauses), 2048 (arrow keys). Best scores are kept | – |

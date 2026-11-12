@@ -1482,3 +1482,302 @@ void openMessages()
   if (!MessagesApp::inst) new MessagesApp();
   MessagesApp::inst->open();
 }
+
+// ====================================================================== Rugged Lite (grid-down guide, from the Tidy Suite's Rugged)
+
+#include "rugged_data.h"
+
+class RuggedApp : public AppFrame {
+public:
+  static AppFrame * inst;
+  uiButton * tabs[4];
+  uiPanel  * panes[4];
+  int        tab = 0;
+
+  // guide + cards
+  uiListBox * cardList, * guideList;
+  TextArea  * cardView, * guideView;
+  uiTextEdit * search;
+  std::vector<int> guideRows;
+
+  // supplies
+  uiTextEdit * sup[7];
+  uiLabel    * supOut[4], * nextJob;
+
+  // barter
+  uiListBox  * haveList, * needList, * tradeList;
+  uiTextEdit * haveEd, * needEd, * tWho, * tGave, * tGot;
+  std::vector<std::string> have, need, trades;
+  uiLabel    * saved;
+
+  uiPanel * pane(int i) {
+    auto p = new uiPanel(this, Point(cx, cy + 30), Size(612, 384), false);
+    p->panelStyle().backgroundColor = T.win;
+    p->windowStyle().borderSize = 0;
+    panes[i] = p;
+    return p;
+  }
+  template <class W> W * add(uiPanel * p, W * w) { applyStyle(w); return w; }
+
+  RuggedApp() : AppFrame("Rugged Lite - when the grid is down", Point(4, 4), Size(632, 452), &inst) {
+    static const char * names[4] = { "If this happens", "Field guide", "How long can we last?", "Barter board" };
+    static const int    widths[4] = { 120, 100, 170, 110 };
+    int x = cx;
+    for (int i = 0; i < 4; ++i) {
+      tabs[i] = button(names[i], x, cy, widths[i]);
+      tabs[i]->onClick = [this, i]() { show(i); };
+      x += widths[i] + 4;
+    }
+    saved = makeSavedLight(this, cx + 542, cy + 2);
+
+    // ---- If this happens
+    auto p = pane(0);
+    cardList = add(p, new uiListBox(p, Point(0, 0), Size(200, 384)));
+    cardList->items().takeStrings();
+    for (int i = 0; i < RUG_QUICK_COUNT; ++i) cardList->items().append(RUG_QUICK[i].title);
+    cardView = new TextArea(p, Point(206, 0), Size(406, 384), false);
+    cardList->onChange = [this]() { showCard(); };
+
+    // ---- Field guide
+    p = pane(1);
+    add(p, new uiLabel(p, "Search", Point(0, 3), Size(46, 18)));
+    search = add(p, new uiTextEdit(p, "", Point(48, 0), Size(152, 22)));
+    search->onChange = [this]() { filterGuide(); };
+    guideList = add(p, new uiListBox(p, Point(0, 28), Size(200, 356)));
+    guideList->items().takeStrings();
+    guideView = new TextArea(p, Point(206, 0), Size(406, 384), false);
+    guideList->onChange = [this]() { showGuide(); };
+
+    // ---- How long can we last?
+    p = pane(2);
+    static const char * supNames[7] = { "People", "Water stored (gallons)", "Food on hand (days of meals)", "Firewood (armloads)",
+                                        "Armloads burned per day", "Fuel (gallons gas/propane)", "Fuel used per day (gallons)" };
+    for (int i = 0; i < 7; ++i) {
+      add(p, new uiLabel(p, supNames[i], Point(0, 6 + i * 32), Size(200, 18)));
+      sup[i] = add(p, new uiTextEdit(p, "", Point(204, 3 + i * 32), Size(80, 24)));
+      sup[i]->onChange = [this]() { calc(); };
+    }
+    static const char * outNames[4] = { "Water", "Food", "Firewood", "Fuel" };
+    for (int i = 0; i < 4; ++i) {
+      supOut[i] = add(p, new uiLabel(p, outNames[i], Point(320, 6 + i * 44), Size(280, 36)));
+      supOut[i]->labelStyle().textFont = &FONT_std_22;
+    }
+    nextJob = add(p, new uiLabel(p, "", Point(320, 190), Size(290, 40)));
+    nextJob->labelStyle().textFont = &FONT_std_14;
+    add(p, new uiLabel(p, "Water: about 1 gallon per person per day for drinking and cooking.", Point(0, 240), Size(600, 18)))->labelStyle().textFont = &FONT_std_12;
+    add(p, new uiLabel(p, "Anything under 7 days is shown as the next job.", Point(0, 258), Size(600, 18)))->labelStyle().textFont = &FONT_std_12;
+    add(p, new uiButton(p, "Print", Point(0, 290), Size(100, 24)))->onClick = [this]() {
+      PrintDoc d;
+      d.title = "How long can we last";
+      static const char * nm[7] = { "People", "Water (gal)", "Food (days)", "Firewood (armloads)", "Armloads per day", "Fuel (gal)", "Fuel per day" };
+      for (int i = 0; i < 7; ++i) d.lines.push_back(std::string(nm[i]) + ": " + sup[i]->text());
+      d.lines.push_back("");
+      for (int i = 0; i < 4; ++i) d.lines.push_back(supOut[i]->text());
+      d.lines.push_back(nextJob->text());
+      printDialog(d);
+    };
+
+    // ---- Barter board
+    p = pane(3);
+    add(p, new uiLabel(p, "We have / can do", Point(0, 0), Size(196, 18)));
+    haveList = add(p, new uiListBox(p, Point(0, 20), Size(196, 150)));
+    haveEd = add(p, new uiTextEdit(p, "", Point(0, 176), Size(140, 22)));
+    add(p, new uiButton(p, "Add", Point(144, 176), Size(52, 22)))->onClick = [this]() { addTo(have, haveEd, haveList); };
+    add(p, new uiButton(p, "Remove", Point(0, 204), Size(196, 22)))->onClick = [this]() { removeFrom(have, haveList); };
+
+    add(p, new uiLabel(p, "We need", Point(206, 0), Size(196, 18)));
+    needList = add(p, new uiListBox(p, Point(206, 20), Size(196, 150)));
+    needEd = add(p, new uiTextEdit(p, "", Point(206, 176), Size(140, 22)));
+    add(p, new uiButton(p, "Add", Point(350, 176), Size(52, 22)))->onClick = [this]() { addTo(need, needEd, needList); };
+    add(p, new uiButton(p, "Remove", Point(206, 204), Size(196, 22)))->onClick = [this]() { removeFrom(need, needList); };
+
+    add(p, new uiLabel(p, "Trades made", Point(412, 0), Size(200, 18)));
+    tradeList = add(p, new uiListBox(p, Point(412, 20), Size(200, 150)));
+    add(p, new uiLabel(p, "Who", Point(412, 179), Size(36, 18)));
+    tWho = add(p, new uiTextEdit(p, "", Point(450, 176), Size(162, 22)));
+    add(p, new uiLabel(p, "Gave", Point(412, 205), Size(36, 18)));
+    tGave = add(p, new uiTextEdit(p, "", Point(450, 202), Size(162, 22)));
+    add(p, new uiLabel(p, "Got", Point(412, 231), Size(36, 18)));
+    tGot = add(p, new uiTextEdit(p, "", Point(450, 228), Size(162, 22)));
+    add(p, new uiButton(p, "Log trade", Point(450, 256), Size(162, 22)))->onClick = [this]() { logTrade(); };
+    add(p, new uiButton(p, "Remove", Point(412, 284), Size(200, 22)))->onClick = [this]() { removeFrom(trades, tradeList); };
+    add(p, new uiLabel(p, "Fair trades build trust. Keep a record so nobody argues later.", Point(0, 240), Size(400, 18)))->labelStyle().textFont = &FONT_std_12;
+    add(p, new uiButton(p, "Print barter board", Point(0, 284), Size(196, 22)))->onClick = [this]() {
+      PrintDoc d;
+      d.title = "Barter board";
+      d.lines.push_back("WE HAVE / CAN DO");
+      for (auto & s : have) d.lines.push_back(" * " + s);
+      d.lines.push_back(""); d.lines.push_back("WE NEED");
+      for (auto & s : need) d.lines.push_back(" * " + s);
+      d.lines.push_back(""); d.lines.push_back("TRADES MADE");
+      for (auto & s : trades) d.lines.push_back(" * " + s);
+      printDialog(d);
+    };
+    for (auto l : { haveList, needList, tradeList }) l->items().takeStrings();
+
+    load();
+    filterGuide();
+    calc();
+    show(0);
+    cardList->selectItem(0);
+    showCard();
+  }
+
+  void show(int i) {
+    tab = i;
+    for (int k = 0; k < 4; ++k) {
+      gApp->showWindow(panes[k], k == i);
+      tabs[k]->buttonStyle().backgroundColor = k == i ? T.accent : T.face;
+      tabs[k]->buttonStyle().textColor       = k == i ? T.accentText : T.text;
+      tabs[k]->repaint();
+    }
+    if (i == 1) gApp->setFocusedWindow(search);
+  }
+
+  void showText(TextArea * v, const char * title, const char * body) {
+    std::vector<std::string> lines;
+    lines.push_back(title);
+    lines.push_back(std::string(strlen(title), '='));
+    lines.push_back("");
+    wrapText(body, v->visCols() - 1, lines);
+    v->setLines(std::move(lines));
+  }
+
+  void showCard() {
+    int i = cardList->firstSelectedItem();
+    if (i >= 0 && i < RUG_QUICK_COUNT) showText(cardView, RUG_QUICK[i].title, RUG_QUICK[i].body);
+  }
+
+  void filterGuide() {
+    std::string q = search->text();
+    for (auto & c : q) c = tolower(c);
+    guideRows.clear();
+    guideList->items().clear();
+    const char * lastCat = "";
+    for (int i = 0; i < RUG_GUIDE_COUNT; ++i) {
+      const RugEntry & g = RUG_GUIDE[i];
+      if (!q.empty()) {
+        std::string hay = std::string(g.title) + " " + g.keys + " " + g.cat;
+        for (auto & c : hay) c = tolower(c);
+        if (hay.find(q) == std::string::npos && !strcasestr(g.body, q.c_str())) continue;
+      }
+      if (strcmp(lastCat, g.cat)) {
+        guideList->items().append((std::string("- ") + g.cat + " -").c_str());
+        guideRows.push_back(-1);
+        lastCat = g.cat;
+      }
+      guideList->items().append((std::string("  ") + g.title).c_str());
+      guideRows.push_back(i);
+    }
+    guideList->repaint();
+  }
+
+  void showGuide() {
+    int r = guideList->firstSelectedItem();
+    if (r < 0 || r >= (int)guideRows.size() || guideRows[r] < 0) return;
+    const RugEntry & g = RUG_GUIDE[guideRows[r]];
+    showText(guideView, g.title, g.body);
+  }
+
+  void calc() {
+    double v[7];
+    for (int i = 0; i < 7; ++i) v[i] = atof(sup[i]->text());
+    double ppl = v[0] < 1 ? 1 : v[0];
+    double days[4] = { v[1] / ppl, v[2], v[4] > 0 ? v[3] / v[4] : -1, v[6] > 0 ? v[5] / v[6] : -1 };
+    static const char * nm[4] = { "Water", "Food", "Firewood", "Fuel" };
+    int worst = -1;
+    for (int i = 0; i < 4; ++i) {
+      char b[64];
+      if (days[i] < 0) snprintf(b, sizeof(b), "%s:  -", nm[i]);
+      else snprintf(b, sizeof(b), days[i] >= 10 ? "%s:  %.0f days" : "%s:  %.1f days", nm[i], days[i]);
+      supOut[i]->labelStyle().textColor = (days[i] >= 0 && days[i] < 7) ? T.warn : T.text;
+      supOut[i]->setText(b);
+      supOut[i]->repaint();
+      if (days[i] >= 0 && days[i] < 7 && (worst < 0 || days[i] < days[worst])) worst = i;
+    }
+    std::string nj = worst < 0 ? std::string("Nothing under a week. Keep building.") : std::string("Next job: ") + nm[worst] + " (under a week).";
+    nextJob->setText(nj.c_str());
+    nextJob->repaint();
+    save();
+  }
+
+  // ---- barter helpers
+  void refill(uiListBox * l, const std::vector<std::string> & v) {
+    l->items().clear();
+    for (auto & s : v) l->items().append(s.c_str());
+    l->repaint();
+  }
+  void addTo(std::vector<std::string> & v, uiTextEdit * e, uiListBox * l) {
+    std::string t = e->text();
+    if (t.empty()) return;
+    for (auto & c : t) if (c == '|') c = '/';
+    v.push_back(t);
+    e->setText(""); e->repaint();
+    refill(l, v);
+    save();
+  }
+  void removeFrom(std::vector<std::string> & v, uiListBox * l) {
+    int i = l->firstSelectedItem();
+    if (i < 0 || i >= (int)v.size()) return;
+    v.erase(v.begin() + i);
+    refill(l, v);
+    save();
+  }
+  void logTrade() {
+    std::string who = tWho->text(), gave = tGave->text(), got = tGot->text();
+    if (who.empty() && gave.empty() && got.empty()) return;
+    time_t now = time(nullptr);
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+    char d[12] = "";
+    if (tmv.tm_year > 100) snprintf(d, sizeof(d), "%d/%d ", tmv.tm_mon + 1, tmv.tm_mday);
+    std::string t = std::string(d) + who + ": gave " + gave + ", got " + got;
+    for (auto & c : t) if (c == '|') c = '/';
+    trades.insert(trades.begin(), t);
+    for (auto e : { tWho, tGave, tGot }) { e->setText(""); e->repaint(); }
+    refill(tradeList, trades);
+    save();
+  }
+
+  bool loading = false;
+
+  void save() {
+    if (loading) return;
+    std::string s;
+    for (int i = 0; i < 7; ++i) s += std::string("S|") + std::to_string(i) + "|" + sup[i]->text() + "\n";
+    for (auto & x : have)   s += "H|" + x + "\n";
+    for (auto & x : need)   s += "N|" + x + "\n";
+    for (auto & x : trades) s += "T|" + x + "\n";
+    setSavedLight(saved, writeFileStr(dataPath("rugged.txt").c_str(), s));
+  }
+
+  void load() {
+    loading = true;
+    std::string s;
+    if (readFileStr(dataPath("rugged.txt").c_str(), s)) {
+      size_t st = 0;
+      for (size_t i = 0; i <= s.size(); ++i)
+        if (i == s.size() || s[i] == '\n') {
+          std::string l = s.substr(st, i - st);
+          st = i + 1;
+          if (l.size() < 2 || l[1] != '|') continue;
+          std::string v = l.substr(2);
+          if (l[0] == 'S') { int k = atoi(v.c_str()); size_t b = v.find('|'); if (k >= 0 && k < 7 && b != std::string::npos) sup[k]->setText(v.substr(b + 1).c_str()); }
+          else if (l[0] == 'H') have.push_back(v);
+          else if (l[0] == 'N') need.push_back(v);
+          else if (l[0] == 'T') trades.push_back(v);
+        }
+    }
+    refill(haveList, have);
+    refill(needList, need);
+    refill(tradeList, trades);
+    loading = false;
+  }
+};
+AppFrame * RuggedApp::inst = nullptr;
+
+void openRugged()
+{
+  if (!RuggedApp::inst) new RuggedApp();
+  RuggedApp::inst->open();
+}
