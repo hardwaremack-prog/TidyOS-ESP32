@@ -1,5 +1,7 @@
 # TidyOS for ESP32
 
+**One-click install: https://hardwaremack-prog.github.io/TidyOS-ESP32/** (Chrome or Edge)
+
 A tiny general-purpose computer on a NodeMCU ESP32:
 
 - **640 × 480 VGA desktop** (8 or 4 colours, picked automatically to fit in RAM)
@@ -51,10 +53,11 @@ This is the same VGA pinout as the LilyGO "FabGL VGA32" board, so TidyOS also ru
 ## 3. Flash it (no tools needed)
 
 1. Plug the NodeMCU into your computer with USB.
-2. In **Chrome or Edge**, open **https://espressif.github.io/esptool-js/**
-3. Click **Connect** and pick the ESP32's port. (If it won't connect, hold the **BOOT** button while clicking Connect.)
-4. Set Flash Address to **0x0**, choose **`firmware/TidyOS-ESP32-full.bin`**, then click **Program**.
-5. Press **EN/RST** when it finishes.
+2. In **Chrome or Edge**, open **https://hardwaremack-prog.github.io/TidyOS-ESP32/** and click **Install TidyOS**.
+3. Pick the ESP32's port. (If it won't connect, hold the **BOOT** button while clicking Install.)
+4. Press **EN/RST** when it finishes.
+
+Manual alternative: in https://espressif.github.io/esptool-js/ flash `firmware/TidyOS-ESP32-full.bin` at address **0x0**.
 
 ## 4. First start
 
