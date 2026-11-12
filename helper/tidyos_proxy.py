@@ -3,6 +3,9 @@
 TidyOS browser helper
 ---------------------
 Runs on a Raspberry Pi (or The Shelf, or any computer on your home network).
+It also prints for TidyOS (POST /print) using CUPS, so any printer the Pi can
+print to works.
+
 The ESP32 asks it for a page; the helper downloads it (https, big pages,
 redirects, gzip - all the heavy work), turns it into plain text with numbered
 links, and sends back a small text reply the ESP32 can show.
@@ -18,7 +21,11 @@ import argparse
 import gzip
 import html
 import re
+import os
+import shutil
 import socket
+import subprocess
+import tempfile
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -255,8 +262,45 @@ INDEX = """<html><body style="font-family:sans-serif">
 <button>Test</button></form></body></html>"""
 
 
+def print_text(title, text, printer=None):
+    """Print plain text with CUPS (the Pi's normal printing system)."""
+    lp = shutil.which("lp")
+    if not lp:
+        return False, "CUPS isn't installed on this computer.  Run:  sudo apt install cups  and add your printer."
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+        f.write(text)
+        name = f.name
+    cmd = [lp, "-t", title[:60] or "TidyOS", "-o", "cpi=12", "-o", "lpi=7", "-o", "page-top=36", "-o", "page-left=36"]
+    if printer:
+        cmd += ["-d", printer]
+    try:
+        r = subprocess.run(cmd + [name], capture_output=True, text=True, timeout=30)
+    finally:
+        os.unlink(name)
+    if r.returncode != 0:
+        return False, (r.stderr or r.stdout or "lp failed").strip()[:300]
+    return True, ("Sent to the printer. " + r.stdout.strip())[:300]
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
+    printer = None
+
+    def do_POST(self):
+        p = urllib.parse.urlparse(self.path)
+        q = urllib.parse.parse_qs(p.query)
+        if p.path != "/print":
+            self.send_error(404)
+            return
+        n = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(min(n, 2_000_000)).decode("utf-8", "replace")
+        ok, msg = print_text(q.get("title", ["TidyOS"])[0], body, Handler.printer)
+        data = msg.encode()
+        self.send_response(200 if ok else 500)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def do_GET(self):
         p = urllib.parse.urlparse(self.path)
@@ -285,7 +329,9 @@ def main():
     ap = argparse.ArgumentParser(description="TidyOS browser helper")
     ap.add_argument("--port", type=int, default=8088)
     ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--printer", default=None, help="CUPS printer name for TidyOS printouts (default printer if left out)")
     a = ap.parse_args()
+    Handler.printer = a.printer
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("10.255.255.255", 1))

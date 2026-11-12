@@ -79,6 +79,7 @@ void TextArea::scrollTo(int line)
 
 void TextArea::changed()
 {
+  hlRow = -1;
   if (!modified) {
     modified = true;
   }
@@ -117,6 +118,33 @@ void TextArea::paint(Rect const & clip)
     cv->setPenColor(T.text);
     cv->setBrushColor(T.win);
     if (n) cv->drawText(font, cr.X1 + textX0(), y, buf);
+    // highlighted word (spell check)
+    if (row == hlRow && hlLen > 0) {
+      int a = imax(hlCol, left), b = imin(hlCol + hlLen, left + n);
+      if (b > a) {
+        int hx = cr.X1 + textX0() + (a - left) * fw;
+        cv->setBrushColor(T.accent);
+        cv->fillRectangle(hx, y, hx + (b - a) * fw - 1, y + fh - 1);
+        std::string w = l.substr(a, b - a);
+        cv->setPenColor(T.accentText);
+        cv->drawText(font, hx, y, w.c_str());
+      }
+    }
+    // red underline under misspelled words
+    if (isMisspelled && n) {
+      int c = 0, len = l.size();
+      while (c < len) {
+        while (c < len && !(isalpha((unsigned char)l[c]))) ++c;
+        int st = c;
+        while (c < len && (isalpha((unsigned char)l[c]) || (l[c] == '\'' && c + 1 < len && isalpha((unsigned char)l[c + 1])))) ++c;
+        if (c > st && c > left && st < left + n && isMisspelled(l.substr(st, c - st))) {
+          int a = imax(st, left), b = imin(c, left + n);
+          int x1 = cr.X1 + textX0() + (a - left) * fw, x2 = cr.X1 + textX0() + (b - left) * fw - 1;
+          cv->setPenColor(T.warn);
+          for (int x = x1; x <= x2; x += 2) { cv->setPixel(x, y + fh - 1); cv->setPixel(x + 1, y + fh - 2); }
+        }
+      }
+    }
     if (showCursor && row == crow && ccol >= left && ccol < left + vc) {
       int x = cr.X1 + textX0() + (ccol - left) * fw;
       cv->setBrushColor(T.text);
@@ -302,6 +330,26 @@ void TextArea::processEvent(uiEvent * event)
       break;
     default:
       break;
+  }
+}
+
+void wrapText(const std::string & text, int width, std::vector<std::string> & out)
+{
+  size_t st = 0;
+  for (size_t i = 0; i <= text.size(); ++i) {
+    if (i < text.size() && text[i] != '\n') continue;
+    std::string para = text.substr(st, i - st);
+    st = i + 1;
+    if (para.empty()) { out.push_back(""); continue; }
+    while ((int)para.size() > width) {
+      int cut = para.rfind(' ', width);
+      if (cut <= 0) cut = width;
+      out.push_back(para.substr(0, cut));
+      para.erase(0, cut);
+      while (!para.empty() && para[0] == ' ') para.erase(0, 1);
+    }
+    out.push_back(para);
+    if (out.size() > 4000) return;
   }
 }
 

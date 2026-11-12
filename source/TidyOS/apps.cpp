@@ -9,6 +9,9 @@
 #include "widgets.h"
 #include "input.h"
 #include "net.h"
+#include "print.h"
+#include "spell.h"
+#include "shelfmsg.h"
 
 using namespace fabgl;
 
@@ -198,33 +201,138 @@ public:
   static AppFrame * inst;
   TextArea * ta;
   uiLabel *  saved;
-  uiLabel *  nameLbl;
   std::string path;
+  bool dirty = false;
 
-  NeatApp() : AppFrame("Neat Lite", Point(150, 20), Size(484, 432), &inst) {
-    button("New",     cx,       cy, 50)->onClick = [this]() { newDoc(); };
-    button("Open",    cx + 54,  cy, 50)->onClick = [this]() { openDoc(); };
-    button("Save",    cx + 108, cy, 50)->onClick = [this]() { save(); };
-    button("Save as", cx + 162, cy, 64)->onClick = [this]() { saveAs(); };
-    nameLbl = label("Untitled", cx + 234, cy + 3, 160, 18);
-    saved = makeSavedLight(this, cx + 398, cy + 2);
+  NeatApp() : AppFrame("Neat Lite - Untitled", Point(150, 20), Size(484, 432), &inst) {
+    button("New",      cx,       cy, 44)->onClick = [this]() { newDoc(); };
+    button("Open",     cx + 48,  cy, 46)->onClick = [this]() { openDoc(); };
+    button("Save",     cx + 98,  cy, 44)->onClick = [this]() { save(); };
+    button("Save as",  cx + 146, cy, 60)->onClick = [this]() { saveAs(); };
+    button("Print",    cx + 210, cy, 46)->onClick = [this]() { print(); };
+    button("Spelling", cx + 260, cy, 70)->onClick = [this]() { spelling(); };
+    saved = makeSavedLight(this, cx + 396, cy + 2);
     ta = new TextArea(this, Point(cx, cy + 28), Size(466, 374), true);
+    ta->isMisspelled = [](const std::string & w) { return !spellIsWord(w); };
     ta->onModified = [this]() { if (!dirty) { dirty = true; setSavedLight(saved, false); } };
     ta->onKey = [this](uiKeyEventInfo const & k) {
       if (!k.CTRL) return false;
       if (k.VK == VK_s || k.VK == VK_S) { save(); return true; }
       if (k.VK == VK_o || k.VK == VK_O) { openDoc(); return true; }
       if (k.VK == VK_n || k.VK == VK_N) { newDoc(); return true; }
+      if (k.VK == VK_p || k.VK == VK_P) { print(); return true; }
       return false;
     };
   }
 
-  bool dirty = false;
+  std::string docTitle() { return path.empty() ? std::string("Untitled") : baseName(path); }
+
+  void print() {
+    PrintDoc d;
+    d.title = docTitle();
+    d.lines = ta->lines;
+    printDialog(d);
+  }
+
+  // next misspelled word at or after (r, c)
+  bool findNext(int r, int c, int stopRow, int & fr, int & fc, int & flen) {
+    for (int row = r; row < (int)ta->lines.size() && row <= stopRow; ++row) {
+      const std::string & l = ta->lines[row];
+      int i = row == r ? c : 0, n = l.size();
+      while (i < n) {
+        while (i < n && !isalpha((unsigned char)l[i])) ++i;
+        int st = i;
+        while (i < n && (isalpha((unsigned char)l[i]) || (l[i] == '\'' && i + 1 < n && isalpha((unsigned char)l[i + 1])))) ++i;
+        if (i > st && !spellIsWord(l.substr(st, i - st))) { fr = row; fc = st; flen = i - st; return true; }
+      }
+    }
+    return false;
+  }
+
+  // 0 stop, 1 change, 2 ignore, 3 add
+  int spellAsk(const std::string & word, std::string & replacement) {
+    std::vector<std::string> sug;
+    spellSuggest(word, sug, 6);
+    auto f = new uiFrame(gApp->rootWindow(), "Spelling", Point(276, 226), Size(356, 226), false);
+    applyStyle(f);
+    f->frameProps().resizeable = false;
+    f->frameProps().hasMaximizeButton = false;
+    f->frameProps().hasMinimizeButton = false;
+    Point o = clientOrigin(f);
+    int x = o.X + 8, y = o.Y + 6;
+    S(new uiLabel(f, "Not in the dictionary:", Point(x, y), Size(150, 18)));
+    auto wl = S(new uiLabel(f, word.c_str(), Point(x + 150, y - 2), Size(186, 22)));
+    wl->labelStyle().textFont = &FONT_std_18;
+    wl->labelStyle().textColor = T.warn;
+    y += 26;
+    auto list = S(new uiListBox(f, Point(x, y), Size(200, 132)));
+    list->items().takeStrings();
+    for (auto & w : sug) list->items().append(w.c_str());
+    if (sug.empty()) list->items().append("(no suggestions)");
+    else list->selectItem(0);
+    auto change = S(new uiButton(f, "Change",            Point(x + 210, y),       Size(126, 26)));
+    auto ignore = S(new uiButton(f, "Ignore",            Point(x + 210, y + 34),  Size(126, 26)));
+    auto add    = S(new uiButton(f, "Add to dictionary", Point(x + 210, y + 68),  Size(126, 26)));
+    auto stop   = S(new uiButton(f, "Stop",              Point(x + 210, y + 106), Size(126, 26)));
+    change->onClick = [f]() { f->exitModal(1); };
+    ignore->onClick = [f]() { f->exitModal(2); };
+    add->onClick    = [f]() { f->exitModal(3); };
+    stop->onClick   = [f]() { f->exitModal(0); };
+    list->onDblClick = [f]() { f->exitModal(1); };
+    int r = gApp->showModalWindow(f);
+    int i = list->firstSelectedItem();
+    replacement = (i >= 0 && i < (int)sug.size()) ? sug[i] : "";
+    gApp->destroyWindow(f);
+    if (r == 1 && replacement.empty()) r = 2;
+    return r;
+  }
+
+  void spelling() {
+    int startR = ta->crow, startC = ta->ccol;
+    int r = startR, c = startC, stopRow = ta->lines.size() - 1;
+    bool wrapped = false;
+    int fixed = 0;
+    for (;;) {
+      int fr, fc, flen;
+      bool found = findNext(r, c, stopRow, fr, fc, flen);
+      if (found && wrapped && (fr > startR || (fr == startR && fc >= startC))) found = false;
+      if (!found) {
+        if (!wrapped && (startR > 0 || startC > 0)) { wrapped = true; r = 0; c = 0; stopRow = startR; continue; }
+        break;
+      }
+      // show the word
+      ta->crow = fr; ta->ccol = fc;
+      ta->hlRow = fr; ta->hlCol = fc; ta->hlLen = flen;
+      if (fr < ta->top || fr >= ta->top + ta->visRows() - 1) ta->top = imax(0, fr - 2);
+      ta->left = 0;
+      ta->repaint();
+      std::string word = ta->lines[fr].substr(fc, flen), rep;
+      int a = spellAsk(word, rep);
+      if (a == 0) break;
+      if (a == 1) {
+        ta->lines[fr].replace(fc, flen, rep);
+        c = fc + rep.size();
+        ++fixed;
+        if (!dirty) { dirty = true; setSavedLight(saved, false); }
+      } else {
+        if (a == 2) spellIgnore(word);
+        if (a == 3) spellAddWord(word);
+        c = fc + flen;
+      }
+      r = fr;
+    }
+    ta->hlRow = -1;
+    ta->repaint();
+    char b[80];
+    snprintf(b, sizeof(b), fixed ? "Spell check done. %d word%s fixed." : "Spell check done.", fixed, fixed == 1 ? "" : "s");
+    gApp->messageBox("Spelling", b, "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
+    gApp->setFocusedWindow(ta);
+  }
 
   void setPath(const std::string & p) {
     path = p;
-    nameLbl->setText(p.empty() ? "Untitled" : baseName(p).c_str());
-    nameLbl->repaint();
+    setTitle(("Neat Lite - " + docTitle()).c_str());
+    repaint();
   }
 
   void loadFile(const char * p) {
@@ -308,7 +416,8 @@ public:
     button("Open",    cx + 54,  cy, 50)->onClick = [this]() { openDoc(); };
     button("Save",    cx + 108, cy, 50)->onClick = [this]() { save(); };
     button("Save as", cx + 162, cy, 64)->onClick = [this]() { saveAs(); };
-    nameLbl = label("Untitled", cx + 236, cy + 3, 290, 18);
+    button("Print",   cx + 230, cy, 50)->onClick = [this]() { print(); };
+    nameLbl = label("Untitled", cx + 288, cy + 3, 240, 18);
     saved = makeSavedLight(this, cx + 542, cy + 2);
     cellLbl = label("A1:", cx, cy + 28, 612, 18);
     cellLbl->labelStyle().backgroundColor = T.face;
@@ -321,9 +430,42 @@ public:
       if (!k.CTRL) return false;
       if (k.VK == VK_s || k.VK == VK_S) { grid->commit(); save(); return true; }
       if (k.VK == VK_o || k.VK == VK_O) { openDoc(); return true; }
+      if (k.VK == VK_p || k.VK == VK_P) { grid->commit(); print(); return true; }
       return false;
     };
     updateCell();
+  }
+
+  void print() {
+    grid->commit();
+    int maxR = -1, maxC = -1;
+    for (auto & kv : sheet.cells) { maxR = imax(maxR, kv.first / Sheet::COLS); maxC = imax(maxC, kv.first % Sheet::COLS); }
+    PrintDoc d;
+    d.title = path.empty() ? std::string("Untitled sheet") : baseName(path);
+    if (maxR < 0) { d.lines.push_back("(empty sheet)"); printDialog(d); return; }
+    // column widths from the shown values
+    std::vector<int> w(maxC + 1, 3);
+    for (int r = 0; r <= maxR; ++r)
+      for (int c = 0; c <= maxC; ++c) { bool n; w[c] = imax(w[c], imin(16, (int)sheet.display(r, c, n).size())); }
+    std::string head = "    ";
+    for (int c = 0; c <= maxC; ++c) { std::string h(1, 'A' + c); head += " " + h + std::string(w[c] - 1, ' '); }
+    d.lines.push_back(head.substr(0, 80));
+    d.lines.push_back(std::string(imin(80, (int)head.size()), '-'));
+    for (int r = 0; r <= maxR; ++r) {
+      char rn[8];
+      snprintf(rn, sizeof(rn), "%3d ", r + 1);
+      std::string line = rn;
+      for (int c = 0; c <= maxC; ++c) {
+        bool isNum;
+        std::string v = sheet.display(r, c, isNum).substr(0, w[c]);
+        std::string pad(w[c] - v.size(), ' ');
+        line += " " + (isNum ? pad + v : v + pad);
+      }
+      while (!line.empty() && line.back() == ' ') line.pop_back();
+      d.lines.push_back(line.substr(0, 80));
+    }
+    if ((int)head.size() > 80) d.lines.push_back("(columns past the page edge were left off)");
+    printDialog(d);
   }
 
   void updateCell() {
@@ -431,6 +573,13 @@ public:
     button("Done / undo", cx,       cy + 278, 110)->onClick = [this]() { toggle(); };
     button("Delete",      cx + 116, cy + 278, 80)->onClick  = [this]() { del(); };
     button("Clear done",  cx + 202, cy + 278, 100)->onClick = [this]() { clearDone(); };
+    button("Print",       cx + 308, cy + 278, 94)->onClick  = [this]() {
+      PrintDoc d;
+      d.title = "To do";
+      for (auto & it : items) d.lines.push_back(std::string(it.first ? "[x] " : "[ ] ") + it.second);
+      if (items.empty()) d.lines.push_back("(nothing on the list)");
+      printDialog(d);
+    };
     progress = label("", cx, cy + 310, 320, 18);
     saved = makeSavedLight(this, cx + 332, cy + 310);
     load();
@@ -544,6 +693,15 @@ public:
     button("Paid / not paid", cx,       cy + 268, 130)->onClick = [this]() { togglePaid(); };
     button("Delete",          cx + 136, cy + 268, 80)->onClick  = [this]() { del(); };
     button("New month",       cx + 222, cy + 268, 100)->onClick = [this]() { newMonth(); };
+    button("Print",           cx + 328, cy + 268, 70)->onClick  = [this]() {
+      PrintDoc d;
+      d.title = "Bills";
+      for (int i = 0; i < list->items().count(); ++i) d.lines.push_back(list->items().get(i));
+      d.lines.push_back("");
+      d.lines.push_back(summary->text());
+      d.lines.push_back(cheer->text());
+      printDialog(d);
+    };
     saved = makeSavedLight(this, cx + 450, cy + 270);
     summary = label("", cx, cy + 300, 520, 18);
     cheer   = label("", cx, cy + 322, 520, 18);
@@ -760,25 +918,6 @@ public:
     }
   }
 
-  static void wrap(const std::string & text, int width, std::vector<std::string> & out) {
-    size_t st = 0;
-    for (size_t i = 0; i <= text.size(); ++i) {
-      if (i < text.size() && text[i] != '\n') continue;
-      std::string para = text.substr(st, i - st);
-      st = i + 1;
-      if (para.empty()) { out.push_back(""); continue; }
-      while ((int)para.size() > width) {
-        int cut = para.rfind(' ', width);
-        if (cut <= 0) cut = width;
-        out.push_back(para.substr(0, cut));
-        para.erase(0, cut);
-        while (!para.empty() && para[0] == ' ') para.erase(0, 1);
-      }
-      out.push_back(para);
-      if (out.size() > 4000) return;
-    }
-  }
-
   void poll() {
     FetchState st = fetchState();
     if (st != FETCH_DONE && st != FETCH_ERROR) return;
@@ -788,7 +927,7 @@ public:
     if (st == FETCH_ERROR) {
       status->setText("Could not load the page.");
       status->repaint();
-      wrap(r, view->visCols(), lines);
+      wrapText(r, view->visCols(), lines);
       view->setLines(std::move(lines));
       return;
     }
@@ -813,7 +952,7 @@ public:
     if (t != std::string::npos) title = head.substr(t + 7, head.find('\n', t) - t - 7);
     r.clear();
     r.shrink_to_fit();
-    wrap(body, view->visCols(), lines);
+    wrapText(body, view->visCols(), lines);
     body.clear();
     view->setLines(std::move(lines));
     setTitle(title.empty() ? "Browser" : (std::string("Browser - ") + title.substr(0, 60)).c_str());
@@ -1126,4 +1265,191 @@ void openSystem()
 {
   if (!SystemApp::inst) new SystemApp();
   SystemApp::inst->open();
+}
+
+// ====================================================================== Messages (The Shelf + Coms mesh)
+
+static std::string clockText(uint64_t t)
+{
+  if (!t) return "";
+  time_t s = t / 1000;
+  struct tm tmv;
+  localtime_r(&s, &tmv);
+  char b[24];
+  int h = tmv.tm_hour % 12; if (!h) h = 12;
+  time_t now = time(nullptr);
+  struct tm tn;
+  localtime_r(&now, &tn);
+  if (tn.tm_yday == tmv.tm_yday && tn.tm_year == tmv.tm_year) snprintf(b, sizeof(b), "%d:%02d %s", h, tmv.tm_min, tmv.tm_hour < 12 ? "AM" : "PM");
+  else snprintf(b, sizeof(b), "%d/%d %d:%02d%s", tmv.tm_mon + 1, tmv.tm_mday, h, tmv.tm_min, tmv.tm_hour < 12 ? "a" : "p");
+  return b;
+}
+
+class MessagesApp : public AppFrame {
+public:
+  static AppFrame * inst;
+  uiButton *   shelfBtn, * comsBtn, * addBtn;
+  uiTextEdit * nameEd, * msgEd;
+  uiListBox *  list;
+  uiLabel *    listHead, * status, * convHead;
+  TextArea *   view;
+  bool         coms = false;
+  uint32_t     seen = 0;
+  std::vector<MsgPeer> peers;
+  std::string  current;      // selected peer id
+
+  MessagesApp() : AppFrame("Messages", Point(10, 10), Size(620, 442), &inst) {
+    shelfBtn = button("The Shelf (Wi-Fi)",     cx,       cy, 150);
+    comsBtn  = button("Coms mesh (2.4 GHz)",   cx + 154, cy, 160);
+    shelfBtn->onClick = [this]() { setMode(false); };
+    comsBtn->onClick  = [this]() { setMode(true); };
+    label("My name", cx + 326, cy + 3, 56, 18);
+    nameEd = edit(msgMyName().c_str(), cx + 384, cy, 150);
+    button("Save", cx + 538, cy, 62)->onClick = [this]() { msgSetName(nameEd->text()); status->setText("Name saved."); status->repaint(); };
+
+    listHead = label("", cx, cy + 30, 186, 18);
+    list = S(new uiListBox(this, Point(cx, cy + 50), Size(186, 286)));
+    list->items().takeStrings();
+    list->listBoxStyle().itemHeight = 18;
+    list->onChange = [this]() { pick(); };
+    addBtn = button("Add by address", cx, cy + 342, 186);
+    addBtn->onClick = [this]() {
+      char a[48] = "";
+      if (gApp->inputBox("Add a Shelf", "Address (like 192.168.1.20 or pi.local:8080)", a, sizeof(a) - 1, "Add", "Cancel") == uiMessageBoxResult::Button1 && a[0]) {
+        msgAddAddress(a);
+        status->setText("Checking that address...");
+        status->repaint();
+      }
+    };
+
+    convHead = label("", cx + 194, cy + 30, 406, 18);
+    view = new TextArea(this, Point(cx + 194, cy + 50), Size(406, 286), false);
+    view->setFocusIndex(-1);
+    msgEd = edit("", cx + 194, cy + 342, 330);
+    button("Send", cx + 528, cy + 342, 72)->onClick = [this]() { send(); };
+    msgEd->onKeyType = [this](uiKeyEventInfo const & k) { if (k.VK == VK_RETURN || k.VK == VK_KP_ENTER) send(); };
+    status = label("", cx, cy + 372, 600, 32);
+    status->labelStyle().textFont = &FONT_std_12;
+
+    startTimer(500);
+    onTimer = [this](uiTimerHandle) { tick(); };
+    setMode(false);
+  }
+
+  void setMode(bool c) {
+    coms = c;
+    shelfBtn->buttonStyle().backgroundColor = c ? T.face : T.accent;
+    shelfBtn->buttonStyle().textColor       = c ? T.text : T.accentText;
+    comsBtn->buttonStyle().backgroundColor  = c ? T.accent : T.face;
+    comsBtn->buttonStyle().textColor        = c ? T.accentText : T.text;
+    shelfBtn->repaint(); comsBtn->repaint();
+    addBtn->setText(c ? "(boards found by radio)" : "Add by address");
+    addBtn->repaint();
+    listHead->setText(c ? "Boards on the mesh" : "Shelves");
+    listHead->repaint();
+    seen = 0;
+    tick();
+    gApp->setFocusedWindow(msgEd);
+  }
+
+  void pick() {
+    if (coms) return;
+    int i = list->firstSelectedItem();
+    if (i >= 0 && i < (int)peers.size()) { current = peers[i].id; showConversation(); }
+  }
+
+  void showLines(const std::vector<ChatLine> & chat, bool showHops) {
+    std::vector<std::string> lines;
+    int w = view->visCols();
+    for (auto & c : chat) {
+      std::string head = (c.in ? c.who : std::string("Me")) + "  " + clockText(c.t);
+      if (showHops && c.in && c.hops) head += "  (" + std::to_string(c.hops) + " hop" + (c.hops == 1 ? ")" : "s)");
+      if (showHops && !c.in && c.receipts) head += "  - received by " + std::to_string(c.receipts);
+      if (c.failed) head += "  - NOT DELIVERED";
+      lines.push_back(c.in ? head : std::string(">> ") + head);
+      wrapText(c.text, w - 2, lines);
+      lines.push_back("");
+    }
+    if (chat.empty()) lines.push_back(coms ? "No mesh messages yet." : "No messages yet. Say hello!");
+    int vr = view->visRows();
+    view->setLines(std::move(lines));
+    view->top = imax(0, (int)view->lines.size() - vr);
+    view->repaint();
+  }
+
+  void showConversation() {
+    std::vector<ChatLine> chat;
+    std::string name;
+    for (auto & p : peers) if (p.id == current) name = p.name + (p.online ? "  (online)" : "  (offline)");
+    convHead->setText(name.empty() ? "Pick a Shelf on the left" : name.c_str());
+    convHead->repaint();
+    if (!current.empty()) msgConversation(current, chat);
+    showLines(chat, false);
+  }
+
+  void tick() {
+    uint32_t v = msgVersion();
+    if (coms) {
+      char b[160];
+      int ch = comsChannel();
+      snprintf(b, sizeof(b), comsUp() ? "Coms mesh on Wi-Fi channel %d. Shelf boards must be on the same channel to hear each other\n(boards on their own Wi-Fi use channel 1; boards on your home Wi-Fi use its channel)." : "The 2.4 GHz radio couldn't start the mesh.", ch);
+      if (strcmp(status->text(), b)) { status->setText(b); status->repaint(); }
+    } else {
+      std::string st = msgStatus();
+      if (st != status->text()) { status->setText(st.c_str()); status->repaint(); }
+    }
+    if (v == seen) return;
+    seen = v;
+    if (coms) {
+      std::vector<std::string> members;
+      comsMembers(members);
+      list->items().clear();
+      for (auto & m : members) list->items().append(m.c_str());
+      if (members.empty()) list->items().append("(none heard yet)");
+      list->repaint();
+      convHead->setText("Everyone on the mesh");
+      convHead->repaint();
+      std::vector<ChatLine> chat;
+      comsLog(chat);
+      comsMarkRead();
+      showLines(chat, true);
+    } else {
+      msgPeers(peers);
+      int sel = -1;
+      list->items().clear();
+      for (size_t i = 0; i < peers.size(); ++i) {
+        std::string l = std::string(peers[i].online ? "* " : "  ") + peers[i].name;
+        if (peers[i].unread) l += "  (" + std::to_string(peers[i].unread) + ")";
+        list->items().append(l.c_str());
+        if (peers[i].id == current) sel = i;
+      }
+      if (peers.empty()) list->items().append("(looking for Shelves...)");
+      if (sel < 0 && !peers.empty() && current.empty()) { sel = 0; current = peers[0].id; }
+      if (sel >= 0) list->selectItem(sel);
+      list->repaint();
+      showConversation();
+    }
+  }
+
+  void send() {
+    std::string t = msgEd->text();
+    if (t.empty()) return;
+    if (coms) comsSend(t);
+    else {
+      if (current.empty()) { status->setText("Pick who to send to first."); status->repaint(); return; }
+      msgSend(current, t);
+      status->setText("Sending...");
+      status->repaint();
+    }
+    msgEd->setText("");
+    msgEd->repaint();
+    gApp->setFocusedWindow(msgEd);
+  }
+};
+AppFrame * MessagesApp::inst = nullptr;
+
+void openMessages()
+{
+  if (!MessagesApp::inst) new MessagesApp();
+  MessagesApp::inst->open();
 }

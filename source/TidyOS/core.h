@@ -42,6 +42,7 @@ struct Settings {
   bool   dst;
   int    colors;      // 0 = auto, else 16 / 8 / 4
   String btNames;     // ';' separated names of paired keyboards / mice
+  String printer;     // last network printer address (ipp://...)
 };
 extern Settings gSet;
 void settingsLoad();
@@ -65,6 +66,7 @@ void openBrowser(const char * url = nullptr);
 void openFiles();
 void openSettings();
 void openSystem();
+void openMessages();
 
 extern fabgl::uiApp * gApp;
 

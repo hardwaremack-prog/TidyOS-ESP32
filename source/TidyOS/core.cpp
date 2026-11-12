@@ -7,6 +7,8 @@
 #include "input.h"
 #include "net.h"
 #include "style.h"
+#include "spell.h"
+#include "shelfmsg.h"
 
 using namespace fabgl;
 
@@ -34,6 +36,7 @@ void settingsLoad()
   gSet.dst       = s_prefs.getBool("dst", true);
   gSet.colors    = s_prefs.getInt("colors", 0);
   gSet.btNames   = s_prefs.getString("bt", "");
+  gSet.printer   = s_prefs.getString("printer", "");
 }
 
 void settingsSave()
@@ -46,6 +49,7 @@ void settingsSave()
   s_prefs.putBool("dst", gSet.dst);
   s_prefs.putInt("colors", gSet.colors);
   s_prefs.putString("bt", gSet.btNames);
+  s_prefs.putString("printer", gSet.printer);
 }
 
 // ====================================================================== storage
@@ -204,6 +208,12 @@ static const char * ART_SYS[16] = {
   "#aaaaaaaaaaaaaa#", "################", "......####......", "......#gg#......",
   "....########....", "....#gggggg#....", "....########....", "................" };
 
+static const char * ART_MSG[16] = {
+  "................", ".##############.", "#wwwwwwwwwwwwww#", "#wwwwwwwwwwwwww#",
+  "#ww#########www#", "#wwwwwwwwwwwwww#", "#ww######wwwwww#", "#wwwwwwwwwwwwww#",
+  "#wwwwwwwwwwwwww#", ".######ww######.", "......#ww#......", ".......#w#......",
+  "........##......", "................", "................", "................" };
+
 struct DeskIcon {
   const char *  label;
   const char ** art;      // pixel art, or nullptr for a glyph tile
@@ -225,6 +235,7 @@ static const DeskIcon ICONS[] = {
   { "Files",      ART_FILES, nullptr, openFiles },
   { "Settings",   ART_GEAR,  nullptr, openSettings },
   { "System",     ART_SYS,   nullptr, openSystem },
+  { "Messages",   ART_MSG,   nullptr, openMessages },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
 
@@ -266,6 +277,8 @@ public:
         {
           // refresh the welcome / pairing hint only when something changed
           std::string sig = inputStatus() + char('0' + inputKeyboards()) + char('0' + inputMice()) + (gSet.ssid.length() ? "w" : "-");
+          int unread = msgUnreadTotal() + comsUnread();
+          if (unread != m_unread) { m_unread = unread; repaintIcon(NICONS - 1); }
           if (sig != m_hintSig) {
             m_hintSig = sig;
             repaint(Rect(CELL_W * 2 + 20, 140, SCREEN_W - 1, 330));
@@ -279,6 +292,7 @@ public:
 
 private:
   int m_pressed = -1;
+  int m_unread = 0;
   std::string m_hintSig;
 
   Rect iconRect(int i) {
@@ -322,6 +336,18 @@ private:
       cv->setPenColor(T.accentText);
       cv->setBrushColor(i == 4 ? T.good : T.accent);
       cv->drawText(f, ix + 18 - w / 2, iy + 18 - f->height / 2, ic.glyph);
+    }
+    if (ic.open == openMessages) {
+      int unread = msgUnreadTotal() + comsUnread();
+      if (unread) {
+        char nb[8];
+        snprintf(nb, sizeof(nb), "%d", unread > 99 ? 99 : unread);
+        cv->setBrushColor(T.warn == T.text ? T.accent : T.warn);
+        cv->fillEllipse(ix + 32, iy + 4, 18, 18);
+        cv->setPenColor(T.accentText);
+        int nw = cv->textExtent(&FONT_std_12, nb);
+        cv->drawText(&FONT_std_12, ix + 32 - nw / 2, iy - 2, nb);
+      }
     }
     int w = cv->textExtent(&FONT_std_14, ic.label);
     cv->setPenColor(T.deskText);
@@ -380,7 +406,9 @@ private:
       std::string ns = netStatus();
       snprintf(b, sizeof(b), "%s", ns.c_str());
       cv->drawText(&FONT_std_12, 70, by + 4, b);
-      snprintf(b, sizeof(b), "Keyboard:%s  Mouse:%s  RAM %uK", inputKeyboards() ? "on" : "--", inputMice() ? "on" : "--",
+      std::string notice = msgLastNotice();
+      if (!notice.empty()) snprintf(b, sizeof(b), "%s", notice.substr(0, 40).c_str());
+      else snprintf(b, sizeof(b), "Keyboard:%s  Mouse:%s  RAM %uK", inputKeyboards() ? "on" : "--", inputMice() ? "on" : "--",
                (unsigned)(ESP.getFreeHeap() / 1024));
       cv->drawText(&FONT_std_12, 330, by + 4, b);
       time_t now = time(nullptr);
@@ -488,6 +516,8 @@ void setup()
     gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 4);
   }
   makeDirs();
+  spellBegin();
+  msgBegin();       // The Shelf messaging + Coms mesh
   splash("Starting...");
 }
 

@@ -32,6 +32,8 @@ public:
   std::function<void()>              onModified;
   std::function<void(int, int)>      onClickChar;     // row, col (read-only mode)
   std::function<bool(uiKeyEventInfo const &)> onKey;  // return true when handled
+  std::function<bool(const std::string &)> isMisspelled;   // set to underline spelling mistakes
+  int hlRow = -1, hlCol = 0, hlLen = 0;                    // highlighted word (spell check)
 
 private:
   void paint(Rect const & r);
@@ -42,6 +44,9 @@ private:
   int  textX0() { return 3; }
   int  textY0() { return 2; }
 };
+
+// word-wrap text into lines of at most `width` characters
+void wrapText(const std::string & text, int width, std::vector<std::string> & out);
 
 // ---------------------------------------------------------------- Spreadsheet model
 class Sheet {
