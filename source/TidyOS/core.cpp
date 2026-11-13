@@ -503,14 +503,95 @@ static void makeDirs()
   }
 }
 
-static void splash(const char * msg)
+// ---------------------------------------------------------------- boot logo
+// big text: draws each font pixel as a scale x scale square (runs merged per row)
+static void drawBig(Canvas & cv, FontInfo const * f, int x, int y, const char * t, int scale, RGB888 col)
+{
+  cv.setBrushColor(col);
+  for (; *t; ++t) {
+    uint8_t c = *t;
+    int gw;
+    const uint8_t * g;
+    if (f->flags & FONTINFOFLAGS_VARWIDTH) { g = f->data + f->chptr[c]; gw = *g++; }
+    else { gw = f->width; g = f->data + c * f->height * ((gw + 7) / 8); }
+    int bpr = (gw + 7) / 8;
+    for (int r = 0; r < f->height; ++r) {
+      const uint8_t * row = g + r * bpr;
+      int run = -1;
+      for (int i = 0; i <= gw; ++i) {
+        bool on = i < gw && (row[i >> 3] & (0x80 >> (i & 7)));
+        if (on && run < 0) run = i;
+        if (!on && run >= 0) {
+          cv.fillRectangle(x + run * scale, y + r * scale, x + i * scale - 1, y + (r + 1) * scale - 1);
+          run = -1;
+        }
+      }
+    }
+    x += gw * scale;
+  }
+}
+
+static int bigWidth(FontInfo const * f, const char * t, int scale)
+{
+  int w = 0;
+  for (; *t; ++t) w += (f->flags & FONTINFOFLAGS_VARWIDTH) ? f->data[f->chptr[(uint8_t)*t]] : f->width;
+  return w * scale;
+}
+
+// one block of the logo "T" (same style as the Blocks game)
+static void logoBlock(Canvas & cv, int x, int y, int s, RGB888 fill)
+{
+  cv.setBrushColor(T.text);
+  cv.fillRectangle(x, y, x + s - 1, y + s - 1);
+  cv.setBrushColor(fill);
+  cv.fillRectangle(x + 3, y + 3, x + s - 4, y + s - 4);
+  cv.setBrushColor(T.win);
+  cv.fillRectangle(x + 3, y + 3, x + s - 4, y + 6);
+  cv.fillRectangle(x + 3, y + 3, x + 6, y + s - 4);
+}
+
+static const int BAR_X = 170, BAR_Y = 360, BAR_W = 300, BAR_H = 14;
+
+static void splashLogo()
 {
   Canvas cv(s_dc);
   cv.setBrushColor(T.desk);
   cv.clear();
+  // the logo: a "T" made of five tidy blocks
+  int bs = 40, lx = 140, ly = 150;
+  logoBlock(cv, lx,          ly,      bs, T.face);
+  logoBlock(cv, lx + bs,     ly,      bs, T.face);
+  logoBlock(cv, lx + bs * 2, ly,      bs, T.face);
+  logoBlock(cv, lx + bs,     ly + bs, bs, T.face);
+  logoBlock(cv, lx + bs,     ly + bs * 2, bs, T.face);
+  // wordmark
+  int tx = lx + bs * 3 + 30;
+  drawBig(cv, &FONT_std_24, tx + 3, ly + 13, "TidyOS", 3, T.text);        // shadow
+  drawBig(cv, &FONT_std_24, tx, ly + 10, "TidyOS", 3, T.win);
   cv.setPenColor(T.deskText);
-  cv.drawText(&FONT_std_24, 240, 200, "TidyOS");
-  cv.drawText(&FONT_std_14, 240, 236, msg);
+  cv.setBrushColor(T.desk);
+  cv.drawText(&FONT_std_16, tx + 6, ly + 92, "A tiny computer for the ESP32");
+  // progress bar frame
+  cv.setPenColor(T.win);
+  cv.drawRectangle(BAR_X - 2, BAR_Y - 2, BAR_X + BAR_W + 1, BAR_Y + BAR_H + 1);
+  cv.setPenColor(T.deskText);
+  cv.drawText(&FONT_std_12, 8, SCREEN_H - 16, "TidyOS " TIDYOS_VERSION);
+  cv.waitCompletion();
+}
+
+static void splash(const char * msg, int percent)
+{
+  Canvas cv(s_dc);
+  cv.setBrushColor(T.desk);
+  cv.fillRectangle(BAR_X - 40, BAR_Y + 20, BAR_X + BAR_W + 40, BAR_Y + 40);
+  cv.setBrushColor(T.desk);
+  cv.fillRectangle(BAR_X, BAR_Y, BAR_X + BAR_W - 1, BAR_Y + BAR_H - 1);
+  cv.setBrushColor(T.win);
+  int w = BAR_W * percent / 100;
+  if (w > 0) cv.fillRectangle(BAR_X, BAR_Y, BAR_X + w - 1, BAR_Y + BAR_H - 1);
+  int tw = cv.textExtent(&FONT_std_14, msg);
+  cv.setPenColor(T.deskText);
+  cv.drawText(&FONT_std_14, BAR_X + BAR_W / 2 - tw / 2, BAR_Y + 22, msg);
   cv.waitCompletion();
 }
 
@@ -528,16 +609,20 @@ void setup()
   Serial.printf("[TidyOS] SD card %s\n", gSDMounted ? "mounted" : "not found - using internal flash");
 
   startDisplay();
+  splashLogo();
+  splash(gSDMounted ? "SD card found" : "No SD card - preparing internal storage...", 30);
 
-  if (!gSDMounted) {
-    splash("No SD card - preparing internal storage...");
-    gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 4);
-  }
+  if (!gSDMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 4);
   makeDirs();
+  splash("Loading the dictionary", 50);
   spellBegin();
+  splash("Looking for your Shelves", 70);
   msgBegin();       // The Shelf messaging + Coms mesh
   if (gSet.fileShare) fileServerSet(true);
-  splash("Starting...");
+  splash(gSet.ssid.length() ? "Joining Wi-Fi and Bluetooth" : "Starting Bluetooth", 90);
+  delay(400);
+  splash("Ready", 100);
+  delay(500);
 }
 
 void loop()

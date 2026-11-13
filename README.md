@@ -19,6 +19,12 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 
 ---
 
+## What it looks like
+
+![TidyOS previews](docs/previews/TidyOS-previews.png)
+
+*These are drawn previews made from TidyOS's own layouts, 4-colour palette and FabGL fonts, not photos of a running board. The real screen should look very close.*
+
 ## 1. Parts
 
 | Part | Notes |
