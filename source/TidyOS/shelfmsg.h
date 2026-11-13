@@ -50,3 +50,4 @@ bool        comsUp();
 int         comsChannel();
 int         comsUnread();
 void        comsMarkRead();
+void        comsCounts(int & sent, int & heard);   // ESP-NOW frames since start

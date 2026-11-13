@@ -19,6 +19,8 @@ bool     gSDMounted   = false;
 bool     gFlashMounted= false;
 Settings gSet;
 uiApp *  gApp = nullptr;
+volatile uint64_t gNetRx = 0, gNetTx = 0;
+volatile bool gOpenTaskMgr = false;
 
 static Preferences s_prefs;
 static BitmappedDisplayController * s_dc = nullptr;
@@ -250,7 +252,7 @@ static const DeskIcon ICONS[] = {
   { "Browser",    nullptr,   "www",   openBrowser0 },
   { "Files",      ART_FILES, nullptr, openFiles },
   { "Settings",   ART_GEAR,  nullptr, openSettings },
-  { "System",     ART_SYS,   nullptr, openSystem },
+  { "Task Manager", ART_SYS, nullptr, openSystem },
   { "Messages",   ART_MSG,   nullptr, openMessages },
   { "Games",      ART_GAMES, nullptr, openGames },
 };
@@ -290,6 +292,8 @@ public:
         }
         break;
       case UIEVT_TIMER:
+        if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
+        if (++m_tick % 4) break;
         repaint(Rect(0, SCREEN_H - BAR_H, SCREEN_W - 1, SCREEN_H - 1));
         {
           // refresh the welcome / pairing hint only when something changed
@@ -310,6 +314,7 @@ public:
 private:
   int m_pressed = -1;
   int m_unread = 0;
+  int m_tick = 0;
   std::string m_hintSig;
 
   Rect iconRect(int i) {
@@ -451,7 +456,7 @@ class TidyApp : public uiApp {
     gApp = this;
     rootWindow()->frameStyle().backgroundColor = T.desk;
     auto desk = new Desktop(rootWindow());
-    setTimer(desk, 1000);
+    setTimer(desk, 250);
     inputAttach(this, &s_keyboard, s_dc);
     displayController()->setMouseCursor(CursorName::CursorPointerSimpleReduced);
   }

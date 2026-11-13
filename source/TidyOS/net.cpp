@@ -379,6 +379,7 @@ static bool httpGet(const std::string & url0, std::function<bool(const char *, s
                       "\r\nUser-Agent: Mozilla/5.0 (TidyOS ESP32; text browser)\r\nAccept: text/html,text/plain;q=0.9,*/*;q=0.5\r\n"
                       "Accept-Encoding: identity\r\nConnection: close\r\n\r\n";
     c.write((const uint8_t *)req.data(), req.size());
+    gNetTx += req.size();
 
     std::string line;
     if (!readLine(c, line, 12000)) { err = "No answer from " + host; c.stop(); return false; }
@@ -411,6 +412,7 @@ static bool httpGet(const std::string & url0, std::function<bool(const char *, s
         int r = c.read((uint8_t *)buf, av > (int)sizeof(buf) ? sizeof(buf) : av);
         if (r <= 0) break;
         total += r;
+        gNetRx += r;
         lastData = millis();
         if (!sink(buf, r) || total > 400000) break;
       } else {

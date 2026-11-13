@@ -234,6 +234,7 @@ static bool httpPost(const std::string & ip, int port, const char * path, const 
   std::string req = std::string("POST ") + path + " HTTP/1.1\r\nHost: " + ip + ":" + std::to_string(port) +
                     "\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
   c.write((const uint8_t *)req.data(), req.size());
+  gNetTx += req.size();
   std::string resp;
   uint32_t t0 = millis();
   while (millis() - t0 < timeoutMs + 2000 && (c.connected() || c.available())) {
@@ -241,6 +242,7 @@ static bool httpPost(const std::string & ip, int port, const char * path, const 
     delay(5);
   }
   c.stop();
+  gNetRx += resp.size();
   int code = 0;
   size_t sp = resp.find(' ');
   if (sp != std::string::npos) code = atoi(resp.c_str() + sp + 1);
@@ -355,6 +357,7 @@ static void handleHttp()
   std::string body;
   bool hadImage = false;
   if (len > 0) readBodyNoImages(c, std::min(len, 4000000L), body, hadImage);
+  gNetRx += len + line.size();
 
   if (method == "OPTIONS") { reply(c, 200, "{}"); }
   else if (path == "/api/messaging/identity") {
@@ -416,6 +419,7 @@ static int       s_seenPos = 0;
 static std::vector<ChatLine> s_coms;
 static std::vector<uint32_t> s_comsIds;     // message id for each s_coms entry
 static int       s_comsUnread = 0;
+static volatile int s_nowSent = 0, s_nowHeard = 0;
 struct Member { uint32_t node; std::string name; uint32_t atMs; int hops; };
 static std::vector<Member> s_members;
 static uint32_t  s_lastWhoAnswer = 0, s_lastSyncAsk = 0, s_lastHello = 0, s_bootMs = 0;
@@ -663,6 +667,7 @@ static void comsPoll()
     p = s_ring[s_rr % 8];
     s_rr++;
     portEXIT_CRITICAL(&s_ringMux);
+    s_nowHeard++;
     handleNowPacket(p.buf, p.len);
   }
   // due transmissions
@@ -675,7 +680,7 @@ static void comsPoll()
       else ++it;
     }
   }
-  for (auto & t : due) esp_now_send(BCAST, t.buf, t.len);
+  for (auto & t : due) if (esp_now_send(BCAST, t.buf, t.len) == ESP_OK) s_nowSent++;
   // periodic hello + first catch-up
   if (millis() - s_lastHello > 15UL * 60 * 1000 || (s_lastHello == 0 && millis() - s_bootMs > 4000)) sendHello();
   if (s_lastSyncAsk == 0 && millis() - s_bootMs > 6000) askCatchUp();
@@ -926,4 +931,5 @@ int comsChannel()
 }
 
 int  comsUnread()   { return s_comsUnread; }
+void comsCounts(int & sent, int & heard) { sent = s_nowSent; heard = s_nowHeard; }
 void comsMarkRead() { s_comsUnread = 0; }

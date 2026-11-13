@@ -72,6 +72,8 @@ void openGames();
 void openRugged();
 
 extern fabgl::uiApp * gApp;
+extern volatile uint64_t gNetRx, gNetTx;     // TidyOS network traffic since start (bytes)
+extern volatile bool gOpenTaskMgr;           // Ctrl+Shift+Esc pressed
 
 // Helpers used by every app window
 Point clientOrigin(fabgl::uiFrame * f);   // top-left of the client area in window coords

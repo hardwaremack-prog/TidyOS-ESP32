@@ -125,6 +125,7 @@ static void send(WiFiClient & c, int code, const char * type, const std::string 
            code, code == 200 ? "OK" : "Error", type, (unsigned)body.size(), extra);
   c.write((const uint8_t *)h, strlen(h));
   for (size_t i = 0; i < body.size(); i += 1400) c.write((const uint8_t *)body.data() + i, std::min((size_t)1400, body.size() - i));
+  gNetTx += body.size();
 }
 
 static void sendErr(WiFiClient & c, int code, const std::string & msg) { send(c, code, "application/json", "{\"error\":\"" + jsonEsc(msg) + "\"}"); }
@@ -191,6 +192,7 @@ static void sendFile(WiFiClient & c, const std::string & path, bool download)
   size_t n;
   while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
     if (c.write(buf, n) != n) break;
+    gNetTx += n;
   }
   fclose(f);
 }
@@ -216,6 +218,7 @@ static void receiveFile(WiFiClient & c, const std::string & path, long len)
     if (r <= 0) continue;
     if (fwrite(buf, 1, r, f) != (size_t)r) { ok = false; break; }
     got += r;
+    gNetRx += r;
     last = millis();
   }
   fclose(f);

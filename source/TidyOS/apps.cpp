@@ -1239,62 +1239,7 @@ void openSettings()
   SettingsApp::inst->open();
 }
 
-// ====================================================================== System
-
-class SystemApp : public AppFrame {
-public:
-  static AppFrame * inst;
-  TextArea * view;
-
-  SystemApp() : AppFrame("System", nextPos(400, 330), Size(400, 330), &inst) {
-    view = new TextArea(this, Point(cx, cy), Size(380, 254), false);
-    view->setFocusIndex(-1);
-    button("Restart", cx + 280, cy + 262, 100, 24)->onClick = []() {
-      if (gApp->messageBox("Restart", "Restart TidyOS now? Unsaved work will be lost.", "Restart", "Cancel", nullptr, uiMessageBoxIcon::Warning) == uiMessageBoxResult::Button1)
-        ESP.restart();
-    };
-    label("TidyOS " TIDYOS_VERSION "  -  FabGL + NimBLE", cx, cy + 266, 260, 18)->labelStyle().textFont = &FONT_std_12;
-    startTimer(1000);
-    onTimer = [this](uiTimerHandle) { update(); };
-    update();
-  }
-
-  void update() {
-    std::vector<std::string> l;
-    char b[96];
-    uint32_t up = millis() / 1000;
-    snprintf(b, sizeof(b), "Up time        %uh %02um %02us", up / 3600, (up / 60) % 60, up % 60); l.push_back(b);
-    snprintf(b, sizeof(b), "Screen         640 x 480, %d colours", gColors); l.push_back(b);
-    snprintf(b, sizeof(b), "CPU            ESP32 %u MHz, 2 cores", (unsigned)getCpuFrequencyMhz()); l.push_back(b);
-    snprintf(b, sizeof(b), "Free RAM       %u KB", (unsigned)(ESP.getFreeHeap() / 1024)); l.push_back(b);
-    snprintf(b, sizeof(b), "Biggest block  %u KB", (unsigned)(ESP.getMaxAllocHeap() / 1024)); l.push_back(b);
-    snprintf(b, sizeof(b), "Lowest free    %u KB", (unsigned)(ESP.getMinFreeHeap() / 1024)); l.push_back(b);
-    snprintf(b, sizeof(b), "Flash          %u MB", (unsigned)(ESP.getFlashChipSize() >> 20)); l.push_back(b);
-    l.push_back("");
-    l.push_back("Wi-Fi          " + netStatus());
-    if (netConnected()) { snprintf(b, sizeof(b), "Signal         %d dBm", (int)WiFi.RSSI()); l.push_back(b); }
-    snprintf(b, sizeof(b), "Bluetooth      %d keyboard(s), %d mouse/mice", inputKeyboards(), inputMice()); l.push_back(b);
-    l.push_back("");
-    int64_t total = 0, used = 0;
-    if (gSDMounted && FileBrowser::getFSInfo(DriveType::SDCard, 0, &total, &used)) {
-      snprintf(b, sizeof(b), "SD card        %lld MB free of %lld MB", (total - used) >> 20, total >> 20); l.push_back(b);
-    } else if (gFlashMounted && FileBrowser::getFSInfo(DriveType::SPIFFS, 0, &total, &used)) {
-      snprintf(b, sizeof(b), "Storage        internal flash, %lld KB free", (total - used) >> 10); l.push_back(b);
-    } else {
-      l.push_back("Storage        none");
-    }
-    int top = view->top;
-    view->setLines(std::move(l));
-    view->top = top;
-  }
-};
-AppFrame * SystemApp::inst = nullptr;
-
-void openSystem()
-{
-  if (!SystemApp::inst) new SystemApp();
-  SystemApp::inst->open();
-}
+// ====================================================================== Task Manager -> see taskmgr section at the end
 
 // ====================================================================== Messages (The Shelf + Coms mesh)
 
@@ -1780,4 +1725,457 @@ void openRugged()
 {
   if (!RuggedApp::inst) new RuggedApp();
   RuggedApp::inst->open();
+}
+
+// ====================================================================== Task Manager
+
+#include <esp_freertos_hooks.h>
+#include <esp_system.h>
+#include <esp_ota_ops.h>
+#include <esp_wifi.h>
+#include <nvs.h>
+#include <dirent.h>
+#include "ping/ping_sock.h"
+#include "freertos/task_snapshot.h"
+#include "lwip/inet.h"
+
+// ---- CPU load from idle time: each core's idle task counts while it has nothing to do
+static volatile uint32_t s_idleCount[2] = { 0, 0 };
+static bool idleHook0() { s_idleCount[0]++; return false; }
+static bool idleHook1() { s_idleCount[1]++; return false; }
+
+// ---- ping to the router
+static esp_ping_handle_t s_ping = nullptr;
+static volatile int s_pingMs = -1, s_pingSent = 0, s_pingLost = 0;
+static void pingOk(esp_ping_handle_t h, void *) { uint32_t t = 0; esp_ping_get_profile(h, ESP_PING_PROF_TIMEGAP, &t, sizeof(t)); s_pingMs = t; s_pingSent++; }
+static void pingTimeout(esp_ping_handle_t, void *) { s_pingLost++; s_pingSent++; }
+
+class Graph : public uiControl {
+public:
+  static const int N = 60;
+  float a[N], b[N];       // two series (b < 0 = unused)
+  int n = 0;
+  bool two;
+  RGB888 ca, cb;
+  Graph(uiWindow * p, Point pos, Size sz, bool twoLines) : uiControl(p, pos, sz, true, 0), two(twoLines) {
+    windowStyle().borderSize = 1; windowStyle().borderColor = T.shadow; windowStyle().activeBorderColor = T.shadow;
+    setFocusIndex(-1);
+    ca = T.accent; cb = T.text;
+    for (int i = 0; i < N; ++i) a[i] = b[i] = -1;
+  }
+  void push(float va, float vb = -1) {
+    memmove(a, a + 1, sizeof(float) * (N - 1)); memmove(b, b + 1, sizeof(float) * (N - 1));
+    a[N - 1] = va; b[N - 1] = vb;
+    repaint();
+  }
+  void processEvent(uiEvent * e) override {
+    uiControl::processEvent(e);
+    if (e->id != UIEVT_PAINT) return;
+    Rect r = clientRect(uiOrigin::Window);
+    beginPaint(e, r);
+    auto cv = canvas();
+    cv->setBrushColor(T.win);
+    cv->fillRectangle(r.X1, r.Y1, r.X2, r.Y2);
+    cv->setPenColor(T.face);
+    for (int k = 1; k < 4; ++k) { int y = r.Y1 + r.height() * k / 4; cv->drawLine(r.X1, y, r.X2, y); }
+    for (int k = 1; k < 6; ++k) { int x = r.X1 + r.width() * k / 6; cv->drawLine(x, r.Y1, x, r.Y2); }
+    auto plot = [&](float * v, RGB888 c) {
+      cv->setPenColor(c);
+      int px = -1, py = 0;
+      for (int i = 0; i < N; ++i) {
+        if (v[i] < 0) { px = -1; continue; }
+        int x = r.X1 + (r.width() - 1) * i / (N - 1);
+        int y = r.Y2 - (int)((r.height() - 1) * fmin(100, v[i]) / 100);
+        if (px >= 0) { cv->drawLine(px, py, x, y); cv->drawLine(px, py - 1, x, y - 1); }
+        px = x; py = y;
+      }
+    };
+    if (two) plot(b, cb);
+    plot(a, ca);
+  }
+};
+
+static std::string kb(uint64_t v) { char b[24]; if (v >= 10ULL << 20) snprintf(b, sizeof(b), "%.1f MB", v / 1048576.0); else snprintf(b, sizeof(b), "%.1f KB", v / 1024.0); return b; }
+
+static std::string bar(double frac, int width = 24)
+{
+  int n = (int)(fmax(0, fmin(1, frac)) * width + 0.5);
+  return "[" + std::string(n, '\xDB') + std::string(width - n, '\xB0') + "]";
+}
+
+static void dirSize(const std::string & path, uint64_t & bytes, int & files, int depth = 0)
+{
+  DIR * d = opendir(path.c_str());
+  if (!d) return;
+  struct dirent * e;
+  while ((e = readdir(d)) != nullptr) {
+    std::string n = e->d_name;
+    if (n == "." || n == "..") continue;
+    std::string full = path + "/" + n;
+    if (e->d_type == DT_DIR) { if (depth < 4) dirSize(full, bytes, files, depth + 1); }
+    else { struct stat st; if (stat(full.c_str(), &st) == 0) bytes += st.st_size; ++files; }
+  }
+  closedir(d);
+}
+
+static const char * taskInfo(const char * n)
+{
+  static const char * map[][2] = {
+    { "loopTask", "TidyOS desktop and apps" }, { "IDLE", "Idle (free time)" }, { "IDLE0", "Idle core 0" }, { "IDLE1", "Idle core 1" },
+    { "nimble_host", "Bluetooth host" }, { "btController", "Bluetooth radio" }, { "ble", "Keyboard/mouse manager" },
+    { "keyrep", "Key repeat" }, { "serkbd", "Serial keyboard" }, { "wifi", "Wi-Fi driver" }, { "tiT", "TCP/IP network" },
+    { "sys_evt", "System events" }, { "esp_timer", "System timers" }, { "Tmr Svc", "Timer service" }, { "ipc0", "Core 0 helper" },
+    { "ipc1", "Core 1 helper" }, { "shelfmsg", "Shelf messaging + mesh" }, { "fileweb", "File sharing server" },
+    { "fetch", "Browser download" }, { "print", "Printing" }, { "findprn", "Printer search" }, { "mdns", "tidyos.local name" },
+    { "ping", "Router ping" }, { "msgadd", "Shelf lookup" }, { "FabGL", "Screen drawing" },
+  };
+  for (auto & m : map) if (!strcmp(m[0], n)) return m[1];
+  return "";
+}
+
+class TaskManagerApp : public AppFrame {
+public:
+  static AppFrame * inst;
+  uiButton * tabs[6];
+  uiPanel  * panes[6];
+  int        tab = 0;
+  Graph    * cpuGraph, * ramGraph;
+  uiLabel  * cpuLbl[2], * ramLbl, * summary, * summary2;
+  uiListBox * appList;
+  std::vector<uiFrame *> appWins;
+  TextArea * tasksView, * netView, * storeView, * powerView;
+  uint32_t lastIdle[2] = { 0, 0 };
+  float maxIdle[2] = { 1, 1 };
+  int ticks = 0;
+  bool hooks = false;
+
+  uiPanel * pane(int i) {
+    auto p = new uiPanel(this, Point(cx, cy + 30), Size(612, 386), false);
+    p->panelStyle().backgroundColor = T.win;
+    p->windowStyle().borderSize = 0;
+    return panes[i] = p;
+  }
+  template <class W> W * add(W * w) { applyStyle(w); return w; }
+
+  TaskManagerApp() : AppFrame("Task Manager", Point(4, 4), Size(632, 452), &inst) {
+    static const char * names[6] = { "Performance", "Apps", "Tasks", "Network", "Storage", "Power & info" };
+    int x = cx;
+    for (int i = 0; i < 6; ++i) {
+      int w = (i == 5) ? 100 : 98;
+      tabs[i] = button(names[i], x, cy, w);
+      tabs[i]->onClick = [this, i]() { show(i); };
+      x += w + 4;
+    }
+    // Performance
+    auto p = pane(0);
+    add(new uiLabel(p, "CPU  (blue = core 0: radios,  black = core 1: screen + apps)", Point(0, 0), Size(612, 18)));
+    cpuGraph = new Graph(p, Point(0, 20), Size(430, 130), true);
+    cpuLbl[0] = add(new uiLabel(p, "", Point(440, 30), Size(170, 26))); cpuLbl[0]->labelStyle().textFont = &FONT_std_18;
+    cpuLbl[1] = add(new uiLabel(p, "", Point(440, 64), Size(170, 26))); cpuLbl[1]->labelStyle().textFont = &FONT_std_18;
+    add(new uiLabel(p, "Memory in use (RAM)", Point(0, 160), Size(300, 18)));
+    ramGraph = new Graph(p, Point(0, 180), Size(430, 110), false);
+    ramLbl = add(new uiLabel(p, "", Point(440, 190), Size(170, 26))); ramLbl->labelStyle().textFont = &FONT_std_18;
+    summary = add(new uiLabel(p, "", Point(0, 300), Size(612, 16)));
+    summary->labelStyle().textFont = &FONT_std_12;
+    summary2 = add(new uiLabel(p, "", Point(0, 316), Size(612, 16)));
+    summary2->labelStyle().textFont = &FONT_std_12;
+    // Apps
+    p = pane(1);
+    add(new uiLabel(p, "Open apps", Point(0, 0), Size(300, 18)));
+    appList = add(new uiListBox(p, Point(0, 20), Size(440, 300)));
+    appList->items().takeStrings();
+    add(new uiButton(p, "Switch to", Point(450, 20), Size(150, 26)))->onClick = [this]() {
+      int i = appList->firstSelectedItem();
+      if (i >= 0 && i < (int)appWins.size()) bringToFront(appWins[i]);
+    };
+    add(new uiButton(p, "End task", Point(450, 54), Size(150, 26)))->onClick = [this]() {
+      int i = appList->firstSelectedItem();
+      if (i >= 0 && i < (int)appWins.size()) { uiEvent evt(appWins[i], UIEVT_CLOSE); gApp->postEvent(&evt); }
+    };
+    add(new uiLabel(p, "End task closes the app. Apps with unsaved work ask first.", Point(0, 330), Size(600, 18)))->labelStyle().textFont = &FONT_std_12;
+    add(new uiLabel(p, "Tip: Ctrl+Shift+Esc opens the Task Manager from anywhere.", Point(0, 350), Size(600, 18)))->labelStyle().textFont = &FONT_std_12;
+    // Tasks, Network, Storage, Power: text views
+    p = pane(2); tasksView = new TextArea(p, Point(0, 0), Size(612, 386), false);
+    p = pane(3); netView   = new TextArea(p, Point(0, 0), Size(612, 386), false);
+    p = pane(4); storeView = new TextArea(p, Point(0, 0), Size(612, 386), false);
+    p = pane(5); powerView = new TextArea(p, Point(0, 0), Size(612, 386), false);
+
+    // CPU meters
+    esp_register_freertos_idle_hook_for_cpu(idleHook0, 0);
+    esp_register_freertos_idle_hook_for_cpu(idleHook1, 1);
+    hooks = true;
+    lastIdle[0] = s_idleCount[0]; lastIdle[1] = s_idleCount[1];
+    startPing();
+    startTimer(1000);
+    onTimer = [this](uiTimerHandle) { tick(); };
+    show(0);
+  }
+
+  void onClosing() override {
+    if (hooks) { esp_deregister_freertos_idle_hook_for_cpu(idleHook0, 0); esp_deregister_freertos_idle_hook_for_cpu(idleHook1, 1); hooks = false; }
+    stopPing();
+  }
+
+  void startPing() {
+    if (s_ping || !netConnected()) return;
+    esp_ping_config_t cfg = ESP_PING_DEFAULT_CONFIG();
+    ip_addr_t gw;
+    if (!ipaddr_aton(WiFi.gatewayIP().toString().c_str(), &gw)) return;
+    cfg.target_addr = gw;
+    cfg.count = ESP_PING_COUNT_INFINITE;
+    cfg.interval_ms = 2000;
+    cfg.timeout_ms = 1500;
+    cfg.task_stack_size = 2560;
+    esp_ping_callbacks_t cbs = {};
+    cbs.on_ping_success = pingOk;
+    cbs.on_ping_timeout = pingTimeout;
+    s_pingMs = -1; s_pingSent = s_pingLost = 0;
+    if (esp_ping_new_session(&cfg, &cbs, &s_ping) == ESP_OK) esp_ping_start(s_ping);
+    else s_ping = nullptr;
+  }
+  void stopPing() { if (s_ping) { esp_ping_stop(s_ping); esp_ping_delete_session(s_ping); s_ping = nullptr; } }
+
+  void show(int i) {
+    tab = i;
+    for (int k = 0; k < 6; ++k) {
+      gApp->showWindow(panes[k], k == i);
+      tabs[k]->buttonStyle().backgroundColor = k == i ? T.accent : T.face;
+      tabs[k]->buttonStyle().textColor       = k == i ? T.accentText : T.text;
+      tabs[k]->repaint();
+    }
+    refresh(true);
+  }
+
+  void tick() {
+    // CPU: compare this second's idle count with the most we've seen in one second
+    float load[2];
+    for (int c = 0; c < 2; ++c) {
+      uint32_t now = s_idleCount[c], d = now - lastIdle[c];
+      lastIdle[c] = now;
+      if (d > maxIdle[c]) maxIdle[c] = d;
+      load[c] = maxIdle[c] > 1 ? 100.0f * (1.0f - d / maxIdle[c]) : 0;
+      maxIdle[c] *= 0.9995f;                 // slowly forget, in case the quiet moment was unusual
+    }
+    if (++ticks < 2) { load[0] = load[1] = -1; }
+    cpuGraph->push(load[0], load[1]);
+    char b[64];
+    for (int c = 0; c < 2; ++c) {
+      if (load[c] < 0) snprintf(b, sizeof(b), "Core %d: ...", c);
+      else snprintf(b, sizeof(b), "Core %d: %d%%", c, (int)(load[c] + 0.5f));
+      cpuLbl[c]->setText(b); cpuLbl[c]->repaint();
+    }
+    size_t total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL), freeB = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    float ramPct = total ? 100.0f * (total - freeB) / total : 0;
+    ramGraph->push(ramPct);
+    snprintf(b, sizeof(b), "%d%% used", (int)(ramPct + 0.5f));
+    ramLbl->setText(b); ramLbl->repaint();
+    if (!s_ping && netConnected()) startPing();
+    refresh(false);
+  }
+
+  void refresh(bool force) {
+    if (tab == 0) perfSummary();
+    else if (tab == 1) listApps();
+    else if (tab == 2 && (force || ticks % 2 == 0)) listTasks();
+    else if (tab == 3) network();
+    else if (tab == 4 && (force || ticks % 5 == 0)) storage();
+    else if (tab == 5 && (force || ticks % 2 == 0)) power();
+  }
+
+  static void setLinesKeep(TextArea * v, std::vector<std::string> && l) { int t = v->top; v->setLines(std::move(l)); v->top = imin(t, imax(0, (int)v->lines.size() - 1)); v->repaint(); }
+
+  void perfSummary() {
+    char b[300];
+    uint32_t up = millis() / 1000;
+    snprintf(b, sizeof(b), "Up %uh %02um %02us    CPU %u MHz x 2 cores    Tasks running: %u",
+             up / 3600, (up / 60) % 60, up % 60, (unsigned)getCpuFrequencyMhz(), (unsigned)uxTaskGetNumberOfTasks());
+    summary->setText(b); summary->repaint();
+    snprintf(b, sizeof(b), "Free RAM %s   (biggest piece %s, lowest ever %s)",
+             kb(ESP.getFreeHeap()).c_str(), kb(ESP.getMaxAllocHeap()).c_str(), kb(ESP.getMinFreeHeap()).c_str());
+    summary2->setText(b); summary2->repaint();
+  }
+
+  void listApps() {
+    std::vector<uiFrame *> wins;
+    for (uiWindow * w = gApp->rootWindow()->firstChild(); w; w = w->next())
+      if (w->objectType().uiFrame && w->state().visible && w != this) wins.push_back((uiFrame *)w);
+    bool same = wins == appWins;
+    appWins = wins;
+    if (same && appList->items().count() == (int)wins.size()) return;
+    int sel = appList->firstSelectedItem();
+    appList->items().clear();
+    for (auto w : appWins) appList->items().append(w->title() ? w->title() : "(window)");
+    if (sel >= 0 && sel < (int)appWins.size()) appList->selectItem(sel);
+    appList->repaint();
+  }
+
+  void listTasks() {
+    struct TI { TaskHandle_t h; const char * name; UBaseType_t prio; uint32_t stack; eTaskState state; };
+    UBaseType_t n = uxTaskGetNumberOfTasks();
+    std::vector<TaskSnapshot_t> snap(n + 4);
+    UBaseType_t tcb = 0;
+    n = uxTaskGetSnapshotAll(snap.data(), snap.size(), &tcb);
+    std::vector<TI> st;
+    for (UBaseType_t i = 0; i < n; ++i) {
+      TaskHandle_t h = (TaskHandle_t)snap[i].pxTCB;
+      st.push_back({ h, pcTaskGetName(h), uxTaskPriorityGet(h), (uint32_t)uxTaskGetStackHighWaterMark(h), eTaskGetState(h) });
+    }
+    std::sort(st.begin(), st.end(), [](const TI & a, const TI & b) { return a.prio > b.prio; });
+    std::vector<std::string> l;
+    char b[120];
+    snprintf(b, sizeof(b), "%u tasks running on 2 cores (FreeRTOS)", (unsigned)n); l.push_back(b);
+    l.push_back("");
+    l.push_back("Task          Core Prio  Stack left  State     What it does");
+    l.push_back("------------- ---- ----  ----------  --------  ---------------------------");
+    static const char * states[] = { "Running", "Ready", "Waiting", "Paused", "Ending", "?" };
+    for (size_t i = 0; i < st.size(); ++i) {
+      BaseType_t core = xTaskGetAffinity(st[i].h);
+      char cs[6];
+      if (core == tskNO_AFFINITY) strcpy(cs, "any"); else snprintf(cs, sizeof(cs), "%d", (int)core);
+      int sidx = st[i].state <= eDeleted ? st[i].state : 5;
+      snprintf(b, sizeof(b), "%-13.13s %4s %4u  %7u B  %-8s  %s", st[i].name, cs, (unsigned)st[i].prio,
+               (unsigned)st[i].stack, states[sidx], taskInfo(st[i].name));
+      l.push_back(b);
+    }
+    l.push_back("");
+    l.push_back("Stack left = the least free stack space each task has had (low = close to running out).");
+    setLinesKeep(tasksView, std::move(l));
+  }
+
+  void network() {
+    std::vector<std::string> l;
+    char b[140];
+    bool on = netConnected();
+    l.push_back("WI-FI");
+    if (on) {
+      int rssi = WiFi.RSSI();
+      int bars = rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : rssi >= -85 ? 1 : 0;
+      snprintf(b, sizeof(b), "  Network     %s", WiFi.SSID().c_str()); l.push_back(b);
+      snprintf(b, sizeof(b), "  Signal      %d dBm  %s  %s", rssi, bar(bars / 4.0, 8).c_str(), bars >= 3 ? "good" : bars == 2 ? "fair" : "weak"); l.push_back(b);
+      snprintf(b, sizeof(b), "  Channel     %d   (2.4 GHz)    Router %s", (int)WiFi.channel(), WiFi.BSSIDstr().c_str()); l.push_back(b);
+      snprintf(b, sizeof(b), "  Address     %s  (tidyos.local)", WiFi.localIP().toString().c_str()); l.push_back(b);
+      snprintf(b, sizeof(b), "  Subnet      %s    Gateway %s", WiFi.subnetMask().toString().c_str(), WiFi.gatewayIP().toString().c_str()); l.push_back(b);
+      snprintf(b, sizeof(b), "  DNS         %s", WiFi.dnsIP().toString().c_str()); l.push_back(b);
+      if (s_pingMs >= 0) snprintf(b, sizeof(b), "  Router ping %d ms    lost %d of %d", (int)s_pingMs, (int)s_pingLost, (int)s_pingSent);
+      else snprintf(b, sizeof(b), "  Router ping waiting...");
+      l.push_back(b);
+    } else {
+      l.push_back(gSet.ssid.length() ? "  Not connected - trying to join " + std::string(gSet.ssid.c_str()) : "  Not set up - open Settings to join your Wi-Fi");
+    }
+    snprintf(b, sizeof(b), "  This board  MAC %s", WiFi.macAddress().c_str()); l.push_back(b);
+    int8_t pw = 0; esp_wifi_get_max_tx_power(&pw);
+    snprintf(b, sizeof(b), "  Radio power %.1f dBm", pw / 4.0); l.push_back(b);
+    l.push_back("");
+    l.push_back("TIDYOS TRAFFIC SINCE START");
+    snprintf(b, sizeof(b), "  Received    %s", kb(gNetRx).c_str()); l.push_back(b);
+    snprintf(b, sizeof(b), "  Sent        %s", kb(gNetTx).c_str()); l.push_back(b);
+    l.push_back("");
+    l.push_back("SHELVES AND MESH");
+    std::vector<MsgPeer> peers;
+    msgPeers(peers);
+    int onl = 0; for (auto & p : peers) if (p.online) ++onl;
+    snprintf(b, sizeof(b), "  Shelves     %d online, %d known", onl, (int)peers.size()); l.push_back(b);
+    for (auto & p : peers) if (p.online) { snprintf(b, sizeof(b), "    * %-24.24s %s:%d", p.name.c_str(), p.ip.c_str(), p.port); l.push_back(b); }
+    int sent = 0, heard = 0;
+    comsCounts(sent, heard);
+    std::vector<std::string> mem;
+    comsMembers(mem);
+    snprintf(b, sizeof(b), "  Coms mesh   %s, channel %d, %d boards, %d sent, %d heard", comsUp() ? "on" : "off", comsChannel(), (int)mem.size(), sent, heard); l.push_back(b);
+    std::string u = fileServerUrl();
+    l.push_back("  File share  " + (u.empty() ? std::string(fileServerOn() ? "on (waiting for Wi-Fi)" : "off") : "on at " + u));
+    l.push_back("  Helper      " + (gSet.proxy.length() ? std::string(gSet.proxy.c_str()) : std::string("not set (browser uses FrogFind)")));
+    l.push_back("");
+    l.push_back("BLUETOOTH");
+    snprintf(b, sizeof(b), "  %d keyboard(s), %d mouse/mice connected", inputKeyboards(), inputMice()); l.push_back(b);
+    l.push_back("  " + inputStatus());
+    setLinesKeep(netView, std::move(l));
+  }
+
+  void storage() {
+    std::vector<std::string> l;
+    char b[140];
+    int64_t total = 0, used = 0;
+    l.push_back("SD CARD");
+    if (gSDMounted && FileBrowser::getFSInfo(DriveType::SDCard, 0, &total, &used)) {
+      snprintf(b, sizeof(b), "  %s  %s used of %s  (%s free)", bar(total ? (double)used / total : 0).c_str(), kb(used).c_str(), kb(total).c_str(), kb(total - used).c_str()); l.push_back(b);
+      uint64_t bytes = 0; int files = 0;
+      dirSize(SD_MOUNT "/Documents", bytes, files);
+      snprintf(b, sizeof(b), "  Documents   %d files, %s", files, kb(bytes).c_str()); l.push_back(b);
+      bytes = 0; files = 0;
+      dirSize(SD_MOUNT "/tidyos", bytes, files);
+      snprintf(b, sizeof(b), "  TidyOS data %d files, %s (lists, bills, messages, settings)", files, kb(bytes).c_str()); l.push_back(b);
+    } else l.push_back("  No SD card");
+    if (gFlashMounted && FileBrowser::getFSInfo(DriveType::SPIFFS, 0, &total, &used)) {
+      l.push_back(""); l.push_back("INTERNAL STORAGE (used because there's no SD card)");
+      snprintf(b, sizeof(b), "  %s  %s used of %s", bar(total ? (double)used / total : 0).c_str(), kb(used).c_str(), kb(total).c_str()); l.push_back(b);
+    }
+    l.push_back("");
+    l.push_back("FLASH CHIP");
+    uint32_t flash = ESP.getFlashChipSize();
+    const esp_partition_t * app = esp_ota_get_running_partition();
+    uint32_t sketch = ESP.getSketchSize();
+    snprintf(b, sizeof(b), "  Size        %s at %u MHz", kb(flash).c_str(), (unsigned)(ESP.getFlashChipSpeed() / 1000000)); l.push_back(b);
+    if (app) { snprintf(b, sizeof(b), "  TidyOS      %s  %s of %s", bar((double)sketch / app->size).c_str(), kb(sketch).c_str(), kb(app->size).c_str()); l.push_back(b); }
+    l.push_back("              (includes the 78,000-word dictionary and the Rugged guide)");
+    nvs_stats_t ns;
+    if (nvs_get_stats(nullptr, &ns) == ESP_OK) {
+      snprintf(b, sizeof(b), "  Settings    %s  %u of %u slots", bar(ns.total_entries ? (double)ns.used_entries / ns.total_entries : 0).c_str(), (unsigned)ns.used_entries, (unsigned)ns.total_entries);
+      l.push_back(b);
+    }
+    l.push_back("");
+    l.push_back("MEMORY (RAM)");
+    size_t tot = heap_caps_get_total_size(MALLOC_CAP_INTERNAL), fr = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    snprintf(b, sizeof(b), "  %s  %s used of %s", bar(tot ? (double)(tot - fr) / tot : 0).c_str(), kb(tot - fr).c_str(), kb(tot).c_str()); l.push_back(b);
+    int fb = gColors == 8 ? 640 * 480 * 3 / 8 : 640 * 480 / 4;
+    snprintf(b, sizeof(b), "  Screen      %s  (640x480, %d colours)", kb(fb).c_str(), gColors); l.push_back(b);
+    snprintf(b, sizeof(b), "  Free        %s   biggest piece %s   lowest ever %s", kb(fr).c_str(), kb(ESP.getMaxAllocHeap()).c_str(), kb(ESP.getMinFreeHeap()).c_str()); l.push_back(b);
+    snprintf(b, sizeof(b), "  DMA-able    %s free", kb(heap_caps_get_free_size(MALLOC_CAP_DMA)).c_str()); l.push_back(b);
+    l.push_back("  Extra RAM   none (this board has no PSRAM)");
+    setLinesKeep(storeView, std::move(l));
+  }
+
+  void power() {
+    std::vector<std::string> l;
+    char b[140];
+    // rough current estimate from what is switched on (this board has no power sensor)
+    int ma = 45 + (getCpuFrequencyMhz() >= 240 ? 20 : 0);          // two busy cores (the screen keeps one busy)
+    bool wifiOn = netConnected();
+    if (wifiOn) ma += 45; else if (gSet.ssid.length()) ma += 70;    // searching costs more than staying connected
+    int bt = inputKeyboards() + inputMice();
+    ma += bt * 8 + (inputScanning() ? 25 : 0);
+    if (comsUp()) ma += 5;
+    if (gSDMounted) ma += 3;
+    l.push_back("POWER (estimate - the NodeMCU has no power meter)");
+    snprintf(b, sizeof(b), "  About %d mA at 3.3 V = about %.2f W  (%.2f W from USB at 5 V)", ma, ma * 3.3 / 1000, ma * 5.0 / 1000 * 1.1); l.push_back(b);
+    snprintf(b, sizeof(b), "  A 10,000 mAh power bank would last roughly %.0f hours", 10000.0 * 3.7 * 0.85 / (ma * 5.0 * 1.1)); l.push_back(b);
+    l.push_back("  The VGA monitor uses its own power (often 10-25 W) - by far the biggest draw.");
+    l.push_back("");
+    l.push_back("  What's using power:");
+    snprintf(b, sizeof(b), "    CPU         %u MHz, both cores", (unsigned)getCpuFrequencyMhz()); l.push_back(b);
+    l.push_back(std::string("    Wi-Fi       ") + (wifiOn ? "connected" : gSet.ssid.length() ? "searching" : "idle"));
+    snprintf(b, sizeof(b), "    Bluetooth   %d device(s)%s", bt, inputScanning() ? ", scanning" : ""); l.push_back(b);
+    l.push_back(std::string("    Mesh        ") + (comsUp() ? "listening" : "off"));
+    l.push_back("");
+    float t = temperatureRead();
+    if (t > 0 && fabs(t - 53.33f) > 0.05f) { snprintf(b, sizeof(b), "  Chip temperature  about %.0f C  (rough)", t); l.push_back(b); }
+    else l.push_back("  Chip temperature  not available on this chip");
+    l.push_back("");
+    l.push_back("THIS BOARD");
+    snprintf(b, sizeof(b), "  Chip        %s rev %d, %d cores", ESP.getChipModel(), (int)ESP.getChipRevision(), (int)ESP.getChipCores()); l.push_back(b);
+    snprintf(b, sizeof(b), "  TidyOS      %s    ESP-IDF %s", TIDYOS_VERSION, ESP.getSdkVersion()); l.push_back(b);
+    uint32_t up = millis() / 1000;
+    snprintf(b, sizeof(b), "  Up time     %ud %uh %02um", up / 86400, (up / 3600) % 24, (up / 60) % 60); l.push_back(b);
+    static const char * rr[] = { "unknown", "power on", "external pin", "restart", "crash", "crash (interrupt)", "crash (task)", "watchdog", "deep sleep", "low voltage (brownout)", "SDIO" };
+    int r = esp_reset_reason();
+    l.push_back(std::string("  Last start  ") + (r >= 0 && r <= 10 ? rr[r] : "other"));
+    if (r == ESP_RST_BROWNOUT) l.push_back("  -> The power dipped. Try a better USB cable or power supply.");
+    setLinesKeep(powerView, std::move(l));
+  }
+};
+AppFrame * TaskManagerApp::inst = nullptr;
+
+void openSystem()
+{
+  if (!TaskManagerApp::inst) new TaskManagerApp();
+  TaskManagerApp::inst->open();
 }

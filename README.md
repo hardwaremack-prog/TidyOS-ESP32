@@ -8,13 +8,14 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Bluetooth keyboard and mouse** (Bluetooth LE)
 - **microSD card** for your files (falls back to internal flash with no card)
 - **Wi-Fi** with a clock that sets itself from the internet
-- Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Messages, Browser, Files, Settings, System**
+- Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Messages, Browser, Files, Settings, Task Manager**
 - **Printing** to network printers (found automatically), through a Pi with CUPS, or Save as PDF
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
 - **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
+- **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.0. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.5. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -95,7 +96,7 @@ No Bluetooth yet? Typing in the Arduino Serial Monitor (115200 baud) also works 
 | Files | Browse the SD card. Open, new folder, rename, delete. **Wi-Fi sharing** button | – |
 | Games | Sammy the Snake (arrow keys), Minesweeper (click, right-click to flag), Blocks (falling blocks: arrows, Up turns, Space drops, P pauses), 2048 (arrow keys). Best scores are kept | – |
 | Settings | Wi-Fi, Bluetooth, browser helper, clock, screen colours | saved in ESP32 flash |
-| System | Free RAM, uptime, Wi-Fi signal, storage | – |
+| Task Manager | Live CPU (per core) and RAM graphs, open apps (switch / end task), all FreeRTOS tasks with core, priority and stack left, network (signal, IP, router ping, traffic, Shelves, mesh, Bluetooth), storage (SD, flash, settings, RAM), power estimate, chip temperature, last reset reason. Open with Ctrl+Shift+Esc or Ctrl+Alt+Del | – |
 
 ## 6. Printing
 
@@ -174,6 +175,7 @@ sudo systemctl enable --now tidyos-helper
 - The ESP32 only does 2.4 GHz Wi-Fi.
 - Printouts are plain monospaced text (Courier). Very old or driver-only printers with no IPP/AirPrint support need the Pi helper with CUPS.
 - Spell check is English only. Capitalised names it doesn't know get underlined; use *Add to dictionary*.
+- The NodeMCU has no power meter, so Task Manager's power figure is an **estimate** from what's switched on. CPU % is measured from each core's idle time, so it settles after a few seconds. The chip temperature sensor is rough (±10 °C) and missing on some chips.
 
 ## 12. Building from source
 

@@ -2,7 +2,7 @@
 // Pin map and build-time settings.
 #pragma once
 
-#define TIDYOS_VERSION "1.4"
+#define TIDYOS_VERSION "1.5"
 
 // ---------------- VGA (8 GPIOs, 2 bits per colour + sync) ----------------
 // Same pinout as the LilyGO/TTGO "FabGL VGA32" board, so FabGL demos work too.

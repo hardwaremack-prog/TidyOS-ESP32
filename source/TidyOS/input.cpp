@@ -290,6 +290,8 @@ static void postUsage(uint8_t usage, bool down)
     return;
   if (usage == 0x39 && down)
     s_caps = !s_caps;
+  if (down && usage == 0x29 && (m & 0x11) && (m & 0x22)) { gOpenTaskMgr = true; return; }   // Ctrl+Shift+Esc
+  if (down && usage == 0x4C && (m & 0x11) && (m & 0x44)) { gOpenTaskMgr = true; return; }   // Ctrl+Alt+Del
   postKey(vk, ascii, down);
   if (down) {
     if (usage != 0x39) {
