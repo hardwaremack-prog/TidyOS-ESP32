@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <math.h>
 #include "led.h"
+#include "crashlog.h"
 #include "soc/gpio_sd_struct.h"
 #include "soc/gpio_sig_map.h"
 #include "esp_rom_gpio.h"
@@ -37,8 +38,10 @@ extern "C" {
 
 static void ledTask(void *)
 {
+  uint32_t lastHeap = 0;
   for (;;) {
     uint32_t now = millis();
+    if (now - lastHeap > 500) { lastHeap = now; gHeapSnap = ESP.getFreeHeap(); gMinHeapSnap = ESP.getMinFreeHeap(); }
     uint32_t duty;
     uint32_t sd = gSdActivityMs;
     if (!s_ready) duty = (now / 500) % 2 ? 255 : 0;                                   // starting: slow blink

@@ -69,6 +69,7 @@ void openSettings();
 void openSystem();
 void openMessages();
 void openGames();
+void openPing();
 void openRugged();
 
 extern fabgl::uiApp * gApp;

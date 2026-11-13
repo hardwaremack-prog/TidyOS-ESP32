@@ -5,6 +5,7 @@
 #include <time.h>
 #include "screen.h"
 #include "led.h"
+#include "crashlog.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "esp_bt.h"
@@ -225,6 +226,12 @@ static const char * ART_MSG[16] = {
   "#wwwwwwwwwwwwww#", ".######ww######.", "......#ww#......", ".......#w#......",
   "........##......", "................", "................", "................" };
 
+static const char * ART_PING[16] = {
+  "................", "......aaaa......", "....aa....aa....", "...a..aaaa..a...",
+  "..a.aa....aa.a..", "..a.a..aa..a.a..", ".a.a..a..a..a.a.", ".a.a.a.##.a.a.a.",
+  ".a.a.a.##.a.a.a.", "......#..#......", ".....#....#.....", "....#......#....",
+  "...#........#...", "..############..", "..#gggggggggg#..", "..############.." };
+
 static const char * ART_GAMES[16] = {
   "................", "................", "................", "...##########...",
   "..#gggggggggg#..", ".#gg#gggggggag#.", ".#g###ggggagga#.", ".#gg#ggggggaag#.",
@@ -261,6 +268,7 @@ static const DeskIcon ICONS[] = {
   { "Task Manager", ART_SYS, nullptr, openSystem },
   { "Messages",   ART_MSG,   nullptr, openMessages },
   { "Games",      ART_GAMES, nullptr, openGames },
+  { "Ping",       ART_PING,  nullptr, openPing },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
 
@@ -522,6 +530,9 @@ static BitmappedDisplayController * tryMode(size_t fbBytes, size_t margin = 6000
 static void startDisplay()
 {
   int want = gSet.colors;   // 0 = auto
+#ifdef TIDYOS_HTML5
+  if (want == 0) want = 4;  // HTML5: 4 colours unless asked for 8 - leaves ~38 KB more for Wi-Fi and apps
+#endif
   BitmappedDisplayController * dc = nullptr;
   int got = 0;
   // 8 colours only when it still leaves plenty for Wi-Fi and apps (asked for explicitly = smaller margin)
@@ -668,6 +679,7 @@ void setup()
 #endif
   Serial.begin(115200);
   delay(200);
+  crashBegin();     // did the last run crash? (Task Manager shows it)
   ledBegin();       // blue LED: slow blink while starting
   Serial.println("\n[TidyOS] " TIDYOS_VERSION " (" TIDYOS_EDITION " edition) starting");
 
@@ -691,6 +703,7 @@ void setup()
 
   if (!gSDMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 4);
   makeDirs();
+  crashSave(dataPath("crash.txt"));
   splash("Loading the dictionary", 50);
   spellBegin();
   splash("Looking for your Shelves", 70);

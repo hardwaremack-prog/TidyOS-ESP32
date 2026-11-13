@@ -654,6 +654,13 @@ public:
       gApp->destroyWindow(this);
       return;
     }
+    // keys meant for the game: if the board lost focus (e.g. to the launcher's button),
+    // the frame still gets a copy as the active window - pass it on and take focus back
+    if ((e->id == UIEVT_KEYDOWN || e->id == UIEVT_KEYUP) && gApp->focusedWindow() != board) {
+      if (e->id == UIEVT_KEYDOWN) board->key(e->params.key);
+      gApp->setFocusedWindow(board);
+      return;
+    }
     uiFrame::processEvent(e);
     if (e->id == UIEVT_ACTIVATE) gApp->setFocusedWindow(board);
   }
@@ -683,7 +690,12 @@ public:
     for (int i = 0; i < 4; ++i) {
       auto b = S(new uiButton(this, names[i], Point(o.X + 10, o.Y + 10 + i * 56), Size(270, 30)));
       b->buttonStyle().textFont = &FONT_std_16;
-      b->onClick = [i]() { openGame(i); };
+      b->onClick = [i]() {
+        openGame(i);
+        // the click is still finishing on this launcher; focus the game once it has
+        uiEvent evt(GameFrame::open[i], UIEVT_ACTIVATE);
+        gApp->postEvent(&evt);
+      };
       auto l = S(new uiLabel(this, about[i], Point(o.X + 14, o.Y + 42 + i * 56), Size(266, 14)));
       l->labelStyle().textFont = &FONT_std_12;
     }

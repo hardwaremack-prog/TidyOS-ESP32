@@ -10,14 +10,14 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Bluetooth keyboard and mouse** (Bluetooth LE, VGA edition)
 - **microSD card** for your files (falls back to internal flash with no card)
 - **Wi-Fi** with a clock that sets itself from the internet
-- Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Messages, Browser, Files, Settings, Task Manager**
+- Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Messages, Browser, Files, Settings, Task Manager, Ping**
 - **Printing** to network printers (found automatically), through a Pi with CUPS, or Save as PDF
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
 - **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.6.2. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.6.3. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -58,6 +58,10 @@ The blue LED on the NodeMCU (GPIO 2) shows what TidyOS is doing. The red one is 
 | Breathing (slow fade in and out) | Ready |
 | Quick flicker | The microSD card is being read or written |
 | Fast flash | Low on memory: close an app |
+
+## If it crashes
+
+TidyOS records the crash just before the restart. **Task Manager → Power & info** shows it under *Last crash* (reason, free memory and a list of addresses), and it's added to `tidyos/crash.txt`. A photo of that screen is enough to find the line of code: the matching debug file for the current version is in `debug/`.
 
 ## 1. Parts
 
@@ -129,6 +133,7 @@ No Bluetooth yet? Typing in the Arduino Serial Monitor (115200 baud) also works 
 | Files | Browse the SD card. Open, new folder, rename, delete. **Wi-Fi sharing** button | – |
 | Games | Sammy the Snake (arrow keys), Minesweeper (click, right-click to flag), Blocks (falling blocks: arrows, Up turns, Space drops, P pauses), 2048 (arrow keys). Best scores are kept | – |
 | Settings | Wi-Fi, Bluetooth, browser helper, clock, screen colours | saved in ESP32 flash |
+| Ping | Saved list of IP addresses or names. **Start** pings every one about once a second until **Stop**: up/down, last, average, min, max and loss for each, plus a running log like `ping -t`. A target counts as down after 2 misses in a row. List saved in `tidyos/ping.txt` | – |
 | Task Manager | Live CPU (per core) and RAM graphs, open apps (switch / end task), all FreeRTOS tasks with core, priority and stack left, network (signal, IP, router ping, traffic, Shelves, mesh, Bluetooth), storage (SD, flash, settings, RAM), power estimate, chip temperature, last reset reason. Open with Ctrl+Shift+Esc or Ctrl+Alt+Del | – |
 
 ## 6. Printing
@@ -219,7 +224,7 @@ sudo systemctl enable --now tidyos-helper
 - Libraries: **FabGL 1.0.9** and **NimBLE-Arduino 1.4.3**
 - Board: **ESP32 Dev Module**. Partition scheme: **Huge APP (3MB No OTA/1MB SPIFFS)**
 - Open `source/TidyOS/TidyOS.ino` and click Upload.
-- Optional, for the SD-activity flicker on the blue light: add `-Wl,--wrap=sdmmc_read_sectors,--wrap=sdmmc_write_sectors` to the linker flags (PlatformIO already does).
+- Optional, for the SD-activity flicker and the crash recorder: add `-Wl,--wrap=sdmmc_read_sectors,--wrap=sdmmc_write_sectors,--wrap=esp_panic_handler` to the linker flags (PlatformIO already does).
 - For the HTML5 edition, uncomment `#define TIDYOS_HTML5` in `config.h` first (PlatformIO: build the `nodemcu-32s-html5` environment).
 
 Source map: `core.cpp` (start-up, desktop, theme), `input.cpp` (Bluetooth HID host),

@@ -1,6 +1,7 @@
 // TidyOS apps: Calculator, Neat Lite, Tidy Lite, Ready Lite, Steady Lite,
 //              Browser, Files, Settings, System
 #include "screen.h"
+#include "crashlog.h"
 #include <sys/stat.h>
 #include <algorithm>
 #include <WiFi.h>
@@ -2171,19 +2172,31 @@ public:
     int ma = 45 + (getCpuFrequencyMhz() >= 240 ? 20 : 0);          // two busy cores (the screen keeps one busy)
     bool wifiOn = netConnected();
     if (wifiOn) ma += 45; else if (gSet.ssid.length()) ma += 70;    // searching costs more than staying connected
+#ifdef TIDYOS_HTML5
+    int bt = 0;
+#else
     int bt = inputKeyboards() + inputMice();
+#endif
     ma += bt * 8 + (inputScanning() ? 25 : 0);
     if (comsUp()) ma += 5;
     if (gSDMounted) ma += 3;
     l.push_back("POWER (estimate - the NodeMCU has no power meter)");
     snprintf(b, sizeof(b), "  About %d mA at 3.3 V = about %.2f W  (%.2f W from USB at 5 V)", ma, ma * 3.3 / 1000, ma * 5.0 / 1000 * 1.1); l.push_back(b);
     snprintf(b, sizeof(b), "  A 10,000 mAh power bank would last roughly %.0f hours", 10000.0 * 3.7 * 0.85 / (ma * 5.0 * 1.1)); l.push_back(b);
+#ifdef TIDYOS_HTML5
+    l.push_back("  The phone or PC showing TidyOS uses its own power.");
+#else
     l.push_back("  The VGA monitor uses its own power (often 10-25 W) - by far the biggest draw.");
+#endif
     l.push_back("");
     l.push_back("  What's using power:");
     snprintf(b, sizeof(b), "    CPU         %u MHz, both cores", (unsigned)getCpuFrequencyMhz()); l.push_back(b);
     l.push_back(std::string("    Wi-Fi       ") + (wifiOn ? "connected" : gSet.ssid.length() ? "searching" : "idle"));
+#ifdef TIDYOS_HTML5
+    l.push_back(std::string("    Browser     ") + (screenViewer() ? "connected" : "none"));
+#else
     snprintf(b, sizeof(b), "    Bluetooth   %d device(s)%s", bt, inputScanning() ? ", scanning" : ""); l.push_back(b);
+#endif
     l.push_back(std::string("    Mesh        ") + (comsUp() ? "listening" : "off"));
     l.push_back("");
     float t = temperatureRead();
@@ -2199,6 +2212,15 @@ public:
     int r = esp_reset_reason();
     l.push_back(std::string("  Last start  ") + (r >= 0 && r <= 10 ? rr[r] : "other"));
     if (r == ESP_RST_BROWNOUT) l.push_back("  -> The power dipped. Try a better USB cable or power supply.");
+    std::string ct = crashText();
+    if (!ct.empty()) {
+      l.push_back("");
+      l.push_back("LAST CRASH (also saved in tidyos/crash.txt)");
+      std::vector<std::string> w;
+      wrapText(ct, powerView->visCols() - 3, w);
+      for (auto & x : w) l.push_back("  " + x);
+      l.push_back("  A photo of this helps find the bug.");
+    }
     setLinesKeep(powerView, std::move(l));
   }
 };
@@ -2208,4 +2230,296 @@ void openSystem()
 {
   if (!TaskManagerApp::inst) new TaskManagerApp();
   TaskManagerApp::inst->open();
+}
+
+// ====================================================================== Ping
+// Saved list of addresses (IPs or names). Start pings every one of them about once a second,
+// round and round, until Stop. Each line shows up/down, last time, average, min/max and loss;
+// the log below shows every reply like "ping -t".
+
+#include "lwip/sockets.h"
+#include "lwip/inet_chksum.h"
+#include "lwip/prot/icmp.h"
+#include "lwip/prot/ip4.h"
+#include "lwip/netdb.h"
+#include <mutex>
+
+struct PingTarget {
+  std::string addr;
+  uint32_t ip = 0;          // network order, 0 = not resolved
+  int sent = 0, got = 0, last = -1, minMs = 0, maxMs = 0, streakLost = 0;
+  uint64_t sumMs = 0;
+  bool up = false, seen = false;
+};
+
+static std::vector<PingTarget> s_pt;
+static std::vector<std::string> s_plog;
+static std::mutex s_pmx;
+static volatile bool s_pRun = false, s_pTaskAlive = false;
+static volatile int  s_pChanged = 0;
+
+static void plog(const std::string & l)
+{
+  time_t now = time(nullptr);
+  struct tm tmv; localtime_r(&now, &tmv);
+  char t[16] = "";
+  if (tmv.tm_year > 100) snprintf(t, sizeof(t), "%02d:%02d:%02d ", tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+  s_plog.push_back(t + l);
+  if (s_plog.size() > 300) s_plog.erase(s_plog.begin(), s_plog.begin() + 50);
+}
+
+static uint32_t resolveHost(const std::string & h)
+{
+  ip4_addr_t a;
+  if (ip4addr_aton(h.c_str(), &a)) return a.addr;
+  struct addrinfo hints = {}, * res = nullptr;
+  hints.ai_family = AF_INET;
+  if (getaddrinfo(h.c_str(), nullptr, &hints, &res) != 0 || !res) return 0;
+  uint32_t ip = ((struct sockaddr_in *)res->ai_addr)->sin_addr.s_addr;
+  freeaddrinfo(res);
+  return ip;
+}
+
+// one echo request; returns round-trip ms or -1
+static int pingOnce(int sock, uint32_t ip, uint16_t seq, int timeoutMs)
+{
+  uint8_t pkt[sizeof(struct icmp_echo_hdr) + 32];
+  auto * h = (struct icmp_echo_hdr *)pkt;
+  ICMPH_TYPE_SET(h, ICMP_ECHO);
+  ICMPH_CODE_SET(h, 0);
+  h->id = htons(0x7D1D);
+  h->seqno = htons(seq);
+  for (int i = 0; i < 32; ++i) pkt[sizeof(*h) + i] = 'a' + (i % 26);
+  h->chksum = 0;
+  h->chksum = inet_chksum(pkt, sizeof(pkt));
+  struct sockaddr_in to = {};
+  to.sin_family = AF_INET;
+  to.sin_addr.s_addr = ip;
+  int64_t t0 = esp_timer_get_time();
+  if (sendto(sock, pkt, sizeof(pkt), 0, (struct sockaddr *)&to, sizeof(to)) < 0) return -1;
+  gNetTx += sizeof(pkt) + 20;
+  uint8_t buf[128];
+  for (;;) {
+    int left = timeoutMs - (int)((esp_timer_get_time() - t0) / 1000);
+    if (left <= 0) return -1;
+    struct timeval tv = { left / 1000, (left % 1000) * 1000 };
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_in from; socklen_t fl = sizeof(from);
+    int n = recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr *)&from, &fl);
+    if (n <= 0) return -1;
+    gNetRx += n;
+    auto * iph = (struct ip_hdr *)buf;
+    int hl = IPH_HL_BYTES(iph);
+    if (n < hl + (int)sizeof(struct icmp_echo_hdr)) continue;
+    auto * r = (struct icmp_echo_hdr *)(buf + hl);
+    if (from.sin_addr.s_addr == ip && ICMPH_TYPE(r) == ICMP_ER && r->id == htons(0x7D1D) && r->seqno == htons(seq)) {
+      int ms = (int)((esp_timer_get_time() - t0) / 1000);
+      return ms < 1 ? 1 : ms;
+    }
+  }
+}
+
+static void pingTask(void *)
+{
+  int sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  uint16_t seq = 1;
+  while (s_pRun && sock >= 0) {
+    uint32_t cycle = millis();
+    size_t n;
+    { std::lock_guard<std::mutex> lk(s_pmx); n = s_pt.size(); }
+    if (n == 0 || !netConnected()) { vTaskDelay(pdMS_TO_TICKS(500)); continue; }
+    for (size_t i = 0; i < n && s_pRun; ++i) {
+      std::string addr; uint32_t ip;
+      { std::lock_guard<std::mutex> lk(s_pmx); if (i >= s_pt.size()) break; addr = s_pt[i].addr; ip = s_pt[i].ip; }
+      if (!ip) ip = resolveHost(addr);
+      int ms = ip ? pingOnce(sock, ip, seq++, 1000) : -1;
+      std::lock_guard<std::mutex> lk(s_pmx);
+      if (i >= s_pt.size() || s_pt[i].addr != addr) break;     // list changed meanwhile
+      PingTarget & t = s_pt[i];
+      t.ip = ip;
+      t.sent++;
+      bool wasUp = t.up, wasSeen = t.seen;
+      t.seen = true;
+      if (ms >= 0) {
+        t.got++; t.last = ms; t.sumMs += ms; t.streakLost = 0;
+        if (t.got == 1 || ms < t.minMs) t.minMs = ms;
+        if (ms > t.maxMs) t.maxMs = ms;
+        t.up = true;
+        char b[96]; snprintf(b, sizeof(b), "Reply from %s: time=%d ms", addr.c_str(), ms);
+        plog(b);
+        if (wasSeen && !wasUp) plog("*** " + addr + " is back UP");
+      } else {
+        t.last = -1; t.streakLost++;
+        if (t.streakLost >= 2) t.up = false;           // two misses in a row = down (one can be a fluke)
+        plog(ip ? "Request timed out: " + addr : "Can't find " + addr + " (name lookup failed)");
+        if (wasUp && !t.up) plog("*** " + addr + " is DOWN");
+      }
+      s_pChanged++;
+    }
+    int rest = 1000 - (int)(millis() - cycle);
+    if (rest > 0) vTaskDelay(pdMS_TO_TICKS(rest));
+  }
+  if (sock >= 0) close(sock);
+  else { std::lock_guard<std::mutex> lk(s_pmx); plog("Could not open a ping socket"); s_pChanged++; }
+  s_pRun = false;
+  s_pTaskAlive = false;
+  vTaskDelete(nullptr);
+}
+
+class PingApp : public AppFrame {
+public:
+  static AppFrame * inst;
+  uiTextEdit * addrEd;
+  uiListBox  * list;
+  TextArea   * logView;
+  uiButton   * startBtn;
+  uiLabel    * summary;
+  int lastChanged = -1;
+  bool wasRunning = false;
+
+  PingApp() : AppFrame("Ping", Point(20, 10), Size(600, 440), &inst) {
+    label("Address (IP or name)", cx, cy + 3, 140, 18);
+    addrEd = edit("", cx + 142, cy, 190);
+    button("Add", cx + 338, cy, 60)->onClick = [this]() { addTarget(); };
+    button("Remove", cx + 404, cy, 70)->onClick = [this]() { removeTarget(); };
+    startBtn = button("Start", cx + 480, cy, 106);
+    startBtn->onClick = [this]() { if (s_pRun) stop(); else start(); };
+    addrEd->onKeyType = [this](uiKeyEventInfo const & k) { if (k.VK == VK_RETURN || k.VK == VK_KP_ENTER) addTarget(); };
+
+    list = S(new uiListBox(this, Point(cx, cy + 30), Size(586, 150)));
+    list->items().takeStrings();
+    list->listBoxStyle().textFont = &FONT_8x14;      // monospace so the columns line up
+    list->listBoxStyle().itemHeight = 18;
+    summary = label("", cx, cy + 186, 586, 18);
+    summary->labelStyle().textFont = &FONT_std_12;
+    logView = new TextArea(this, Point(cx, cy + 206), Size(586, 196), false);
+
+    button("Clear stats", cx, cy + 408 - 4, 100)->onClick = [this]() {
+      std::lock_guard<std::mutex> lk(s_pmx);
+      for (auto & t : s_pt) { auto a = t.addr; t = PingTarget(); t.addr = a; }
+      s_plog.clear(); s_pChanged++;
+    };
+    load();
+    refresh(true);
+    startTimer(500);
+    onTimer = [this](uiTimerHandle) { refresh(false); };
+  }
+
+  void load() {
+    std::lock_guard<std::mutex> lk(s_pmx);
+    if (!s_pt.empty()) return;                      // already loaded (app reopened while pinging)
+    std::string s;
+    if (readFileStr(dataPath("ping.txt").c_str(), s)) {
+      size_t st = 0;
+      for (size_t i = 0; i <= s.size(); ++i)
+        if (i == s.size() || s[i] == '\n') {
+          std::string l = s.substr(st, i - st); st = i + 1;
+          while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
+          if (!l.empty()) { PingTarget t; t.addr = l; s_pt.push_back(t); }
+        }
+    }
+    if (s_pt.empty()) {                             // a useful start: the router and a public DNS server
+      if (netConnected()) { PingTarget r; r.addr = WiFi.gatewayIP().toString().c_str(); s_pt.push_back(r); }
+      PingTarget g; g.addr = "8.8.8.8"; s_pt.push_back(g);
+    }
+  }
+
+  void save() {
+    std::string s;
+    { std::lock_guard<std::mutex> lk(s_pmx); for (auto & t : s_pt) s += t.addr + "\n"; }
+    writeFileStr(dataPath("ping.txt").c_str(), s);
+  }
+
+  void addTarget() {
+    std::string a = addrEd->text();
+    while (!a.empty() && a.back() == ' ') a.pop_back();
+    while (!a.empty() && a[0] == ' ') a.erase(0, 1);
+    if (a.empty()) return;
+    {
+      std::lock_guard<std::mutex> lk(s_pmx);
+      for (auto & t : s_pt) if (t.addr == a) return;
+      PingTarget t; t.addr = a; s_pt.push_back(t); s_pChanged++;
+    }
+    addrEd->setText(""); addrEd->repaint();
+    save();
+    refresh(true);
+  }
+
+  void removeTarget() {
+    int i = list->firstSelectedItem();
+    {
+      std::lock_guard<std::mutex> lk(s_pmx);
+      if (i < 0 || i >= (int)s_pt.size()) return;
+      s_pt.erase(s_pt.begin() + i); s_pChanged++;
+    }
+    save();
+    refresh(true);
+  }
+
+  void start() {
+    if (s_pTaskAlive) return;
+    if (!netConnected()) { gApp->messageBox("Ping", "Join a Wi-Fi network first (Settings).", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning); return; }
+    s_pRun = true; s_pTaskAlive = true;
+    { std::lock_guard<std::mutex> lk(s_pmx); plog("--- started ---"); s_pChanged++; }
+    xTaskCreatePinnedToCore(pingTask, "ping", 4096, nullptr, 1, nullptr, 0);
+    refresh(true);
+  }
+
+  void stop() {
+    s_pRun = false;
+    { std::lock_guard<std::mutex> lk(s_pmx); plog("--- stopped ---"); s_pChanged++; }
+    refresh(true);
+  }
+
+  void refresh(bool force) {
+    bool running = s_pRun;
+    if (running != wasRunning || force) {
+      wasRunning = running;
+      startBtn->setText(running ? "Stop" : "Start");
+      startBtn->buttonStyle().backgroundColor = running ? T.accent : T.face;
+      startBtn->buttonStyle().textColor = running ? T.accentText : T.text;
+      startBtn->repaint();
+    }
+    int ch = s_pChanged;
+    if (ch == lastChanged && !force) return;
+    lastChanged = ch;
+    std::vector<std::string> rows, logl;
+    int up = 0, down = 0;
+    {
+      std::lock_guard<std::mutex> lk(s_pmx);
+      for (auto & t : s_pt) {
+        char b[160];
+        const char * st = !t.seen ? "  --  " : t.up ? "  UP  " : " DOWN ";
+        if (t.seen) (t.up ? up : down)++;
+        int loss = t.sent ? (t.sent - t.got) * 100 / t.sent : 0;
+        if (t.got)
+          snprintf(b, sizeof(b), "%s%-17.17s last%4s avg%4d min%4d max%4d ms lost %d%%/%d", st, t.addr.c_str(),
+                   t.last >= 0 ? (std::to_string(t.last)).c_str() : "--", (int)(t.sumMs / t.got), t.minMs, t.maxMs, loss, t.sent);
+        else
+          snprintf(b, sizeof(b), "%s%-17.17s %s", st, t.addr.c_str(), t.sent ? (std::string("no replies, ") + std::to_string(t.sent) + " sent").c_str() : "not pinged yet");
+        rows.push_back(b);
+      }
+      size_t from = s_plog.size() > 200 ? s_plog.size() - 200 : 0;
+      for (size_t i = from; i < s_plog.size(); ++i) logl.push_back(s_plog[i]);
+    }
+    int sel = list->firstSelectedItem();
+    list->items().clear();
+    for (auto & r : rows) list->items().append(r.c_str());
+    if (sel >= 0 && sel < (int)rows.size()) list->selectItem(sel);
+    list->repaint();
+    char b[120];
+    snprintf(b, sizeof(b), "%s   %d up, %d down, %d addresses   (saved in tidyos/ping.txt)", running ? "Pinging every second..." : "Stopped.", up, down, (int)rows.size());
+    summary->setText(b); summary->repaint();
+    int n = (int)logl.size();
+    logView->setLines(std::move(logl));
+    logView->scrollTo(imax(0, n - logView->visRows()));
+    logView->repaint();
+  }
+};
+AppFrame * PingApp::inst = nullptr;
+
+void openPing()
+{
+  if (!PingApp::inst) new PingApp();
+  PingApp::inst->open();
 }
