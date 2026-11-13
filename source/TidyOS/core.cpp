@@ -5,6 +5,8 @@
 #include <time.h>
 #include "screen.h"
 #include "led.h"
+#include "driver/spi_master.h"
+#include "driver/gpio.h"
 #include "esp_bt.h"
 #include "core.h"
 #include "input.h"
@@ -537,6 +539,26 @@ static void startDisplay()
   Serial.printf("[TidyOS] display 640x480, %d colours, free heap %u\n", got, (unsigned)ESP.getFreeHeap());
 }
 
+const char * gSDWiring = "none";
+
+static bool mountSD(int miso, int mosi, int clk, int cs, const char * name)
+{
+  for (int pin : { miso, mosi, cs }) gpio_pullup_en((gpio_num_t)pin);      // SD lines need pull-ups
+  bool ok = FileBrowser::mountSDCard(false, SD_MOUNT, 6, 16 * 1024, miso, mosi, clk, cs);
+  if (ok) { gSDWiring = name; Serial.printf("[TidyOS] SD card found on %s wiring\n", name); }
+  else spi_bus_free(HSPI_HOST);                                              // so the next try can use other pins
+  return ok;
+}
+
+#ifdef TIDYOS_HTML5
+// The screen memory keeps working (the browser reads it); only the pins stop being VGA outputs.
+static void releaseVgaPins()
+{
+  for (gpio_num_t p : { VGA_RED1, VGA_RED0, VGA_GREEN1, VGA_GREEN0, VGA_BLUE1, VGA_BLUE0, VGA_HSYNC, VGA_VSYNC })
+    gpio_reset_pin(p);
+}
+#endif
+
 static void makeDirs()
 {
   if (gSDMounted) {
@@ -653,10 +675,17 @@ void setup()
   inputBegin();     // Bluetooth first: it needs a big block of RAM
   netBegin();       // Wi-Fi radio
 
-  gSDMounted = FileBrowser::mountSDCard(false, SD_MOUNT, 6, 16 * 1024, SD_MISO, SD_MOSI, SD_CLK, SD_CS);
+#ifdef TIDYOS_HTML5
+  startDisplay();
+  releaseVgaPins();     // no monitor in this edition: free GPIO 19/18/5/... (the in-line SD wiring uses them)
+  gSDMounted = mountSD(SD_INLINE_MISO, SD_INLINE_MOSI, SD_INLINE_CLK, SD_INLINE_CS, "in-line (19/18/5/17)") ||
+               mountSD(SD_MISO, SD_MOSI, SD_CLK, SD_CS, "classic (16/17/14/13)");
+#else
+  gSDMounted = mountSD(SD_MISO, SD_MOSI, SD_CLK, SD_CS, "16/17/14/13");
+  startDisplay();
+#endif
   Serial.printf("[TidyOS] SD card %s\n", gSDMounted ? "mounted" : "not found - using internal flash");
 
-  startDisplay();
   splashLogo();
   splash(gSDMounted ? "SD card found" : "No SD card - preparing internal storage...", 30);
 

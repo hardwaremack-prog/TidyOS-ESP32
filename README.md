@@ -17,7 +17,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.6.1. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.6.2. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -45,7 +45,8 @@ How it works: TidyOS still draws into its normal 640 × 480 screen memory. A sma
 - Bluetooth is switched off in this edition. That frees roughly 60 KB of RAM, so it normally gets 8 colours.
 - If it can't join your Wi-Fi within 25 seconds, the TidyOS-Setup hotspot comes back. It turns itself off 2 minutes after TidyOS is on your home Wi-Fi.
 - Wi-Fi file sharing moves to port **8081** (`http://tidyos.local:8081`), because port 80 shows the desktop.
-- A VGA monitor wired up as below still works too, just without a mouse pointer.
+- No VGA pins are driven in this edition, so the microSD module can use the **in-line wiring** from The Shelf: plugged straight onto GND · 19 · 18 · 5 · 17 (MISO 19, CLK 18, MOSI 5, CS 17), with its 3v3 pin bent up and one jumper to 3V3. The classic wiring (16/17/14/13) works too; TidyOS tries both. Task Manager → Storage shows which one it found.
+- The browser page scales the screen with whole pixels and then smooths it slightly, so text stays even at any window size. **Size** switches to exact 1:1 pixels.
 
 ## The blue status light
 

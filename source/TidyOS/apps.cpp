@@ -1,5 +1,6 @@
 // TidyOS apps: Calculator, Neat Lite, Tidy Lite, Ready Lite, Steady Lite,
 //              Browser, Files, Settings, System
+#include "screen.h"
 #include <sys/stat.h>
 #include <algorithm>
 #include <WiFi.h>
@@ -1098,7 +1099,15 @@ public:
     label("Password", cx, y + 48, 70, 18);
     passEd = edit(gSet.pass.c_str(), cx + 72, y + 45, 200);
     passEd->textEditProps().passwordMode = true;
-    button("Connect",       cx + 72,  y + 71, 96)->onClick = [this]() { netConnect(ssidEd->text(), passEd->text()); };
+    button("Connect",       cx + 72,  y + 71, 96)->onClick = [this]() {
+      if (screenApOn() && !netConnected()) {
+        std::string m = std::string("This browser will drop off the TidyOS-Setup hotspot for a moment while TidyOS joins ") + ssidEd->text() +
+                        ". Then switch this device to " + ssidEd->text() + " and open http://tidyos.local (the page shows the address too).";
+        if (gApp->messageBox("Joining your Wi-Fi", m.c_str(), "Join", "Cancel", nullptr, uiMessageBoxIcon::Info) != uiMessageBoxResult::Button1) return;
+      }
+      netConnect(ssidEd->text(), passEd->text());
+      settingsSave();
+    };
     button("Find networks", cx + 290, y + 19, 120)->onClick = [this]() { netScanStart(); scanning = true; setWifiText("Looking for networks..."); };
     nets = S(new uiListBox(this, Point(cx + 290, y + 45), Size(296, 64)));
     nets->items().takeStrings();
@@ -2118,6 +2127,7 @@ public:
     l.push_back("SD CARD");
     if (gSDMounted && FileBrowser::getFSInfo(DriveType::SDCard, 0, &total, &used)) {
       snprintf(b, sizeof(b), "  %s  %s used of %s  (%s free)", bar(total ? (double)used / total : 0).c_str(), kb(used).c_str(), kb(total).c_str(), kb(total - used).c_str()); l.push_back(b);
+      l.push_back(std::string("  Wiring      ") + gSDWiring);
       uint64_t bytes = 0; int files = 0;
       dirSize(SD_MOUNT "/Documents", bytes, files);
       snprintf(b, sizeof(b), "  Documents   %d files, %s", files, kb(bytes).c_str()); l.push_back(b);

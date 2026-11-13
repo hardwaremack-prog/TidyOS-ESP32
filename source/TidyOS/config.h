@@ -2,7 +2,7 @@
 // Pin map and build-time settings.
 #pragma once
 
-#define TIDYOS_VERSION "1.6.1"
+#define TIDYOS_VERSION "1.6.2"
 
 // Edition. The VGA edition draws on a monitor and uses Bluetooth keyboard + mouse.
 // The HTML5 edition shows the desktop in a web browser (keyboard + mouse come from the browser).
@@ -30,6 +30,14 @@
 #define SD_MOSI 17
 #define SD_CLK  14
 #define SD_CS   13
+
+// HTML5 edition only: the microSD module plugged straight onto GND, 19, 18, 5, 17 (the same
+// "in-line" wiring as The Shelf on an ESP32). The VGA edition can't use it: 19, 18 and 5 are
+// VGA colour pins there. The HTML5 edition tries this wiring first, then the one above.
+#define SD_INLINE_MISO 19
+#define SD_INLINE_CLK  18
+#define SD_INLINE_MOSI 5
+#define SD_INLINE_CS   17
 
 #define SD_MOUNT     "/SD"
 #define FLASH_MOUNT  "/flash"

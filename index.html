@@ -66,8 +66,13 @@
 
   <div class="card html5-only">
     <h2>2. Wire it</h2>
-    <p>Nothing to wire for the screen. A <b>microSD module</b> is still recommended for your files (GPIO 16 / 17 / 14 / 13 = MISO / MOSI / SCK / CS, plus 3V3 and GND). Without one, TidyOS uses the board's internal flash.</p>
-    <p class="note">If you do plug a VGA monitor in, the HTML5 edition shows on it too (without a mouse pointer).</p>
+    <p>Nothing to wire for the screen. A <b>microSD module</b> is still recommended for your files. Without one, TidyOS uses the board's internal flash. Either wiring works; TidyOS finds the card on its own:</p>
+    <table>
+      <tr><th>Wiring</th><th>MISO</th><th>CLK</th><th>MOSI</th><th>CS</th><th>Power</th></tr>
+      <tr><td><b>In-line</b> (module plugged straight onto GND · 19 · 18 · 5 · 17, same as The Shelf)</td><td>19</td><td>18</td><td>5</td><td>17</td><td>3v3 pin bent up, one jumper to 3V3</td></tr>
+      <tr><td>Classic</td><td>16</td><td>14</td><td>17</td><td>13</td><td>3V3 and GND</td></tr>
+    </table>
+    <p class="note">The HTML5 edition doesn't drive any VGA pins, which is what frees 19, 18 and 5 for the in-line wiring. Task Manager → Storage shows which wiring it found.</p>
   </div>
 
   <div class="card vga-only">
@@ -81,7 +86,7 @@
       <tr><td>GPIO 23</td><td>100 Ω</td><td>VGA pin 13 (H-sync)</td></tr>
       <tr><td>GPIO 15</td><td>100 Ω</td><td>VGA pin 14 (V-sync)</td></tr>
       <tr><td>GND</td><td>–</td><td>VGA pins 5, 6, 7, 8, 10 and SD GND</td></tr>
-      <tr><td>GPIO 16 / 17 / 14 / 13</td><td>–</td><td>SD MISO / MOSI / SCK / CS</td></tr>
+      <tr><td>GPIO 16 / 17 / 14 / 13</td><td>–</td><td>SD MISO / MOSI / SCK / CS (the in-line wiring is HTML5 only: 19, 18, 5 are VGA pins)</td></tr>
       <tr><td>3V3 (VIN for 5 V modules)</td><td>–</td><td>SD VCC</td></tr>
     </table>
   </div>

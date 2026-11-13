@@ -34,6 +34,7 @@ static WiFiClient    s_ws;
 static volatile bool s_view = false;
 static uint32_t      s_hash[SCREEN_H];
 static uint32_t      s_apSince = 0, s_connSince = 0;
+static std::string   s_sentHome;          // last "home Wi-Fi" address sent to this browser
 
 // ---------------------------------------------------------------- the page
 static const char PAGE[] = R"HTML(<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -43,22 +44,35 @@ html,body{margin:0;height:100%;background:#1c1c1c;color:#ddd;font:14px system-ui
 #bar b{font-size:16px;margin-right:6px}#st{margin-left:auto;font-size:12px;opacity:.9;white-space:nowrap}
 button{background:#fff;color:#0055aa;border:0;border-radius:5px;padding:5px 10px;font:inherit;cursor:pointer}
 #wrap{position:absolute;top:36px;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center}
-canvas{image-rendering:pixelated;image-rendering:crisp-edges;background:#00aaaa;touch-action:none;outline:none;cursor:default}
+canvas{background:#00aaaa;touch-action:none;outline:none;cursor:default}
 #kb{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;border:0;padding:0}
-#msg{position:absolute;top:36px;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:rgba(0,0,0,.65);font-size:18px;text-align:center}
-@media(max-width:520px){#bt{display:none}}
+#home{display:none;position:absolute;top:36px;left:0;right:0;z-index:2;background:#ffd84d;color:#111;padding:8px 12px;font-size:15px;text-align:center}
+#home a{color:#0055aa;font-weight:600}
+#msg{position:absolute;top:36px;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:rgba(0,0,0,.65);font-size:18px;text-align:center;white-space:pre-line;padding:0 16px}
+@media(max-width:560px){#bt,#bf{display:none}}
 </style></head><body>
-<div id="bar"><b>TidyOS</b><button id="bk">Keyboard</button><button id="bt">Task Manager</button><button id="bf">Full screen</button><span id="st">Connecting...</span></div>
-<div id="wrap"><canvas id="c" width="640" height="480" tabindex="0"></canvas></div>
+<div id="bar"><b>TidyOS</b><button id="bk">Keyboard</button><button id="bt">Task Manager</button><button id="bf">Full screen</button><button id="bz">Size: fit</button><span id="st">Connecting...</span></div>
+<div id="home"></div><div id="wrap"><canvas id="c" width="640" height="480" tabindex="0"></canvas></div>
 <input id="kb" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
 <div id="msg"><div id="mt">Connecting to TidyOS...</div><button id="mb" style="display:none">Use it here</button></div>
 <script>
-var c=document.getElementById('c'),g=c.getContext('2d'),img=g.createImageData(640,480),px=new Uint32Array(img.data.buffer);
-var ws=null,bpp=2,pal=new Uint32Array(8),dirty=false,rx=0,kicked=false,down={},mx=-1,my=-1,mb=0,mDirty=false;
+var c=document.getElementById('c'),g=c.getContext('2d'),o=document.createElement('canvas');o.width=640;o.height=480;window.tidyScreen=o;
+var og=o.getContext('2d'),img=og.createImageData(640,480),px=new Uint32Array(img.data.buffer),ZK=1;
+var home=null,ws=null,bpp=2,pal=new Uint32Array(8),dirty=false,rx=0,kicked=false,down={},mx=-1,my=-1,mb=0,mDirty=false;
 var msg=document.getElementById('msg'),mt=document.getElementById('mt'),btn=document.getElementById('mb'),st=document.getElementById('st'),kb=document.getElementById('kb');
 function show(t,b){mt.textContent=t;btn.style.display=b?'':'none';msg.style.display=t?'flex':'none';}
-function fit(){var w=innerWidth,h=innerHeight-36,s=Math.min(w/640,h/480);if(s>1)s=Math.floor(s*4)/4;c.style.width=Math.floor(640*s)+'px';c.style.height=Math.floor(480*s)+'px';}
-addEventListener('resize',fit);fit();
+// sizing: whole device pixels when that fills most of the window (every pixel the same size = crisp text),
+// smooth scaling otherwise; the Size button switches to exact 1:1 pixels (scroll if needed)
+var mode=0;try{mode=+localStorage.tidySize||0;}catch(x){}
+// "sharp bilinear": blow the screen up by a whole number with hard pixels, then let the browser
+// shrink that a little smoothly. Every letter keeps the same shape at any window size.
+function fit(){var r=window.devicePixelRatio||1,w=innerWidth,h=innerHeight-36,s=Math.min(w/640,h/480)*r,wrap=document.getElementById('wrap');
+ if(mode==1)s=Math.max(1,Math.round(r));
+ ZK=Math.max(1,Math.ceil(s-0.001));if(c.width!=640*ZK){c.width=640*ZK;c.height=480*ZK;}
+ c.style.width=(640*s/r)+'px';c.style.height=(480*s/r)+'px';dirty=true;
+ var big=640*s/r>w||480*s/r>h;wrap.style.overflow=mode==1?'auto':'hidden';wrap.style.alignItems=wrap.style.justifyContent=(mode==1&&big)?'flex-start':'center';
+ document.getElementById('bz').textContent=mode==1?'Size: 1:1':'Size: fit';}
+addEventListener('resize',fit);
 function send(a){if(ws&&ws.readyState==1)ws.send(new Uint8Array(a));}
 function connect(){
  kicked=false;show('Connecting to TidyOS...');
@@ -71,11 +85,18 @@ function connect(){
     if(bpp==2){for(var x=0;x<160;x++){var b=d[o+x];px[p++]=pal[b>>6];px[p++]=pal[b>>4&3];px[p++]=pal[b>>2&3];px[p++]=pal[b&3];}}
     else{for(var k=0;k<80;k++){var q=o+k*3,v=d[q]|d[q+1]<<8|d[q+2]<<16;for(var i=0;i<8;i++)px[p++]=pal[v>>(21-3*i)&7];}}}
    dirty=true;}
-  else if(d[0]==3){kicked=true;show('TidyOS was opened in another browser.',true);}};
- ws.onclose=function(){st.textContent='Disconnected';if(!kicked){show('Lost connection - trying again...');setTimeout(connect,2000);}};
+  else if(d[0]==3){kicked=true;show('TidyOS was opened in another browser.',true);}
+  else if(d[0]==7){var t=new TextDecoder().decode(d.subarray(1)).split('\n');home={ssid:t[0],ip:t[1]};
+   var hb=document.getElementById('home');
+   if(location.hostname!=home.ip&&location.hostname!='tidyos.local'){hb.innerHTML='TidyOS is on <b></b> now. Switch this device to that Wi-Fi, then open <a href="http://'+home.ip+'/">http://'+home.ip+'</a> or <a href="http://tidyos.local/">http://tidyos.local</a>';hb.querySelector('b').textContent=home.ssid;hb.style.display='block';}
+   else hb.style.display='none';}};
+ ws.onclose=function(){st.textContent='Disconnected';if(!kicked){
+  var t='Lost connection - trying again...';
+  if(location.hostname=='192.168.4.1')t='Lost the TidyOS-Setup hotspot - trying again...\nIf TidyOS just joined your Wi-Fi, switch this device to '+(home?home.ssid:'that Wi-Fi')+' and open http://'+(home?home.ip:'tidyos.local');
+  show(t);setTimeout(connect,2000);}};
 }
 btn.onclick=function(){connect();};
-function frame(){if(dirty){g.putImageData(img,0,0);dirty=false;}
+function frame(){if(dirty){og.putImageData(img,0,0);g.imageSmoothingEnabled=false;g.drawImage(o,0,0,640*ZK,480*ZK);dirty=false;}
  if(mDirty){mDirty=false;send([2,mx&255,mx>>8,my&255,my>>8,mb,0]);}requestAnimationFrame(frame);}
 requestAnimationFrame(frame);
 setInterval(function(){if(ws&&ws.readyState==1)st.textContent='Connected  '+(rx/1024).toFixed(0)+' KB/s';rx=0;},1000);
@@ -106,6 +127,8 @@ kb.addEventListener('input',function(e){
 kb.addEventListener('keydown',function(e){if(e.key=='Enter'&&e.keyCode==229)tap(40,0);});
 document.getElementById('bk').onclick=function(){kb.focus();};
 document.getElementById('bt').onclick=function(){send([4]);c.focus();};
+document.getElementById('bz').onclick=function(){mode=mode?0:1;try{localStorage.tidySize=mode;}catch(x){}fit();};
+fit();
 document.getElementById('bf').onclick=function(){var d=document.documentElement;(d.requestFullscreen||d.webkitRequestFullscreen||function(){}).call(d);};
 // ---- mouse and touch
 function pos(e){var r=c.getBoundingClientRect();mx=Math.max(0,Math.min(639,(e.clientX-r.left)*640/r.width|0));my=Math.max(0,Math.min(479,(e.clientY-r.top)*480/r.height|0));}
@@ -279,6 +302,7 @@ static void handleHttp(WiFiClient c)
     s_ws = c;
     memset(s_hash, 0, sizeof(s_hash));
     sendPalette(s_ws);
+    s_sentHome.clear();
     s_view = true;
     Serial.println("[TidyOS] browser connected");
     return;
@@ -331,7 +355,7 @@ static void apManage()
   // no Wi-Fi set up, or it hasn't connected 25 s after start: open the hotspot
   if (!s_ap && !sta && (!gSet.ssid.length() || now > 25000)) apStart();
   // on home Wi-Fi for 2 minutes and nobody uses the hotspot: close it
-  if (s_ap && sta && s_connSince && now - s_connSince > 120000 && WiFi.softAPgetStationNum() == 0) apStop();
+  if (s_ap && sta && s_connSince && now - s_connSince > 300000 && WiFi.softAPgetStationNum() == 0) apStop();
 }
 
 // ---------------------------------------------------------------- task
@@ -353,7 +377,15 @@ static void screenTask(void *)
     }
     if (s_view) {
       if (!s_ws.connected() || !pollInput(s_ws)) { dropViewer(); Serial.println("[TidyOS] browser left"); }
-      else if (now - lastFrame >= 50) {
+      else if (now - lastAp == 0 && WiFi.status() == WL_CONNECTED) {
+        // tell the page where TidyOS lives on the home Wi-Fi (it shows this if it's on the hotspot)
+        std::string home = std::string(WiFi.SSID().c_str()) + "\n" + WiFi.localIP().toString().c_str();
+        if (home != s_sentHome) {
+          std::string m = "\x07" + home;
+          if (wsSend(s_ws, (const uint8_t *)m.data(), m.size())) s_sentHome = home;
+        }
+      }
+      if (s_view && now - lastFrame >= 50) {
         lastFrame = now;
         if (!sendChanges(s_ws, 24000)) dropViewer();
       }
