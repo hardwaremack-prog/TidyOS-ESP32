@@ -261,30 +261,31 @@ static void dropViewer()
   s_ws.stop();
 }
 
-static void handleHttp(WiFiClient c)
+// parses a complete request header (already read) and answers it
+static void handleHttp(WiFiClient c, const std::string & req)
 {
-  c.setTimeout(2);
-  std::string line, key, path;
+  std::string key, path;
   bool upgrade = false, first = true;
-  uint32_t t0 = millis();
-  while (c.connected() && millis() - t0 < 3000) {
-    if (!c.available()) { delay(2); continue; }
-    char ch = c.read();
-    if (ch == '\r') continue;
-    if (ch != '\n') { if (line.size() < 512) line += ch; continue; }
+  size_t st = 0;
+  while (st < req.size()) {
+    size_t e = req.find('\n', st);
+    if (e == std::string::npos) e = req.size();
+    std::string line = req.substr(st, e - st);
+    st = e + 1;
+    if (!line.empty() && line.back() == '\r') line.pop_back();
     if (line.empty()) break;
     if (first) {
       first = false;
-      size_t a = line.find(' '), b = line.find(' ', a + 1);
-      if (a != std::string::npos) path = line.substr(a + 1, b == std::string::npos ? std::string::npos : b - a - 1);
+      size_t sp1 = line.find(' '), sp2 = line.find(' ', sp1 + 1);
+      if (sp1 != std::string::npos) path = line.substr(sp1 + 1, sp2 == std::string::npos ? std::string::npos : sp2 - sp1 - 1);
     } else {
       std::string low = line;
       for (auto & k : low) k = tolower(k);
       if (low.rfind("sec-websocket-key:", 0) == 0) { key = line.substr(18); while (!key.empty() && key[0] == ' ') key.erase(0, 1); }
       if (low.rfind("upgrade:", 0) == 0 && low.find("websocket") != std::string::npos) upgrade = true;
     }
-    line.clear();
   }
+  c.setTimeout(2);
   gNetRx += 300;
 
   if (path == "/ws" && upgrade && !key.empty()) {
@@ -381,6 +382,55 @@ static void apManage()
   if (s_ap && sta && s_connSince && now - s_connSince > 300000 && WiFi.softAPgetStationNum() == 0) apStop();
 }
 
+// Several connections at once, none allowed to stall the others: browsers and Windows open
+// connections early and may say nothing for a while. Each one's request is collected bit by bit;
+// silent ones are dropped after 4 s, and the oldest is dropped if all slots are busy.
+struct Pending { WiFiClient c; std::string buf; uint32_t t0 = 0; bool used = false; };
+static Pending s_pend[4];
+
+static void pollHttp()
+{
+  for (int n = 0; n < 4; ++n) {              // accept what's waiting
+    WiFiClient c = s_srv.available();
+    if (!c) break;
+    int slot = -1;
+    uint32_t oldest = 0xFFFFFFFF;
+    for (int i = 0; i < 4; ++i) {
+      if (!s_pend[i].used) { slot = i; break; }
+      if (s_pend[i].t0 < oldest) { oldest = s_pend[i].t0; slot = i; }
+    }
+    if (s_pend[slot].used) s_pend[slot].c.stop();
+    s_pend[slot].c = c;
+    s_pend[slot].buf.clear();
+    s_pend[slot].t0 = millis();
+    s_pend[slot].used = true;
+  }
+  for (auto & p : s_pend) {
+    if (!p.used) continue;
+    int a = p.c.available();
+    if (a > 0) {
+      uint8_t tmp[256];
+      int r = p.c.read(tmp, std::min(a, (int)sizeof(tmp)));
+      if (r > 0 && p.buf.size() < 2048) p.buf.append((const char *)tmp, r);
+      gNetRx += r > 0 ? r : 0;
+    }
+    bool done = p.buf.find("\r\n\r\n") != std::string::npos || p.buf.find("\n\n") != std::string::npos;
+    if (done) {
+      WiFiClient c = p.c;
+      std::string req;
+      req.swap(p.buf);
+      p.used = false;
+      p.c = WiFiClient();
+      handleHttp(c, req);
+    } else if (!p.c.connected() || millis() - p.t0 > 4000 || p.buf.size() >= 2048) {
+      p.c.stop();
+      p.used = false;
+      p.buf.clear();
+      p.buf.shrink_to_fit();
+    }
+  }
+}
+
 // ---------------------------------------------------------------- task
 static void screenTask(void *)
 {
@@ -393,11 +443,8 @@ static void screenTask(void *)
       if (WiFi.status() == WL_CONNECTED) netMdnsBegin();
       if (!s_listening && (s_ap || WiFi.status() == WL_CONNECTED)) { s_srv.begin(); s_srv.setNoDelay(true); s_listening = true; }
     }
-    if (s_ap) s_dns.processNextRequest();
-    if (s_listening) {
-      WiFiClient c = s_srv.available();
-      if (c) handleHttp(c);
-    }
+    if (s_ap) for (int i = 0; i < 4; ++i) s_dns.processNextRequest();   // answer a burst of lookups promptly
+    if (s_listening) pollHttp();
     if (s_view) {
       if (!s_ws.connected() || !pollInput(s_ws)) { dropViewer(); Serial.println("[TidyOS] browser left"); }
       else if (now - lastAp == 0 && WiFi.status() == WL_CONNECTED) {
