@@ -7,6 +7,8 @@
 #include "led.h"
 #include "crashlog.h"
 #include "driver/spi_master.h"
+#include <SPI.h>
+#include <SD.h>
 #include "driver/gpio.h"
 #include "esp_bt.h"
 #include "core.h"
@@ -552,13 +554,25 @@ static void startDisplay()
 
 const char * gSDWiring = "none";
 
+// Same method as The Shelf on an ESP32 (Arduino SD library, tried at 10, 4 and 1 MHz):
+// it reads cards that ESP-IDF's own SD-over-SPI driver rejects.
+static SPIClass s_sdSpi(VSPI);
+
 static bool mountSD(int miso, int mosi, int clk, int cs, const char * name)
 {
+  s_sdSpi.begin(clk, miso, mosi, cs);
   for (int pin : { miso, mosi, cs }) gpio_pullup_en((gpio_num_t)pin);      // SD lines need pull-ups
-  bool ok = FileBrowser::mountSDCard(false, SD_MOUNT, 6, 16 * 1024, miso, mosi, clk, cs);
-  if (ok) { gSDWiring = name; Serial.printf("[TidyOS] SD card found on %s wiring\n", name); }
-  else spi_bus_free(HSPI_HOST);                                              // so the next try can use other pins
-  return ok;
+  for (uint32_t hz : { 10000000u, 4000000u, 1000000u }) {
+    if (SD.begin(cs, s_sdSpi, hz, SD_MOUNT, 6)) {
+      gSDWiring = name;
+      Serial.printf("[TidyOS] SD card found on %s wiring at %u MHz (%llu MB)\n", name, (unsigned)(hz / 1000000), SD.cardSize() >> 20);
+      return true;
+    }
+    SD.end();
+  }
+  s_sdSpi.end();
+  Serial.printf("[TidyOS] no SD card on %s wiring\n", name);
+  return false;
 }
 
 #ifdef TIDYOS_HTML5

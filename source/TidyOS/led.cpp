@@ -23,17 +23,16 @@ static inline void ledLevel(uint32_t v)      // 0 = off .. 255 = full
 volatile uint32_t gSdActivityMs = 0;
 static volatile bool s_ready = false;
 
-// Card reads/writes are stamped here. The build links these in place of ESP-IDF's sector
-// functions (-Wl,--wrap=sdmmc_read_sectors,--wrap=sdmmc_write_sectors); without that flag the
-// light simply never flickers.
+// Card reads/writes are stamped here. The build links these in place of FatFs's disk functions
+// (-Wl,--wrap=ff_disk_read,--wrap=ff_disk_write); without that flag the light never flickers.
+// (Internal flash uses SPIFFS, not FatFs, so only the SD card is counted.)
 extern "C" {
-  struct sdmmc_card_t;
-  int __real_sdmmc_read_sectors(sdmmc_card_t * card, void * dst, size_t start, size_t n);
-  int __real_sdmmc_write_sectors(sdmmc_card_t * card, const void * src, size_t start, size_t n);
-  int __wrap_sdmmc_read_sectors(sdmmc_card_t * card, void * dst, size_t start, size_t n)
-  { gSdActivityMs = millis(); return __real_sdmmc_read_sectors(card, dst, start, n); }
-  int __wrap_sdmmc_write_sectors(sdmmc_card_t * card, const void * src, size_t start, size_t n)
-  { gSdActivityMs = millis(); return __real_sdmmc_write_sectors(card, src, start, n); }
+  int __real_ff_disk_read(uint8_t pdrv, uint8_t * buff, uint32_t sector, unsigned count);
+  int __real_ff_disk_write(uint8_t pdrv, const uint8_t * buff, uint32_t sector, unsigned count);
+  int __wrap_ff_disk_read(uint8_t pdrv, uint8_t * buff, uint32_t sector, unsigned count)
+  { gSdActivityMs = millis(); return __real_ff_disk_read(pdrv, buff, sector, count); }
+  int __wrap_ff_disk_write(uint8_t pdrv, const uint8_t * buff, uint32_t sector, unsigned count)
+  { gSdActivityMs = millis(); return __real_ff_disk_write(pdrv, buff, sector, count); }
 }
 
 static void ledTask(void *)

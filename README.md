@@ -17,7 +17,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.6.3. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.6.4. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -224,7 +224,7 @@ sudo systemctl enable --now tidyos-helper
 - Libraries: **FabGL 1.0.9** and **NimBLE-Arduino 1.4.3**
 - Board: **ESP32 Dev Module**. Partition scheme: **Huge APP (3MB No OTA/1MB SPIFFS)**
 - Open `source/TidyOS/TidyOS.ino` and click Upload.
-- Optional, for the SD-activity flicker and the crash recorder: add `-Wl,--wrap=sdmmc_read_sectors,--wrap=sdmmc_write_sectors,--wrap=esp_panic_handler` to the linker flags (PlatformIO already does).
+- Optional, for the SD-activity flicker and the crash recorder: add `-Wl,--wrap=ff_disk_read,--wrap=ff_disk_write,--wrap=esp_panic_handler` to the linker flags (PlatformIO already does).
 - For the HTML5 edition, uncomment `#define TIDYOS_HTML5` in `config.h` first (PlatformIO: build the `nodemcu-32s-html5` environment).
 
 Source map: `core.cpp` (start-up, desktop, theme), `input.cpp` (Bluetooth HID host),

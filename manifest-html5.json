@@ -1,6 +1,6 @@
 {
   "name": "TidyOS for ESP32 (HTML5)",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "new_install_prompt_erase": true,
   "builds": [
     {
