@@ -3,6 +3,8 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <time.h>
+#include "screen.h"
+#include "esp_bt.h"
 #include "core.h"
 #include "input.h"
 #include "net.h"
@@ -119,6 +121,7 @@ std::string fmtMoney(double v)
 struct V8  : public VGA8Controller  { void lut() { updateRGB2PaletteLUT(); } };
 struct V4  : public VGA4Controller  { void lut() { updateRGB2PaletteLUT(); } };
 
+RGB888 themePal(int i);
 static const RGB888 PAL[16] = {
   RGB888(0, 0, 0),       RGB888(255, 255, 255), RGB888(170, 170, 170), RGB888(0, 85, 170),     // 4-colour set
   RGB888(85, 85, 85),    RGB888(0, 170, 170),   RGB888(170, 0, 0),     RGB888(0, 170, 0),      // 8-colour set
@@ -297,7 +300,7 @@ public:
         repaint(Rect(0, SCREEN_H - BAR_H, SCREEN_W - 1, SCREEN_H - 1));
         {
           // refresh the welcome / pairing hint only when something changed
-          std::string sig = inputStatus() + char('0' + inputKeyboards()) + char('0' + inputMice()) + (gSet.ssid.length() ? "w" : "-");
+          std::string sig = inputStatus() + char('0' + inputKeyboards()) + char('0' + inputMice()) + (gSet.ssid.length() ? "w" : "-") + (netConnected() ? "c" : "-");
           int unread = msgUnreadTotal() + comsUnread();
           if (unread != m_unread) { m_unread = unread; for (int k = 0; k < NICONS; ++k) if (ICONS[k].open == openMessages) repaintIcon(k); }
           if (sig != m_hintSig) {
@@ -387,6 +390,27 @@ private:
         drawIcon(cv, i);
     }
     // welcome / pairing hint
+#ifdef TIDYOS_HTML5
+    if (!gSet.ssid.length() || !netConnected()) {
+      int x = CELL_W * 3 + 24, y = 150;
+      cv->setPenColor(T.deskText);
+      cv->setBrushColor(T.desk);
+      cv->drawText(&FONT_std_22, x, y, "Welcome to TidyOS");
+      y += 34;
+      cv->drawText(&FONT_std_14, x, y, "This desktop runs on the ESP32 and");
+      y += 20;
+      cv->drawText(&FONT_std_14, x, y, "shows up in your web browser.");
+      y += 28;
+      cv->drawText(&FONT_std_14, x, y, gSet.ssid.length() ? "Joining your Wi-Fi..." : "Open Settings to join your home Wi-Fi.");
+      y += 20;
+      cv->drawText(&FONT_std_14, x, y, "Then open http://tidyos.local");
+      y += 28;
+      cv->setBrushColor(T.desk);
+      cv->fillRectangle(x, y, SCREEN_W - 1, y + 16);
+      std::string st = inputStatus();
+      cv->drawText(&FONT_std_12, x, y, st.c_str());
+    }
+#else
     bool needKbd = inputKeyboards() == 0, needMouse = inputMice() == 0;
     if (needKbd || needMouse || !gSet.ssid.length()) {
       int x = CELL_W * 3 + 24, y = 150;
@@ -414,6 +438,7 @@ private:
       if (needKbd && needMouse)
         cv->drawText(&FONT_std_12, x, y, "No Bluetooth? Type in a serial monitor (115200).");
     }
+#endif
     // status bar
     int by = SCREEN_H - BAR_H;
     if (clip.Y2 >= by) {
@@ -431,8 +456,12 @@ private:
       cv->drawText(&FONT_std_12, 70, by + 4, b);
       std::string notice = msgLastNotice();
       if (!notice.empty()) snprintf(b, sizeof(b), "%s", notice.substr(0, 40).c_str());
+#ifdef TIDYOS_HTML5
+      else snprintf(b, sizeof(b), "Browser:%s  RAM %uK", screenViewer() ? "on" : "--", (unsigned)(ESP.getFreeHeap() / 1024));
+#else
       else snprintf(b, sizeof(b), "Keyboard:%s  Mouse:%s  RAM %uK", inputKeyboards() ? "on" : "--", inputMice() ? "on" : "--",
                (unsigned)(ESP.getFreeHeap() / 1024));
+#endif
       cv->drawText(&FONT_std_12, 330, by + 4, b);
       time_t now = time(nullptr);
       struct tm tmv;
@@ -457,8 +486,8 @@ class TidyApp : public uiApp {
     rootWindow()->frameStyle().backgroundColor = T.desk;
     auto desk = new Desktop(rootWindow());
     setTimer(desk, 250);
-    inputAttach(this, &s_keyboard, s_dc);
     displayController()->setMouseCursor(CursorName::CursorPointerSimpleReduced);
+    inputAttach(this, &s_keyboard, s_dc);
   }
 };
 static TidyApp s_app;
@@ -600,11 +629,16 @@ static void splash(const char * msg, int percent)
   cv.waitCompletion();
 }
 
+RGB888 themePal(int i) { return PAL[i & 15]; }
+
 void setup()
 {
+#ifdef TIDYOS_HTML5
+  esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);   // no Bluetooth in this edition: give its RAM to apps
+#endif
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n[TidyOS] " TIDYOS_VERSION " starting");
+  Serial.println("\n[TidyOS] " TIDYOS_VERSION " (" TIDYOS_EDITION " edition) starting");
 
   settingsLoad();
   inputBegin();     // Bluetooth first: it needs a big block of RAM
@@ -624,7 +658,12 @@ void setup()
   splash("Looking for your Shelves", 70);
   msgBegin();       // The Shelf messaging + Coms mesh
   if (gSet.fileShare) fileServerSet(true);
+  screenBegin();    // HTML5 edition: the desktop in a web browser
+#ifdef TIDYOS_HTML5
+  splash(gSet.ssid.length() ? "Joining Wi-Fi" : "Starting the TidyOS-Setup hotspot", 90);
+#else
   splash(gSet.ssid.length() ? "Joining Wi-Fi and Bluetooth" : "Starting Bluetooth", 90);
+#endif
   delay(400);
   splash("Ready", 100);
   delay(500);

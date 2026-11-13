@@ -4,8 +4,10 @@
 
 A tiny general-purpose computer on a NodeMCU ESP32:
 
-- **640 × 480 VGA desktop** (8 or 4 colours, picked automatically to fit in RAM)
-- **Bluetooth keyboard and mouse** (Bluetooth LE)
+- **Two editions, picked with a switch on the flasher:**
+  - **VGA:** a 640 × 480 desktop on a VGA monitor (8 or 4 colours, picked automatically to fit in RAM) with a Bluetooth keyboard and mouse
+  - **HTML5:** the same desktop in a web browser on any phone, tablet or PC on your Wi-Fi. No monitor or resistors; the browser is the keyboard and mouse
+- **Bluetooth keyboard and mouse** (Bluetooth LE, VGA edition)
 - **microSD card** for your files (falls back to internal flash with no card)
 - **Wi-Fi** with a clock that sets itself from the internet
 - Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Messages, Browser, Files, Settings, Task Manager**
@@ -15,7 +17,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.5. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.6. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -25,6 +27,25 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 ![TidyOS previews](docs/previews/TidyOS-previews.png)
 
 *These are drawn previews made from TidyOS's own layouts, 4-colour palette and FabGL fonts, not photos of a running board. The real screen should look very close.*
+
+## HTML5 edition (desktop in your web browser)
+
+![TidyOS in a web browser](docs/previews/13-html5-in-browser.png)
+
+*Drawn desktop, real browser page: this is the HTML5 page running against a simulated board.*
+
+1. On the flasher page, flip the switch to **HTML5** and click **Install TidyOS (HTML5)**. The only wiring you need is the optional microSD module.
+2. Power the board. On a phone or PC, join the Wi-Fi hotspot **TidyOS-Setup** (password `tidyos123`). The desktop pops up, or open **http://192.168.4.1**.
+3. Open **Settings**, join your home Wi-Fi, **Save**.
+4. Back on your home Wi-Fi, open **http://tidyos.local** (or the address at the bottom of the desktop).
+
+How it works: TidyOS still draws into its normal 640 × 480 screen memory. A small web server on port 80 sends only the rows that changed to the browser over a WebSocket (about 20 updates a second), and the browser sends keys, clicks, wheel and touches back. A phone's on-screen keyboard works through the **Keyboard** button in the top bar.
+
+- One browser at a time. Opening TidyOS somewhere else takes over and the first tab says so.
+- Bluetooth is switched off in this edition. That frees roughly 60 KB of RAM, so it normally gets 8 colours.
+- If it can't join your Wi-Fi within 25 seconds, the TidyOS-Setup hotspot comes back. It turns itself off 2 minutes after TidyOS is on your home Wi-Fi.
+- Wi-Fi file sharing moves to port **8081** (`http://tidyos.local:8081`), because port 80 shows the desktop.
+- A VGA monitor wired up as below still works too, just without a mouse pointer.
 
 ## 1. Parts
 
@@ -68,9 +89,9 @@ This is the same VGA pinout as the LilyGO "FabGL VGA32" board, so TidyOS also ru
 3. Pick the ESP32's port. (If it won't connect, hold the **BOOT** button while clicking Install.)
 4. Press **EN/RST** when it finishes.
 
-Manual alternative: in https://espressif.github.io/esptool-js/ flash `firmware/TidyOS-ESP32-full.bin` at address **0x0**.
+Manual alternative: in https://espressif.github.io/esptool-js/ flash `firmware/TidyOS-ESP32-full.bin` (VGA) or `firmware/TidyOS-ESP32-HTML5-full.bin` (HTML5) at address **0x0**.
 
-## 4. First start
+## 4. First start (VGA edition)
 
 1. TidyOS shows the desktop with a welcome note.
 2. **Put your Bluetooth keyboard in pairing mode.** Until a keyboard is connected, TidyOS accepts any keyboard or mouse it finds in pairing mode, so you're never stuck.
@@ -186,10 +207,11 @@ sudo systemctl enable --now tidyos-helper
 - Libraries: **FabGL 1.0.9** and **NimBLE-Arduino 1.4.3**
 - Board: **ESP32 Dev Module**. Partition scheme: **Huge APP (3MB No OTA/1MB SPIFFS)**
 - Open `source/TidyOS/TidyOS.ino` and click Upload.
+- For the HTML5 edition, uncomment `#define TIDYOS_HTML5` in `config.h` first (PlatformIO: build the `nodemcu-32s-html5` environment).
 
 Source map: `core.cpp` (start-up, desktop, theme), `input.cpp` (Bluetooth HID host),
 `net.cpp` (Wi-Fi, web fetching, HTML→text), `widgets.cpp` (text area, spreadsheet engine), `apps.cpp` (all apps),
 `print.cpp` (PDF / PWG raster / IPP), `spell.cpp` + `dict.cpp` (spell check), `shelfmsg.cpp` (The Shelf messaging + Coms mesh),
-`fileserver.cpp` (Wi-Fi file sharing page), `games.cpp` (the games).
+`fileserver.cpp` (Wi-Fi file sharing page), `games.cpp` (the games), `screen.cpp` (HTML5 edition: web screen, WebSocket, setup hotspot).
 
 Built on [FabGL](https://github.com/fdivitto/FabGL) (GPL v3) and [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) (Apache 2.0).

@@ -24,32 +24,53 @@
   code { background:#eef; padding:1px 4px; }
   .note { color:#555; font-size:.9rem; }
   a { color:var(--accent); }
+  .switch { display:inline-flex; border:2px solid #000; box-shadow:4px 4px 0 #000; margin:6px 0 16px; background:#fff; }
+  .switch button { font:inherit; font-size:1.05rem; border:0; padding:10px 22px; background:#fff; color:#111; cursor:pointer; min-width:140px; }
+  .switch button + button { border-left:2px solid #000; }
+  .switch button.on { background:var(--accent); color:#fff; font-weight:600; }
+  .switch small { display:block; font-size:.78rem; font-weight:400; opacity:.85; }
+  .edition { background:#eef6ff; border-left:4px solid var(--accent); padding:10px 14px; margin:0 0 14px; }
+  body.html5 .vga-only, body.vga .html5-only { display:none; }
 </style>
 </head>
-<body>
+<body class="vga">
 <header>
   <h1>TidyOS for ESP32</h1>
-  <p>A tiny computer: 640×480 VGA desktop, Bluetooth keyboard &amp; mouse, SD card, Wi-Fi, and Lite versions of the Tidy Suite.</p>
+  <p>A tiny computer: 640×480 desktop on a VGA monitor or in your web browser, SD card, Wi-Fi, and Lite versions of the Tidy Suite.</p>
 </header>
 <main>
   <div class="card">
     <h2>1. Install</h2>
+    <p><b>Pick where the screen goes:</b></p>
+    <div class="switch" role="radiogroup" aria-label="Edition">
+      <button id="ed-vga" class="on" role="radio" aria-checked="true">VGA<small>monitor + Bluetooth</small></button>
+      <button id="ed-html5" role="radio" aria-checked="false">HTML5<small>in your web browser</small></button>
+    </div>
+    <p class="edition vga-only"><b>VGA edition:</b> the desktop shows on a VGA monitor wired to the board with resistors. Use a Bluetooth LE keyboard and mouse.</p>
+    <p class="edition html5-only"><b>HTML5 edition:</b> no monitor or resistors needed. The desktop shows in a web browser on any phone, tablet or PC on your Wi-Fi, and that browser is the keyboard and mouse. Bluetooth is off to leave more memory for apps.</p>
     <p>Plug your NodeMCU ESP32 into this computer with USB, then click the button. Works in <b>Chrome or Edge</b> on a computer.</p>
-    <esp-web-install-button manifest="manifest.json">
-      <button slot="activate">Install TidyOS</button>
+    <esp-web-install-button id="installer" manifest="manifest.json">
+      <button slot="activate" id="install-label">Install TidyOS (VGA)</button>
       <span slot="unsupported">Your browser can't flash boards. Please use Chrome or Edge on a computer.</span>
       <span slot="not-allowed">Please open this page over https.</span>
     </esp-web-install-button>
-    <p class="note">Can't connect? Hold the <b>BOOT</b> button on the board while you click Install. Installing erases the board.</p>
+    <p class="note">Can't connect? Hold the <b>BOOT</b> button on the board while you click Install. Installing erases the board. You can switch editions any time by installing the other one.</p>
   </div>
 
   <div class="card">
     <h2>What it looks like</h2>
-    <img src="docs/previews/TidyOS-previews.png" alt="TidyOS screen previews">
+    <img class="vga-only" src="docs/previews/TidyOS-previews.png" alt="TidyOS screen previews">
+    <img class="html5-only" src="docs/previews/13-html5-in-browser.png" alt="TidyOS desktop shown in a web browser">
     <p class="note">Drawn previews made from TidyOS's own layouts, colours and fonts.</p>
   </div>
 
-  <div class="card">
+  <div class="card html5-only">
+    <h2>2. Wire it</h2>
+    <p>Nothing to wire for the screen. A <b>microSD module</b> is still recommended for your files (GPIO 16 / 17 / 14 / 13 = MISO / MOSI / SCK / CS, plus 3V3 and GND). Without one, TidyOS uses the board's internal flash.</p>
+    <p class="note">If you do plug a VGA monitor in, the HTML5 edition shows on it too (without a mouse pointer).</p>
+  </div>
+
+  <div class="card vga-only">
     <h2>2. Wire it</h2>
     <img src="wiring.png" alt="Wiring diagram: ESP32 to VGA socket through resistors, and to a microSD module">
     <table>
@@ -65,7 +86,18 @@
     </table>
   </div>
 
-  <div class="card">
+  <div class="card html5-only">
+    <h2>3. First start</h2>
+    <ol>
+      <li>Power the board. On a phone or PC, join the Wi-Fi hotspot <b>TidyOS-Setup</b> (password <code>tidyos123</code>).</li>
+      <li>The desktop pops up, or open <b>http://192.168.4.1</b>.</li>
+      <li>Open <b>Settings</b>, find your home Wi-Fi, type the password, then <b>Connect</b> and <b>Save</b>.</li>
+      <li>Rejoin your home Wi-Fi and open <b>http://tidyos.local</b> (or the address shown at the bottom of the desktop).</li>
+    </ol>
+    <p class="note">On a phone, tap <b>Keyboard</b> in the top bar to type. <b>Task Manager</b> and <b>Full screen</b> are up there too. One browser at a time: opening TidyOS somewhere else takes over. If it can't join your Wi-Fi it opens the TidyOS-Setup hotspot again, and it turns the hotspot off 2 minutes after it's on your home Wi-Fi.</p>
+  </div>
+
+  <div class="card vga-only">
     <h2>3. First start</h2>
     <ol>
       <li>Put your Bluetooth <b>keyboard</b> in pairing mode. TidyOS connects to it automatically.</li>
@@ -79,11 +111,34 @@
     <h2>Apps</h2>
     <p>Calculator · <b>Neat Lite</b> (writing, spell check) · <b>Tidy Lite</b> (spreadsheet) · <b>Ready Lite</b> (to-do) · <b>Steady Lite</b> (bills) · <b>Rugged Lite</b> (grid-down guide) · <b>Messages</b> (The Shelf + Coms mesh) · Browser · Files · Settings · Task Manager</p>
     <p><b>Printing:</b> network printers (found automatically), through a Pi with CUPS, or Save as PDF.</p>
-    <p><b>Wi-Fi file sharing:</b> one switch, then copy files to and from the SD card from any browser.</p>
+    <p><b>Wi-Fi file sharing:</b> one switch, then copy files to and from the SD card from any browser (port 8081 in the HTML5 edition).</p>
     <p><b>Games:</b> Sammy the Snake · Minesweeper · Blocks · 2048</p>
     <p>For better web pages, run <code>helper/tidyos_proxy.py</code> on a Raspberry Pi and enter its address in Settings → Browser.
        See the <a href="https://github.com/hardwaremack-prog/TidyOS-ESP32#readme">README</a> for everything else.</p>
   </div>
 </main>
+<script>
+  // VGA / HTML5 switch: picks which firmware the Install button flashes
+  const ED = {
+    vga:   { manifest: 'manifest.json',       label: 'Install TidyOS (VGA)' },
+    html5: { manifest: 'manifest-html5.json', label: 'Install TidyOS (HTML5)' },
+  };
+  function setEdition(e) {
+    document.body.className = e;
+    const inst = document.getElementById('installer');
+    inst.setAttribute('manifest', ED[e].manifest);
+    inst.manifest = ED[e].manifest;
+    document.getElementById('install-label').textContent = ED[e].label;
+    for (const k of Object.keys(ED)) {
+      const b = document.getElementById('ed-' + k);
+      b.classList.toggle('on', k === e);
+      b.setAttribute('aria-checked', k === e);
+    }
+    history.replaceState(null, '', e === 'html5' ? '#html5' : location.pathname);
+  }
+  document.getElementById('ed-vga').onclick = () => setEdition('vga');
+  document.getElementById('ed-html5').onclick = () => setEdition('html5');
+  setEdition(location.hash === '#html5' ? 'html5' : 'vga');
+</script>
 </body>
 </html>

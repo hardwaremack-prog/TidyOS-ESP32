@@ -1,4 +1,5 @@
 // TidyOS networking
+#include "screen.h"
 #include <WiFi.h>
 #include <time.h>
 #include "net.h"
@@ -31,6 +32,8 @@ bool netConnected() { return WiFi.status() == WL_CONNECTED; }
 
 std::string netStatus()
 {
+  if (screenApOn() && WiFi.status() != WL_CONNECTED)
+    return "Hotspot " SCREEN_AP_NAME " - " + screenUrl();
   if (!gSet.ssid.length())
     return "Wi-Fi not set up";
   if (WiFi.status() == WL_CONNECTED) {

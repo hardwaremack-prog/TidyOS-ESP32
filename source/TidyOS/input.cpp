@@ -321,8 +321,10 @@ static void postMouse(int dx, int dy, int wheel, uint8_t buttons)
   cur = s_mouse;
   portEXIT_CRITICAL(&s_mux);
 
+#ifndef TIDYOS_HTML5      // HTML5: the browser draws its own pointer
   if (s_dc && (cur.X != prev.X || cur.Y != prev.Y))
     s_dc->setMouseCursorPos(cur.X, cur.Y);
+#endif
 
   auto send = [&](uiEventID id, int changed) {
     uiEvent evt = uiEvent(nullptr, id);
@@ -781,8 +783,45 @@ static void serialTask(void *)
 
 // ============================================================ public API
 
+// ============================================================ browser keyboard + mouse (HTML5 edition)
+
+static volatile uint8_t s_webMods = 0;
+
+void inputWebKey(uint8_t usage, uint8_t mods, bool down)
+{
+  uint8_t changed = mods ^ s_webMods;
+  for (int b = 0; b < 8; ++b)
+    if (changed & (1 << b)) {
+      if (mods & (1 << b)) s_mods |= (1 << b); else s_mods &= ~(1 << b);
+      postKey(s_modVK[b], 0, (mods >> b) & 1);
+    }
+  s_webMods = mods;
+  if (usage >= 4 && usage < 0xE0) postUsage(usage, down);
+}
+
+void inputWebMouse(int x, int y, int wheel, uint8_t buttons)
+{
+  postMouse(x - s_mouse.X, y - s_mouse.Y, wheel, buttons);
+}
+
+void inputWebReleaseAll()
+{
+  inputWebKey(0, 0, false);
+  s_repUsage = 0;
+  if (s_mouse.buttons.left || s_mouse.buttons.right || s_mouse.buttons.middle) postMouse(0, 0, 0, 0);
+}
+
+#ifdef TIDYOS_HTML5
+static const bool s_bleOn = false;
+#else
+static const bool s_bleOn = true;
+#endif
+
 void inputBegin()
 {
+  s_mouse.X = SCREEN_W / 2;
+  s_mouse.Y = SCREEN_H / 2;
+  if (!s_bleOn) { s_status = "Keyboard and mouse: your web browser"; return; }
   NimBLEDevice::init("TidyOS");
   NimBLEDevice::setSecurityAuth(true, false, true);              // bond, no MITM, secure connections
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);       // "Just Works" pairing
@@ -803,15 +842,20 @@ void inputAttach(uiApp * app, Keyboard * kbd, BitmappedDisplayController * dc)
   static bool started = false;
   if (!started) {
     started = true;
-    xTaskCreatePinnedToCore(bleTask,    "ble",    6144, nullptr, 3, nullptr, 0);
+    if (s_bleOn) xTaskCreatePinnedToCore(bleTask, "ble", 6144, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(repeatTask, "keyrep", 2048, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(serialTask, "serkbd", 2048, nullptr, 2, nullptr, 0);
   }
+#ifdef TIDYOS_HTML5
+  if (dc) dc->setMouseCursorPos(-100, -100);       // keep FabGL's pointer off screen
+#else
   if (dc) dc->setMouseCursorPos(s_mouse.X, s_mouse.Y);
+#endif
 }
 
 void inputStartPairScan(int seconds)
 {
+  if (!s_bleOn) { s_status = "Bluetooth is off in the HTML5 edition - your browser is the keyboard and mouse"; return; }
   {
     std::lock_guard<std::mutex> lk(s_lock);
     s_found.clear();
@@ -841,10 +885,11 @@ bool inputGetFound(int i, FoundDev & out)
   return true;
 }
 
-void inputPair(int i) { s_pendingIdx = i; }
+void inputPair(int i) { if (s_bleOn) s_pendingIdx = i; }
 
 void inputForgetAll()
 {
+  if (!s_bleOn) { s_status = "Bluetooth is off in the HTML5 edition - your browser is the keyboard and mouse"; return; }
   {
     std::lock_guard<std::mutex> lk(s_lock);
     for (auto c : s_conns) if (c->client) c->client->disconnect();
@@ -855,7 +900,16 @@ void inputForgetAll()
   s_status = "Forgot all Bluetooth devices";
 }
 
-int inputKeyboards() { return countKind(true); }
-int inputMice()      { return countKind(false); }
+#include "screen.h"
+int inputKeyboards() { return s_bleOn ? countKind(true) : (screenViewer() ? 1 : 0); }
+int inputMice()      { return s_bleOn ? countKind(false) : (screenViewer() ? 1 : 0); }
 
-std::string inputStatus() { return s_status; }
+std::string inputStatus()
+{
+  if (!s_bleOn) {
+    if (screenViewer()) return "Browser connected";
+    std::string u = screenUrl();
+    return u.empty() ? std::string("Waiting for Wi-Fi...") : "Open " + u + " in a web browser";
+  }
+  return s_status;
+}

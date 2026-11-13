@@ -9,7 +9,12 @@
 
 static volatile bool s_on = false;
 static bool s_taskStarted = false;
-static WiFiServer s_srv(80);
+#ifdef TIDYOS_HTML5
+#define FILES_PORT 8081          // port 80 shows the desktop in the HTML5 edition
+#else
+#define FILES_PORT 80
+#endif
+static WiFiServer s_srv(FILES_PORT);
 static bool s_listening = false;
 
 void netMdnsBegin()
@@ -309,5 +314,7 @@ bool fileServerOn() { return s_on; }
 std::string fileServerUrl()
 {
   if (!s_on || WiFi.status() != WL_CONNECTED) return "";
-  return std::string("http://") + WiFi.localIP().toString().c_str();
+  std::string u = std::string("http://") + WiFi.localIP().toString().c_str();
+  if (FILES_PORT != 80) u += ":" + std::to_string(FILES_PORT);
+  return u;
 }

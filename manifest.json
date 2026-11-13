@@ -1,11 +1,16 @@
 {
-  "name": "TidyOS for ESP32",
-  "version": "1.5",
+  "name": "TidyOS for ESP32 (VGA)",
+  "version": "1.6",
   "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32",
-      "parts": [{ "path": "firmware/TidyOS-ESP32-full.bin", "offset": 0 }]
+      "parts": [
+        {
+          "path": "firmware/TidyOS-ESP32-full.bin",
+          "offset": 0
+        }
+      ]
     }
   ]
 }

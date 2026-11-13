@@ -2,7 +2,17 @@
 // Pin map and build-time settings.
 #pragma once
 
-#define TIDYOS_VERSION "1.5"
+#define TIDYOS_VERSION "1.6"
+
+// Edition. The VGA edition draws on a monitor and uses Bluetooth keyboard + mouse.
+// The HTML5 edition shows the desktop in a web browser (keyboard + mouse come from the browser).
+// The web flasher has both; when building yourself, uncomment the next line for HTML5.
+// #define TIDYOS_HTML5
+#ifdef TIDYOS_HTML5
+  #define TIDYOS_EDITION "HTML5"
+#else
+  #define TIDYOS_EDITION "VGA"
+#endif
 
 // ---------------- VGA (8 GPIOs, 2 bits per colour + sync) ----------------
 // Same pinout as the LilyGO/TTGO "FabGL VGA32" board, so FabGL demos work too.

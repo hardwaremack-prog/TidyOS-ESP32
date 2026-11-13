@@ -1,0 +1,16 @@
+{
+  "name": "TidyOS for ESP32 (HTML5)",
+  "version": "1.6",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "firmware/TidyOS-ESP32-HTML5-full.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}
