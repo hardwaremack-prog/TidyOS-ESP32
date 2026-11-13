@@ -177,6 +177,44 @@ static bool wsSend(WiFiClient & c, const uint8_t * d, size_t n, uint8_t opcode =
   return true;
 }
 
+// ---- outbox: frames for the browser wait here and drain without ever blocking the server
+static std::string s_out;
+static size_t      s_outPos = 0;
+static uint32_t    s_outStuck = 0;        // when the outbox last made no progress
+
+static void wsQueue(const uint8_t * d, size_t n, uint8_t opcode = 2)
+{
+  uint8_t h[4];
+  size_t hl;
+  h[0] = 0x80 | opcode;
+  if (n < 126) { h[1] = n; hl = 2; }
+  else { h[1] = 126; h[2] = n >> 8; h[3] = n & 255; hl = 4; }
+  s_out.append((const char *)h, hl);
+  s_out.append((const char *)d, n);
+  gNetTx += n + hl;
+}
+
+static size_t outPending() { return s_out.size() - s_outPos; }
+
+// false = the connection is gone (or stuck for 15 s)
+static bool flushOut(WiFiClient & c)
+{
+  int fd = c.fd();
+  if (fd < 0) return false;
+  while (outPending()) {
+    int r = send(fd, s_out.data() + s_outPos, std::min(outPending(), (size_t)2920), MSG_DONTWAIT);
+    if (r > 0) { s_outPos += r; s_outStuck = 0; continue; }
+    if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+      if (!s_outStuck) s_outStuck = millis();
+      else if (millis() - s_outStuck > 15000) return false;
+      break;
+    }
+    return false;
+  }
+  if (!outPending()) { s_out.clear(); s_outPos = 0; if (s_out.capacity() > 16384) s_out.shrink_to_fit(); }
+  return true;
+}
+
 static void sendPalette(WiFiClient & c)
 {
   uint8_t m[3 + 8 * 3];
@@ -197,6 +235,7 @@ static inline uint32_t rowHash(const uint8_t * row, int bytes)
 // sends changed rows; at most ~maxBytes per call so input stays snappy
 static bool sendChanges(WiFiClient & c, size_t maxBytes)
 {
+  (void)c;
   static uint8_t buf[4 + 24 * 240];
   const int rb = gColors == 8 ? 240 : 160;
   const int maxRows = (sizeof(buf) - 4) / rb;
@@ -216,7 +255,7 @@ static bool sendChanges(WiFiClient & c, size_t maxBytes)
       ++n; ++y;
     }
     buf[0] = 2; buf[1] = y0 & 255; buf[2] = y0 >> 8; buf[3] = n;
-    if (!wsSend(c, buf, 4 + n * rb)) return false;
+    wsQueue(buf, 4 + n * rb);
     sent += 4 + n * rb;
   }
   return true;
@@ -241,7 +280,7 @@ static bool pollInput(WiFiClient & c)
     for (size_t i = 0; i < keep; ++i) p[i] ^= mask[i & 3];
     gNetRx += len + 2;
     if (op == 8) return false;                               // close
-    if (op == 9) { wsSend(c, p, keep, 10); continue; }       // ping -> pong
+    if (op == 9) { wsQueue(p, keep, 10); continue; }         // ping -> pong
     if (op != 2 || keep < 1) continue;
     switch (p[0]) {
       case 1: if (keep >= 4) inputWebKey(p[1], p[2], p[3] != 0); break;
@@ -257,6 +296,7 @@ static bool pollInput(WiFiClient & c)
 // ---------------------------------------------------------------- HTTP
 static void dropViewer()
 {
+  s_out.clear(); s_out.shrink_to_fit(); s_outPos = 0; s_outStuck = 0;
   if (s_view) { s_view = false; inputWebReleaseAll(); }
   s_ws.stop();
 }
@@ -302,6 +342,7 @@ static void handleHttp(WiFiClient c, const std::string & req)
     c.setNoDelay(true);
     s_ws = c;
     memset(s_hash, 0, sizeof(s_hash));
+    s_out.clear(); s_outPos = 0; s_outStuck = 0;
     sendPalette(s_ws);
     s_sentHome.clear();
     s_view = true;
@@ -452,12 +493,14 @@ static void screenTask(void *)
         std::string home = std::string(WiFi.SSID().c_str()) + "\n" + WiFi.localIP().toString().c_str();
         if (home != s_sentHome) {
           std::string m = "\x07" + home;
-          if (wsSend(s_ws, (const uint8_t *)m.data(), m.size())) s_sentHome = home;
+          wsQueue((const uint8_t *)m.data(), m.size()); s_sentHome = home;
         }
       }
-      if (s_view && now - lastFrame >= 50) {
+      if (s_view && !flushOut(s_ws)) { dropViewer(); Serial.println("[TidyOS] browser stopped receiving"); }
+      else if (s_view && now - lastFrame >= 50 && outPending() == 0) {
         lastFrame = now;
-        if (!sendChanges(s_ws, 24000)) dropViewer();
+        sendChanges(s_ws, 8000);
+        if (!flushOut(s_ws)) dropViewer();
       }
     }
     vTaskDelay(pdMS_TO_TICKS(s_view ? 8 : 20));
