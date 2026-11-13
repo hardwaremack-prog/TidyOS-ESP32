@@ -102,7 +102,7 @@ This is the same VGA pinout as the LilyGO "FabGL VGA32" board, so TidyOS also ru
 
 1. Plug the NodeMCU into your computer with USB.
 2. In **Chrome or Edge**, open **https://hardwaremack-prog.github.io/TidyOS-ESP32/** and click **Install TidyOS**.
-3. Pick the ESP32's port. If it won't connect: hold **BOOT**, tap **EN**, let go of **BOOT**. The board then waits in install mode as long as you need. (A 10 µF capacitor from EN to GND usually makes this automatic.)
+3. Pick the ESP32's port. When updating, leave **Erase device** unticked to keep your Wi-Fi and settings. If it won't connect: hold **BOOT**, tap **EN**, let go of **BOOT**. The board then waits in install mode as long as you need. (A 10 µF capacitor from EN to GND usually makes this automatic.)
 4. Press **EN/RST** when it finishes.
 
 Manual alternative: in https://espressif.github.io/esptool-js/ flash `firmware/TidyOS-ESP32-full.bin` (VGA) or `firmware/TidyOS-ESP32-HTML5-full.bin` (HTML5) at address **0x0**.
