@@ -1436,21 +1436,22 @@ class RuggedApp : public AppFrame {
 public:
   static AppFrame * inst;
   uiButton * tabs[4];
-  uiPanel  * panes[4];
+  uiPanel  * panes[4] = { nullptr, nullptr, nullptr, nullptr };   // built the first time each tab is opened (saves RAM)
   int        tab = 0;
 
   // guide + cards
-  uiListBox * cardList, * guideList;
-  TextArea  * cardView, * guideView;
-  uiTextEdit * search;
+  uiListBox * cardList = nullptr, * guideList = nullptr;
+  TextArea  * cardView = nullptr, * guideView = nullptr;
+  uiTextEdit * search = nullptr;
   std::vector<int> guideRows;
 
   // supplies
-  uiTextEdit * sup[7];
-  uiLabel    * supOut[4], * nextJob;
+  std::string  supVal[7];
+  uiTextEdit * sup[7] = {};
+  uiLabel    * supOut[4] = {}, * nextJob = nullptr;
 
   // barter
-  uiListBox  * haveList, * needList, * tradeList;
+  uiListBox  * haveList = nullptr, * needList = nullptr, * tradeList = nullptr;
   uiTextEdit * haveEd, * needEd, * tWho, * tGave, * tGot;
   std::vector<std::string> have, need, trades;
   uiLabel    * saved;
@@ -1474,17 +1475,30 @@ public:
       x += widths[i] + 4;
     }
     saved = makeSavedLight(this, cx + 542, cy + 2);
+    load();
+    show(0);
+  }
 
+  void build(int i) {
+    if (panes[i]) return;
+    auto p = pane(i);
+    if (i == 0) build0(p); else if (i == 1) build1(p); else if (i == 2) build2(p); else build3(p);
+  }
+
+  void build0(uiPanel * p) {
     // ---- If this happens
-    auto p = pane(0);
     cardList = add(p, new uiListBox(p, Point(0, 0), Size(200, 384)));
     cardList->items().takeStrings();
     for (int i = 0; i < RUG_QUICK_COUNT; ++i) cardList->items().append(RUG_QUICK[i].title);
     cardView = new TextArea(p, Point(206, 0), Size(406, 384), false);
     cardList->onChange = [this]() { showCard(); };
+    cardList->selectItem(0);
+    showCard();
 
+  }
+
+  void build1(uiPanel * p) {
     // ---- Field guide
-    p = pane(1);
     add(p, new uiLabel(p, "Search", Point(0, 3), Size(46, 18)));
     search = add(p, new uiTextEdit(p, "", Point(48, 0), Size(152, 22)));
     search->onChange = [this]() { filterGuide(); };
@@ -1492,15 +1506,18 @@ public:
     guideList->items().takeStrings();
     guideView = new TextArea(p, Point(206, 0), Size(406, 384), false);
     guideList->onChange = [this]() { showGuide(); };
+    filterGuide();
 
+  }
+
+  void build2(uiPanel * p) {
     // ---- How long can we last?
-    p = pane(2);
     static const char * supNames[7] = { "People", "Water stored (gallons)", "Food on hand (days of meals)", "Firewood (armloads)",
                                         "Armloads burned per day", "Fuel (gallons gas/propane)", "Fuel used per day (gallons)" };
     for (int i = 0; i < 7; ++i) {
       add(p, new uiLabel(p, supNames[i], Point(0, 6 + i * 32), Size(200, 18)));
-      sup[i] = add(p, new uiTextEdit(p, "", Point(204, 3 + i * 32), Size(80, 24)));
-      sup[i]->onChange = [this]() { calc(); };
+      sup[i] = add(p, new uiTextEdit(p, supVal[i].c_str(), Point(204, 3 + i * 32), Size(80, 24)));
+      sup[i]->onChange = [this, i]() { supVal[i] = sup[i]->text(); calc(); };
     }
     static const char * outNames[4] = { "Water", "Food", "Firewood", "Fuel" };
     for (int i = 0; i < 4; ++i) {
@@ -1515,15 +1532,18 @@ public:
       PrintDoc d;
       d.title = "How long can we last";
       static const char * nm[7] = { "People", "Water (gal)", "Food (days)", "Firewood (armloads)", "Armloads per day", "Fuel (gal)", "Fuel per day" };
-      for (int i = 0; i < 7; ++i) d.lines.push_back(std::string(nm[i]) + ": " + sup[i]->text());
+      for (int i = 0; i < 7; ++i) d.lines.push_back(std::string(nm[i]) + ": " + supVal[i]);
       d.lines.push_back("");
       for (int i = 0; i < 4; ++i) d.lines.push_back(supOut[i]->text());
       d.lines.push_back(nextJob->text());
       printDialog(d);
     };
 
+    calc();
+  }
+
+  void build3(uiPanel * p) {
     // ---- Barter board
-    p = pane(3);
     add(p, new uiLabel(p, "We have / can do", Point(0, 0), Size(196, 18)));
     haveList = add(p, new uiListBox(p, Point(0, 20), Size(196, 150)));
     haveEd = add(p, new uiTextEdit(p, "", Point(0, 176), Size(140, 22)));
@@ -1559,19 +1579,20 @@ public:
       printDialog(d);
     };
     for (auto l : { haveList, needList, tradeList }) l->items().takeStrings();
-
-    load();
-    filterGuide();
-    calc();
-    show(0);
-    cardList->selectItem(0);
-    showCard();
+    refill(haveList, have);
+    refill(needList, need);
+    refill(tradeList, trades);
   }
 
   void show(int i) {
+    if (!panes[i] && ESP.getFreeHeap() < 30000) {
+      gApp->messageBox("Low memory", "Not enough free memory for this tab. Close another app first.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+      return;
+    }
+    build(i);
     tab = i;
     for (int k = 0; k < 4; ++k) {
-      gApp->showWindow(panes[k], k == i);
+      if (panes[k]) gApp->showWindow(panes[k], k == i);
       tabs[k]->buttonStyle().backgroundColor = k == i ? T.accent : T.face;
       tabs[k]->buttonStyle().textColor       = k == i ? T.accentText : T.text;
       tabs[k]->repaint();
@@ -1625,8 +1646,9 @@ public:
   }
 
   void calc() {
+    if (!panes[2]) return;
     double v[7];
-    for (int i = 0; i < 7; ++i) v[i] = atof(sup[i]->text());
+    for (int i = 0; i < 7; ++i) v[i] = atof(supVal[i].c_str());
     double ppl = v[0] < 1 ? 1 : v[0];
     double days[4] = { v[1] / ppl, v[2], v[4] > 0 ? v[3] / v[4] : -1, v[6] > 0 ? v[5] / v[6] : -1 };
     static const char * nm[4] = { "Water", "Food", "Firewood", "Fuel" };
@@ -1648,6 +1670,7 @@ public:
 
   // ---- barter helpers
   void refill(uiListBox * l, const std::vector<std::string> & v) {
+    if (!l) return;
     l->items().clear();
     for (auto & s : v) l->items().append(s.c_str());
     l->repaint();
@@ -1689,7 +1712,7 @@ public:
   void save() {
     if (loading) return;
     std::string s;
-    for (int i = 0; i < 7; ++i) s += std::string("S|") + std::to_string(i) + "|" + sup[i]->text() + "\n";
+    for (int i = 0; i < 7; ++i) s += std::string("S|") + std::to_string(i) + "|" + supVal[i] + "\n";
     for (auto & x : have)   s += "H|" + x + "\n";
     for (auto & x : need)   s += "N|" + x + "\n";
     for (auto & x : trades) s += "T|" + x + "\n";
@@ -1707,15 +1730,12 @@ public:
           st = i + 1;
           if (l.size() < 2 || l[1] != '|') continue;
           std::string v = l.substr(2);
-          if (l[0] == 'S') { int k = atoi(v.c_str()); size_t b = v.find('|'); if (k >= 0 && k < 7 && b != std::string::npos) sup[k]->setText(v.substr(b + 1).c_str()); }
+          if (l[0] == 'S') { int k = atoi(v.c_str()); size_t b = v.find('|'); if (k >= 0 && k < 7 && b != std::string::npos) supVal[k] = v.substr(b + 1); }
           else if (l[0] == 'H') have.push_back(v);
           else if (l[0] == 'N') need.push_back(v);
           else if (l[0] == 'T') trades.push_back(v);
         }
     }
-    refill(haveList, have);
-    refill(needList, need);
-    refill(tradeList, trades);
     loading = false;
   }
 };
@@ -1826,7 +1846,7 @@ static const char * taskInfo(const char * n)
     { "keyrep", "Key repeat" }, { "serkbd", "Serial keyboard" }, { "wifi", "Wi-Fi driver" }, { "tiT", "TCP/IP network" },
     { "sys_evt", "System events" }, { "esp_timer", "System timers" }, { "Tmr Svc", "Timer service" }, { "ipc0", "Core 0 helper" },
     { "ipc1", "Core 1 helper" }, { "shelfmsg", "Shelf messaging + mesh" }, { "fileweb", "File sharing server" },
-    { "fetch", "Browser download" }, { "print", "Printing" }, { "findprn", "Printer search" }, { "mdns", "tidyos.local name" },
+    { "fetch", "Browser download" }, { "led", "Blue status light" }, { "print", "Printing" }, { "findprn", "Printer search" }, { "mdns", "tidyos.local name" },
     { "ping", "Router ping" }, { "msgadd", "Shelf lookup" }, { "FabGL", "Screen drawing" },
   };
   for (auto & m : map) if (!strcmp(m[0], n)) return m[1];

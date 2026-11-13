@@ -6,6 +6,10 @@
 void netBegin();                                  // radio on + connect to saved network
 void netConnect(const char * ssid, const char * pass);
 bool netConnected();
+bool netClockSet();                 // true once the clock has a real time
+void netFixDns();                   // repair DNS servers after the hotspot changes Wi-Fi mode
+void netTick();                     // once a second: re-sync the clock after (re)connecting
+void netSetClockFrom(uint32_t epoch);   // HTML5: set the clock from the browser if NTP hasn't yet
 std::string netStatus();                          // "Home-WiFi 192.168.1.40" / "Wi-Fi off"
 void netScanStart();
 int  netScanResults(std::vector<std::string> & out);   // -1 still scanning, else count

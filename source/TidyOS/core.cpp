@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <time.h>
 #include "screen.h"
+#include "led.h"
 #include "esp_bt.h"
 #include "core.h"
 #include "input.h"
@@ -290,13 +291,19 @@ public:
           int i = m_pressed;
           m_pressed = -1;
           repaintIcon(i);
-          if (hit(event->params.mouse.status.X, event->params.mouse.status.Y) == i)
-            ICONS[i].open();
+          if (hit(event->params.mouse.status.X, event->params.mouse.status.Y) == i) {
+            Serial.printf("[TidyOS] open %s, free RAM %u (biggest %u)\n", ICONS[i].label, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+            if (ESP.getFreeHeap() < 28000 && ICONS[i].open != openSystem)
+              gApp->messageBox("Low memory", "TidyOS is low on memory. Close an app first (Task Manager shows what's open).", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+            else
+              ICONS[i].open();
+          }
         }
         break;
       case UIEVT_TIMER:
         if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
         if (++m_tick % 4) break;
+        netTick();
         repaint(Rect(0, SCREEN_H - BAR_H, SCREEN_W - 1, SCREEN_H - 1));
         {
           // refresh the welcome / pairing hint only when something changed
@@ -495,11 +502,11 @@ static TidyApp s_app;
 // ====================================================================== start-up
 
 template <class C>
-static BitmappedDisplayController * tryMode(size_t fbBytes)
+static BitmappedDisplayController * tryMode(size_t fbBytes, size_t margin = 60000)
 {
   size_t freeMem = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  Serial.printf("[TidyOS] free %u, need %u\n", (unsigned)freeMem, (unsigned)(fbBytes + 60000));
-  if (freeMem < fbBytes + 60000) return nullptr;
+  Serial.printf("[TidyOS] free %u, need %u\n", (unsigned)freeMem, (unsigned)(fbBytes + margin));
+  if (freeMem < fbBytes + margin) return nullptr;
   C * c = new C;
   c->begin(VGA_RED1, VGA_RED0, VGA_GREEN1, VGA_GREEN0, VGA_BLUE1, VGA_BLUE0, VGA_HSYNC, VGA_VSYNC);
   c->setResolution(VGA_640x480_60Hz);
@@ -515,7 +522,8 @@ static void startDisplay()
   int want = gSet.colors;   // 0 = auto
   BitmappedDisplayController * dc = nullptr;
   int got = 0;
-  if (!dc && (want == 0 || want >= 8))  { dc = tryMode<V8>(640 * 480 * 3 / 8); got = 8; }
+  // 8 colours only when it still leaves plenty for Wi-Fi and apps (asked for explicitly = smaller margin)
+  if (!dc && (want == 0 || want >= 8))  { dc = tryMode<V8>(640 * 480 * 3 / 8, want >= 8 ? 60000 : 100000); got = 8; }
   if (!dc)                              { dc = tryMode<V4>(640 * 480 / 4);     got = 4; }
   if (!dc) {
     // last resort: 4 colours without the safety margin
@@ -638,6 +646,7 @@ void setup()
 #endif
   Serial.begin(115200);
   delay(200);
+  ledBegin();       // blue LED: slow blink while starting
   Serial.println("\n[TidyOS] " TIDYOS_VERSION " (" TIDYOS_EDITION " edition) starting");
 
   settingsLoad();
@@ -667,6 +676,7 @@ void setup()
   delay(400);
   splash("Ready", 100);
   delay(500);
+  ledReady();       // blue LED: breathing
 }
 
 void loop()

@@ -17,7 +17,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.6. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.6.1. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -46,6 +46,17 @@ How it works: TidyOS still draws into its normal 640 × 480 screen memory. A sma
 - If it can't join your Wi-Fi within 25 seconds, the TidyOS-Setup hotspot comes back. It turns itself off 2 minutes after TidyOS is on your home Wi-Fi.
 - Wi-Fi file sharing moves to port **8081** (`http://tidyos.local:8081`), because port 80 shows the desktop.
 - A VGA monitor wired up as below still works too, just without a mouse pointer.
+
+## The blue status light
+
+The blue LED on the NodeMCU (GPIO 2) shows what TidyOS is doing. The red one is the power light.
+
+| Blue LED | Means |
+|---|---|
+| Slow blink | Starting up |
+| Breathing (slow fade in and out) | Ready |
+| Quick flicker | The microSD card is being read or written |
+| Fast flash | Low on memory: close an app |
 
 ## 1. Parts
 
@@ -207,6 +218,7 @@ sudo systemctl enable --now tidyos-helper
 - Libraries: **FabGL 1.0.9** and **NimBLE-Arduino 1.4.3**
 - Board: **ESP32 Dev Module**. Partition scheme: **Huge APP (3MB No OTA/1MB SPIFFS)**
 - Open `source/TidyOS/TidyOS.ino` and click Upload.
+- Optional, for the SD-activity flicker on the blue light: add `-Wl,--wrap=sdmmc_read_sectors,--wrap=sdmmc_write_sectors` to the linker flags (PlatformIO already does).
 - For the HTML5 edition, uncomment `#define TIDYOS_HTML5` in `config.h` first (PlatformIO: build the `nodemcu-32s-html5` environment).
 
 Source map: `core.cpp` (start-up, desktop, theme), `input.cpp` (Bluetooth HID host),

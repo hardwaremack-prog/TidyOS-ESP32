@@ -1,5 +1,7 @@
 // TidyOS networking
 #include "screen.h"
+#include "lwip/dns.h"
+#include <sys/time.h>
 #include <WiFi.h>
 #include <time.h>
 #include "net.h"
@@ -69,7 +71,53 @@ int netScanResults(std::vector<std::string> & out)
 void netApplyClock()
 {
   long off = (long)gSet.tzHours10 * 360;   // tenths of an hour -> seconds
-  configTime(off, gSet.dst ? 3600 : 0, "pool.ntp.org", "time.nist.gov");
+  // the last server is a plain IP address (time.google.com), so the clock still sets if DNS is broken
+  configTime(off, gSet.dst ? 3600 : 0, "pool.ntp.org", "time.google.com", "216.239.35.0");
+}
+
+bool netClockSet()
+{
+  time_t now = time(nullptr);
+  return now > 1700000000;     // after Nov 2023
+}
+
+// Make sure the Wi-Fi connection has working DNS servers. Starting or stopping the setup hotspot
+// can wipe them, which silently breaks the clock, the browser and Shelf lookups.
+void netFixDns()
+{
+  if (WiFi.status() != WL_CONNECTED) return;
+  const ip_addr_t * d = dns_getserver(0);
+  uint32_t a = (d && IP_IS_V4(d)) ? ip4_addr_get_u32(ip_2_ip4(d)) : 0;
+  bool bad = a == 0 || (a & 0x00FFFFFF) == 0x0004A8C0;      // 0.0.0.0 or 192.168.4.x (our own hotspot)
+  if (bad) {
+    ip_addr_t gw, g8;
+    IPAddress r = WiFi.gatewayIP();
+    IP_ADDR4(&gw, r[0], r[1], r[2], r[3]);
+    IP_ADDR4(&g8, 8, 8, 8, 8);
+    dns_setserver(0, &gw);
+    dns_setserver(1, &g8);
+    Serial.println("[TidyOS] DNS servers were missing - using the router and 8.8.8.8");
+  }
+}
+
+// called once a second from the desktop: re-sync the clock whenever Wi-Fi (re)connects
+void netTick()
+{
+  static bool was = false;
+  static uint32_t lastTry = 0;
+  bool now = WiFi.status() == WL_CONNECTED;
+  if (now && !was) { netFixDns(); netApplyClock(); lastTry = millis(); }
+  else if (now && !netClockSet() && millis() - lastTry > 30000) { netFixDns(); netApplyClock(); lastTry = millis(); }
+  was = now;
+}
+
+void netSetClockFrom(uint32_t epoch)
+{
+  if (netClockSet() || epoch < 1700000000) return;
+  struct timeval tv = { (time_t)epoch, 0 };
+  settimeofday(&tv, nullptr);
+  netApplyClock();          // keeps the time zone, and NTP still corrects it later
+  Serial.println("[TidyOS] clock set from the browser");
 }
 
 // ============================================================ URL helpers

@@ -19,6 +19,7 @@
 #include "core.h"
 #include "screen.h"
 #include "fileserver.h"
+#include "net.h"
 
 void inputWebKey(uint8_t usage, uint8_t mods, bool down);
 void inputWebMouse(int x, int y, int wheel, uint8_t buttons);
@@ -62,7 +63,7 @@ function send(a){if(ws&&ws.readyState==1)ws.send(new Uint8Array(a));}
 function connect(){
  kicked=false;show('Connecting to TidyOS...');
  ws=new WebSocket('ws://'+location.host+'/ws');ws.binaryType='arraybuffer';
- ws.onopen=function(){show('');st.textContent='Connected';c.focus();};
+ ws.onopen=function(){show('');st.textContent='Connected';c.focus();var t=Math.floor(Date.now()/1000);send([6,t&255,t>>8&255,t>>16&255,t>>>24]);};
  ws.onmessage=function(e){var d=new Uint8Array(e.data);rx+=d.length;
   if(d[0]==1){bpp=d[1];for(var i=0;i<d[2];i++)pal[i]=0xff000000|d[5+i*3]<<16|d[4+i*3]<<8|d[3+i*3];}
   else if(d[0]==2){var y=d[1]|d[2]<<8,n=d[3],o=4,rb=bpp==2?160:240;
@@ -173,7 +174,7 @@ static inline uint32_t rowHash(const uint8_t * row, int bytes)
 // sends changed rows; at most ~maxBytes per call so input stays snappy
 static bool sendChanges(WiFiClient & c, size_t maxBytes)
 {
-  static uint8_t buf[4 + 60 * 240];
+  static uint8_t buf[4 + 24 * 240];
   const int rb = gColors == 8 ? 240 : 160;
   const int maxRows = (sizeof(buf) - 4) / rb;
   size_t sent = 0;
@@ -224,6 +225,7 @@ static bool pollInput(WiFiClient & c)
       case 2: if (keep >= 7) inputWebMouse(p[1] | (p[2] << 8), p[3] | (p[4] << 8), (int8_t)p[6], p[5]); break;
       case 4: gOpenTaskMgr = true; break;
       case 5: inputWebReleaseAll(); break;
+      case 6: if (keep >= 5) netSetClockFrom(p[1] | (p[2] << 8) | (p[3] << 16) | ((uint32_t)p[4] << 24)); break;
     }
   }
   return true;
@@ -316,6 +318,8 @@ static void apStop()
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_STA);
   s_ap = false;
+  delay(200);
+  netFixDns();
   Serial.println("[TidyOS] setup hotspot off - on home Wi-Fi now");
 }
 
