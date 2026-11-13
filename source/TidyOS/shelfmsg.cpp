@@ -787,7 +787,7 @@ void msgBegin()
   loadPeers();
   loadComs();
   s_comsUnread = 0;
-  s_nowUp = nowStart();
+  s_nowUp = gSet.meshOn && nowStart();
   xTaskCreatePinnedToCore(msgTask, "shelfmsg", 8192, nullptr, 1, nullptr, 0);
 }
 
@@ -926,6 +926,12 @@ void comsMembers(std::vector<std::string> & out)
 }
 
 bool comsUp() { return s_nowUp; }
+
+void comsSetOn(bool on)
+{
+  if (on && !s_nowUp && s_msgStarted) s_nowUp = nowStart();
+  if (!on && s_nowUp) { s_nowUp = false; delay(50); esp_now_deinit(); }
+}
 
 int comsChannel()
 {

@@ -10,14 +10,14 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Bluetooth keyboard and mouse** (Bluetooth LE, VGA edition)
 - **microSD card** for your files (falls back to internal flash with no card)
 - **Wi-Fi** with a clock that sets itself from the internet
-- Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Messages, Browser, Files, Settings, Task Manager, Ping**
+- Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Messages, Browser, Files, Settings, Task Manager, Ping, Switches**
 - **Printing** to network printers (found automatically), through a Pi with CUPS, or Save as PDF
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
 - **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.6.10. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.7. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -50,9 +50,19 @@ How it works: TidyOS still draws into its normal 640 × 480 screen memory. A sma
 - No VGA pins are driven in this edition, so the microSD module can use the **in-line wiring** from The Shelf: plugged straight onto GND · 19 · 18 · 5 · 17 (MISO 19, CLK 18, MOSI 5, CS 17), with its 3v3 pin bent up and one jumper to 3V3. The classic wiring (16/17/14/13) works too; TidyOS tries both. Task Manager → Storage shows which one it found.
 - The browser page scales the screen with whole pixels and then smooths it slightly, so text stays even at any window size. **Size** switches to exact 1:1 pixels.
 
+## Switches (save memory)
+
+The **Switches** icon has three on/off switches. All are **off by default** because the ESP32 is short of RAM, and each is remembered after a restart:
+
+| Switch | When on | Memory |
+|---|---|---|
+| SD card | Documents and TidyOS data live on the microSD card. Off: they go to internal flash (about 1 MB); files on the card stay there | ~23 KB |
+| Wireless mesh | The Coms 2.4 GHz mesh with Shelf boards nearby. Shelf messages over Wi-Fi work either way | a few KB |
+| Blue light | The status light below | ~2 KB |
+
 ## The blue status light
 
-The blue LED on the NodeMCU (GPIO 2) shows what TidyOS is doing. The red one is the power light.
+When switched on (Switches), the blue LED on the NodeMCU (GPIO 2) shows what TidyOS is doing. The red one is the power light.
 
 | Blue LED | Means |
 |---|---|

@@ -49,6 +49,9 @@ void settingsLoad()
   gSet.btNames   = s_prefs.getString("bt", "");
   gSet.printer   = s_prefs.getString("printer", "");
   gSet.fileShare = s_prefs.getBool("share", false);
+  gSet.sdOn      = s_prefs.getBool("sdon", false);
+  gSet.meshOn    = s_prefs.getBool("mesh", false);
+  gSet.ledOn     = s_prefs.getBool("led", false);
 }
 
 void settingsSave()
@@ -63,6 +66,9 @@ void settingsSave()
   s_prefs.putString("bt", gSet.btNames);
   s_prefs.putString("printer", gSet.printer);
   s_prefs.putBool("share", gSet.fileShare);
+  s_prefs.putBool("sdon", gSet.sdOn);
+  s_prefs.putBool("mesh", gSet.meshOn);
+  s_prefs.putBool("led", gSet.ledOn);
 }
 
 // ====================================================================== storage
@@ -234,6 +240,12 @@ static const char * ART_PING[16] = {
   ".a.a.a.##.a.a.a.", "......#..#......", ".....#....#.....", "....#......#....",
   "...#........#...", "..############..", "..#gggggggggg#..", "..############.." };
 
+static const char * ART_SD[16] = {
+  "................", "...#########....", "...#a#a#a#a##...", "...#a#a#a#a#w#..",
+  "...#wwwwwwwwww#.", "...#wwwwwwwwww#.", "...#wggggggggw#.", "...#wgwwwwwwgw#.",
+  "...#wgw##wwwgw#.", "...#wgwwwwwwgw#.", "...#wggggggggw#.", "...#wwwwwwwwww#.",
+  "...#wwwwwwwwww#.", "...############.", "................", "................" };
+
 static const char * ART_GAMES[16] = {
   "................", "................", "................", "...##########...",
   "..#gggggggggg#..", ".#gg#gggggggag#.", ".#g###ggggagga#.", ".#gg#ggggggaag#.",
@@ -271,6 +283,7 @@ static const DeskIcon ICONS[] = {
   { "Messages",   ART_MSG,   nullptr, openMessages },
   { "Games",      ART_GAMES, nullptr, openGames },
   { "Ping",       ART_PING,  nullptr, openPing },
+  { "Switches",   ART_SD,    nullptr, openSwitches },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
 
@@ -316,6 +329,8 @@ public:
         if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
         if (++m_tick % 4) break;
         netTick();
+        gHeapSnap = ESP.getFreeHeap(); gMinHeapSnap = ESP.getMinFreeHeap();
+        if (m_tick % 120 == 0) Serial.printf("[TidyOS] still running: up %us, free RAM %uK\n", (unsigned)(millis() / 1000), (unsigned)(gHeapSnap / 1024));
         repaint(Rect(0, SCREEN_H - BAR_H, SCREEN_W - 1, SCREEN_H - 1));
         {
           // refresh the welcome / pairing hint only when something changed
@@ -575,6 +590,42 @@ static bool mountSD(int miso, int mosi, int clk, int cs, const char * name)
   return false;
 }
 
+static bool mountAnySD()
+{
+#ifdef TIDYOS_HTML5
+  return mountSD(SD_INLINE_MISO, SD_INLINE_MOSI, SD_INLINE_CLK, SD_INLINE_CS, "in-line (19/18/5/17)") ||
+         mountSD(SD_MISO, SD_MOSI, SD_CLK, SD_CS, "classic (16/17/14/13)");
+#else
+  return mountSD(SD_MISO, SD_MOSI, SD_CLK, SD_CS, "16/17/14/13");
+#endif
+}
+
+static void makeDirs();
+
+bool sdTurnOn()
+{
+  gSet.sdOn = true;
+  settingsSave();
+  if (gSDMounted) return true;
+  gSDMounted = mountAnySD();
+  if (gSDMounted) makeDirs();
+  return gSDMounted;
+}
+
+void sdTurnOff()
+{
+  gSet.sdOn = false;
+  settingsSave();
+  if (gSDMounted) {
+    SD.end();
+    s_sdSpi.end();
+    gSDMounted = false;
+    gSDWiring = "none";
+    Serial.println("[TidyOS] SD card turned off");
+  }
+  if (!gFlashMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 4);
+}
+
 #ifdef TIDYOS_HTML5
 // The screen memory keeps working (the browser reads it); only the pins stop being VGA outputs.
 static void releaseVgaPins()
@@ -724,16 +775,15 @@ void setup()
 #ifdef TIDYOS_HTML5
   startDisplay();
   releaseVgaPins();     // no monitor in this edition: free GPIO 19/18/5/... (the in-line SD wiring uses them)
-  gSDMounted = mountSD(SD_INLINE_MISO, SD_INLINE_MOSI, SD_INLINE_CLK, SD_INLINE_CS, "in-line (19/18/5/17)") ||
-               mountSD(SD_MISO, SD_MOSI, SD_CLK, SD_CS, "classic (16/17/14/13)");
+  if (gSet.sdOn) gSDMounted = mountAnySD();
 #else
-  gSDMounted = mountSD(SD_MISO, SD_MOSI, SD_CLK, SD_CS, "16/17/14/13");
+  if (gSet.sdOn) gSDMounted = mountAnySD();
   startDisplay();
 #endif
-  Serial.printf("[TidyOS] SD card %s\n", gSDMounted ? "mounted" : "not found - using internal flash");
+  Serial.printf("[TidyOS] SD card %s\n", gSDMounted ? "mounted" : gSet.sdOn ? "not found - using internal flash" : "off (SD Card icon turns it on) - using internal flash");
 
   splashLogo();
-  splash(gSDMounted ? "SD card found" : "No SD card - preparing internal storage...", 30);
+  splash(gSDMounted ? "SD card found" : gSet.sdOn ? "No SD card - preparing internal storage..." : "Preparing internal storage...", 30);
 
   if (!gSDMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 4);
   memLog("display + storage");

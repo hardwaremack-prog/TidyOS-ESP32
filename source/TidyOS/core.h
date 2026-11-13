@@ -44,6 +44,9 @@ struct Settings {
   String btNames;     // ';' separated names of paired keyboards / mice
   String printer;     // last network printer address (ipp://...)
   bool   fileShare;   // file sharing web page on
+  bool   sdOn;        // use the microSD card (off by default: saves ~23 KB of RAM)
+  bool   meshOn;      // Coms wireless mesh (ESP-NOW) on (off by default)
+  bool   ledOn;       // blue status light on (off by default)
 };
 extern Settings gSet;
 void settingsLoad();
@@ -53,6 +56,8 @@ void settingsSave();
 // Where TidyOS keeps its own data files ("/SD/tidyos" or "/flash")
 std::string dataPath(const char * name);
 std::string documentsDir();               // default folder for user documents
+bool  sdTurnOn();                          // mount the card now (and from now on); false if not found
+void  sdTurnOff();                         // unmount it now (and from now on); files go to internal flash
 bool  readFileStr(const char * path, std::string & out, size_t maxLen = 48 * 1024);
 bool  writeFileStr(const char * path, const std::string & data);
 const char * fileExt(const char * path);  // lower-case extension without dot, or ""
@@ -70,6 +75,7 @@ void openSystem();
 void openMessages();
 void openGames();
 void openPing();
+void openSwitches();
 void openRugged();
 
 extern fabgl::uiApp * gApp;

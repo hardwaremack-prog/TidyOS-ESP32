@@ -8,6 +8,7 @@
 #include <math.h>
 #include "led.h"
 #include "crashlog.h"
+#include "core.h"
 #include "soc/gpio_sd_struct.h"
 #include "soc/gpio_sig_map.h"
 #include "esp_rom_gpio.h"
@@ -35,14 +36,13 @@ extern "C" {
   { gSdActivityMs = millis(); return __real_ff_disk_write(pdrv, buff, sector, count); }
 }
 
+static volatile bool s_wanted = false, s_running = false;
+
 static void ledTask(void *)
 {
-  uint32_t lastHeap = 0;
   for (;;) {
+    if (!s_wanted) { ledLevel(0); s_running = false; vTaskDelete(nullptr); }
     uint32_t now = millis();
-    if (now - lastHeap > 500) { lastHeap = now; gHeapSnap = ESP.getFreeHeap(); gMinHeapSnap = ESP.getMinFreeHeap(); }
-    static uint32_t lastBeat = 0;
-    if (now - lastBeat > 30000) { lastBeat = now; Serial.printf("[TidyOS] still running: up %us, free RAM %uK\n", (unsigned)(now / 1000), (unsigned)(gHeapSnap / 1024)); }
     uint32_t duty;
     uint32_t sd = gSdActivityMs;
     if (!s_ready) duty = (now / 500) % 2 ? 255 : 0;                                   // starting: slow blink
@@ -65,7 +65,18 @@ void ledBegin()
   SIGMADELTA.channel[LED_SD].prescale = 80;
   ledLevel(0);
   esp_rom_gpio_connect_out_signal(LED_PIN, GPIO_SD0_OUT_IDX + LED_SD, false, false);
-  xTaskCreatePinnedToCore(ledTask, "led", 2048, nullptr, 1, nullptr, 0);
+  ledSetOn(gSet.ledOn);
+}
+
+// the light's little task only exists while it's on (~2 KB of RAM)
+void ledSetOn(bool on)
+{
+  s_wanted = on;
+  if (on && !s_running) {
+    s_running = true;
+    if (xTaskCreatePinnedToCore(ledTask, "led", 2048, nullptr, 1, nullptr, 0) != pdPASS) s_running = false;
+  }
+  if (!on && !s_running) ledLevel(0);
 }
 
 void ledReady() { s_ready = true; }

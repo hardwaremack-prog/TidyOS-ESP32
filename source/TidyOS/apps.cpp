@@ -2527,3 +2527,107 @@ void openPing()
   if (!PingApp::inst) new PingApp();
   PingApp::inst->open();
 }
+
+// ====================================================================== Switches
+// Things that cost memory, each with an on/off switch. All off by default, because the ESP32
+// is short of RAM. Remembered after a restart.
+//   SD card        ~23 KB  (card driver + file system). Off: files go to internal flash.
+//   Wireless mesh  a few KB (ESP-NOW for The Shelf's Coms mesh)
+//   Blue light     ~2 KB   (the little task that fades it)
+
+#include "led.h"
+
+class SwitchesApp : public AppFrame {
+public:
+  static AppFrame * inst;
+  uiButton * sw[3];
+  uiLabel  * note[3];
+  uiLabel  * sdInfo, * mem;
+
+  SwitchesApp() : AppFrame("Switches", Point(110, 50), Size(420, 360), &inst) {
+    static const char * names[3] = { "SD card", "Wireless mesh", "Blue light" };
+    for (int i = 0; i < 3; ++i) {
+      int y = cy + 4 + i * 96;
+      auto l = label(names[i], cx + 4, y + 8, 150, 24);
+      l->labelStyle().textFont = &FONT_std_18;
+      sw[i] = button("", cx + 250, y, 150, 38);
+      sw[i]->buttonStyle().textFont = &FONT_std_18;
+      sw[i]->onClick = [this, i]() { flip(i); };
+      note[i] = label("", cx + 4, y + 44, 400, 18);
+      note[i]->labelStyle().textFont = &FONT_std_12;
+    }
+    sdInfo = label("", cx + 4, cy + 4 + 62, 400, 18);
+    sdInfo->labelStyle().textFont = &FONT_std_12;
+    mem = label("", cx + 4, cy + 300, 400, 18);
+    mem->labelStyle().textFont = &FONT_std_12;
+    refresh();
+    startTimer(1000);
+    onTimer = [this](uiTimerHandle) { refresh(); };
+  }
+
+  void flip(int i) {
+    if (i == 0) {
+      if (gSDMounted) {
+        if (gApp->messageBox("SD card", "Turn the SD card off? Close any documents from the card first. Files will be saved to internal storage.",
+                             "Turn off", "Cancel", nullptr, uiMessageBoxIcon::Question) != uiMessageBoxResult::Button1) return;
+        sdTurnOff();
+      } else {
+        if (ESP.getFreeHeap() < 32000) {
+          gApp->messageBox("SD card", "Not enough free memory to turn the card on. Close some apps first.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+          return;
+        }
+        sw[0]->setText("Looking..."); sw[0]->repaint();
+        if (!sdTurnOn())
+          gApp->messageBox("SD card", "No card found. Check it's pushed in and formatted FAT32. It stays switched on and is tried again at the next start.",
+                           "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+      }
+    } else if (i == 1) {
+      gSet.meshOn = !gSet.meshOn;
+      settingsSave();
+      comsSetOn(gSet.meshOn);
+    } else {
+      gSet.ledOn = !gSet.ledOn;
+      settingsSave();
+      ledSetOn(gSet.ledOn);
+    }
+    refresh();
+  }
+
+  void show(int i, bool on, const char * onText, const char * offText) {
+    sw[i]->setText(on ? onText : offText);
+    sw[i]->buttonStyle().backgroundColor = on ? T.accent : T.face;
+    sw[i]->buttonStyle().textColor       = on ? T.accentText : T.text;
+    sw[i]->repaint();
+  }
+  void set(uiLabel * l, const std::string & t) { l->setText(t.c_str()); l->repaint(); }
+
+  void refresh() {
+    show(0, gSDMounted, "ON", gSet.sdOn ? "ON (no card)" : "OFF");
+    if (gSDMounted) {
+      int64_t total = 0, used = 0;
+      FileBrowser::getFSInfo(DriveType::SDCard, 0, &total, &used);
+      char b[120];
+      snprintf(b, sizeof(b), "%s free of %s  -  wiring %s", kb(total - used).c_str(), kb(total).c_str(), gSDWiring);
+      set(note[0], "Documents and TidyOS data are on the card. Uses ~23 KB of memory.");
+      set(sdInfo, b);
+    } else {
+      set(note[0], "Off: files go to internal storage. Saves ~23 KB of memory.");
+      set(sdInfo, "Files already on the card stay there for next time.");
+    }
+    show(1, gSet.meshOn, "ON", "OFF");
+    if (gSet.meshOn && !msgStarted()) set(note[1], "Starts once TidyOS is on your home Wi-Fi. Coms boards nearby.");
+    else set(note[1], gSet.meshOn ? "Talking with Coms boards nearby (2.4 GHz). Uses a few KB." : "Off: no Coms mesh. Shelf messages on Wi-Fi still work.");
+    show(2, gSet.ledOn, "ON", "OFF");
+    set(note[2], gSet.ledOn ? "Breathing = ready, flicker = SD card busy. Uses ~2 KB." : "Off: the blue LED stays dark. Saves ~2 KB.");
+    char b[80];
+    snprintf(b, sizeof(b), "Free memory now: %u KB   (switches are remembered)", (unsigned)(ESP.getFreeHeap() / 1024));
+    set(mem, b);
+  }
+};
+AppFrame * SwitchesApp::inst = nullptr;
+
+void openSwitches()
+{
+  if (!SwitchesApp::inst) new SwitchesApp();
+  SwitchesApp::inst->open();
+}

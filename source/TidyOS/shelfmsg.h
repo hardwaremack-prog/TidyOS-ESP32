@@ -47,6 +47,7 @@ void        comsLog(std::vector<ChatLine> & out);
 void        comsSend(const std::string & text);
 void        comsMembers(std::vector<std::string> & out);
 bool        comsUp();
+void        comsSetOn(bool on);                // the Switches window (off by default)
 int         comsChannel();
 int         comsUnread();
 void        comsMarkRead();
