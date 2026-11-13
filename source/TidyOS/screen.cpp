@@ -13,6 +13,7 @@
 
 #include <WiFi.h>
 #include <DNSServer.h>
+#include "lwip/sockets.h"
 #include "mbedtls/sha1.h"
 #include "mbedtls/base64.h"
 #include "fabgl.h"
