@@ -325,8 +325,22 @@ static void handleHttp(WiFiClient c)
 static void apStart()
 {
   if (s_ap) return;
+  static bool logged = false;
+  if (!logged) {
+    logged = true;
+    WiFi.onEvent([](arduino_event_id_t e, arduino_event_info_t info) {
+      if (e == ARDUINO_EVENT_WIFI_AP_STACONNECTED)
+        Serial.printf("[TidyOS] hotspot: device %02x:%02x:%02x:%02x:%02x:%02x joined\n", info.wifi_ap_staconnected.mac[0], info.wifi_ap_staconnected.mac[1],
+                      info.wifi_ap_staconnected.mac[2], info.wifi_ap_staconnected.mac[3], info.wifi_ap_staconnected.mac[4], info.wifi_ap_staconnected.mac[5]);
+      else if (e == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED) Serial.println("[TidyOS] hotspot: a device left");
+      else if (e == ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED)   Serial.printf("[TidyOS] hotspot: gave out %s\n", IPAddress(info.wifi_ap_staipassigned.ip.addr).toString().c_str());
+    });
+  }
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(SCREEN_AP_NAME, SCREEN_AP_PASS);
+  // channel 6, up to 4 devices; lower transmit power so the current peaks don't dip the 3.3 V supply
+  // (the hotspot only needs to reach across a room)
+  WiFi.softAP(SCREEN_AP_NAME, SCREEN_AP_PASS, 6, 0, 4);
+  WiFi.setTxPower(WIFI_POWER_11dBm);
   delay(100);
   s_dns.setErrorReplyCode(DNSReplyCode::NoError);
   s_dns.start(53, "*", WiFi.softAPIP());

@@ -41,6 +41,8 @@ static void ledTask(void *)
   for (;;) {
     uint32_t now = millis();
     if (now - lastHeap > 500) { lastHeap = now; gHeapSnap = ESP.getFreeHeap(); gMinHeapSnap = ESP.getMinFreeHeap(); }
+    static uint32_t lastBeat = 0;
+    if (now - lastBeat > 30000) { lastBeat = now; Serial.printf("[TidyOS] still running: up %us, free RAM %uK\n", (unsigned)(now / 1000), (unsigned)(gHeapSnap / 1024)); }
     uint32_t duty;
     uint32_t sd = gSdActivityMs;
     if (!s_ready) duty = (now / 500) % 2 ? 255 : 0;                                   // starting: slow blink
