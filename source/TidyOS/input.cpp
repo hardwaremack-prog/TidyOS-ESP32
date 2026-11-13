@@ -746,12 +746,45 @@ static void serialKey(VirtualKey vk, uint8_t ascii)
   postKey(vk, ascii, false);
 }
 
+// Serial commands: a line starting with "!" is a command, not typing.
+//   !wifi Network name|password   join a Wi-Fi network (and save it)
+//   !status                       Wi-Fi state, address and free memory
+#include "net.h"
+#include <WiFi.h>
+static void serialCommand(const std::string & c)
+{
+  if (c.rfind("wifi ", 0) == 0) {
+    std::string rest = c.substr(5);
+    size_t bar = rest.rfind('|');
+    std::string ssid = bar == std::string::npos ? rest : rest.substr(0, bar);
+    std::string pass = bar == std::string::npos ? "" : rest.substr(bar + 1);
+    while (!ssid.empty() && ssid.back() == ' ') ssid.pop_back();
+    Serial.printf("[TidyOS] joining \"%s\" (saved for next time)\n", ssid.c_str());
+    netConnect(ssid.c_str(), pass.c_str());
+  } else if (c == "status") {
+    Serial.printf("[TidyOS] Wi-Fi %s, SSID \"%s\", address %s, hotspot %s, free RAM %u\n",
+                  WiFi.status() == WL_CONNECTED ? "connected" : "not connected", WiFi.SSID().c_str(),
+                  WiFi.localIP().toString().c_str(), WiFi.softAPIP().toString().c_str(), (unsigned)ESP.getFreeHeap());
+  } else {
+    Serial.println("[TidyOS] commands:  !wifi Network name|password    !status");
+  }
+}
+
 static void serialTask(void *)
 {
   int esc = 0;
+  bool cmd = false, lineStart = true;
+  std::string cmdLine;
   for (;;) {
     while (Serial.available()) {
       int ch = Serial.read();
+      if (lineStart && ch == '!') { cmd = true; cmdLine.clear(); lineStart = false; continue; }
+      if (cmd) {
+        if (ch == '\r' || ch == '\n') { cmd = false; lineStart = true; serialCommand(cmdLine); }
+        else if (cmdLine.size() < 200) cmdLine += (char)ch;
+        continue;
+      }
+      lineStart = (ch == '\r' || ch == '\n');
       if (esc == 1) { esc = (ch == '[') ? 2 : 0; continue; }
       if (esc == 2) {
         esc = 0;
@@ -777,6 +810,10 @@ static void serialTask(void *)
       const char * p = strchr(pc, ch);
       if (p && ch) serialKey(pvk[p - pc], ch);
     }
+    // some serial monitors send a line without Enter: run the command after a short pause
+    static int idle = 0;
+    if (cmd && !cmdLine.empty() && !Serial.available()) { if (++idle > 40) { cmd = false; lineStart = true; idle = 0; serialCommand(cmdLine); } }
+    else idle = 0;
     vTaskDelay(20 / portTICK_PERIOD_MS);
   }
 }

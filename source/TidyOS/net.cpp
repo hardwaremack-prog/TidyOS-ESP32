@@ -15,6 +15,9 @@ void netBegin()
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.setHostname("tidyos");
+#ifdef TIDYOS_HTML5
+  WiFi.setSleep(false);       // power saving makes the hotspot drop joins (and the browser view laggy)
+#endif
   if (gSet.ssid.length())
     WiFi.begin(gSet.ssid.c_str(), gSet.pass.c_str());
   netApplyClock();

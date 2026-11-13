@@ -563,7 +563,7 @@ static bool mountSD(int miso, int mosi, int clk, int cs, const char * name)
   s_sdSpi.begin(clk, miso, mosi, cs);
   for (int pin : { miso, mosi, cs }) gpio_pullup_en((gpio_num_t)pin);      // SD lines need pull-ups
   for (uint32_t hz : { 10000000u, 4000000u, 1000000u }) {
-    if (SD.begin(cs, s_sdSpi, hz, SD_MOUNT, 6)) {
+    if (SD.begin(cs, s_sdSpi, hz, SD_MOUNT, 4)) {
       gSDWiring = name;
       Serial.printf("[TidyOS] SD card found on %s wiring at %u MHz (%llu MB)\n", name, (unsigned)(hz / 1000000), SD.cardSize() >> 20);
       return true;
@@ -686,6 +686,11 @@ static void splash(const char * msg, int percent)
 
 RGB888 themePal(int i) { return PAL[i & 15]; }
 
+static void memLog(const char * step)
+{
+  Serial.printf("[TidyOS] mem after %-18s free %6u  biggest %6u\n", step, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+}
+
 void setup()
 {
 #ifdef TIDYOS_HTML5
@@ -699,7 +704,9 @@ void setup()
 
   settingsLoad();
   inputBegin();     // Bluetooth first: it needs a big block of RAM
+  memLog("start");
   netBegin();       // Wi-Fi radio
+  memLog("Wi-Fi");
 
 #ifdef TIDYOS_HTML5
   startDisplay();
@@ -716,14 +723,18 @@ void setup()
   splash(gSDMounted ? "SD card found" : "No SD card - preparing internal storage...", 30);
 
   if (!gSDMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 4);
+  memLog("display + storage");
   makeDirs();
   crashSave(dataPath("crash.txt"));
   splash("Loading the dictionary", 50);
   spellBegin();
+  memLog("dictionary");
   splash("Looking for your Shelves", 70);
   msgBegin();       // The Shelf messaging + Coms mesh
+  memLog("Shelf + mesh");
   if (gSet.fileShare) fileServerSet(true);
   screenBegin();    // HTML5 edition: the desktop in a web browser
+  memLog("web screen");
 #ifdef TIDYOS_HTML5
   splash(gSet.ssid.length() ? "Joining Wi-Fi" : "Starting the TidyOS-Setup hotspot", 90);
 #else

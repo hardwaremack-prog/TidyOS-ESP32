@@ -17,7 +17,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.6.5. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.6.6. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -38,6 +38,8 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 2. Power the board. On a phone or PC, join the Wi-Fi hotspot **TidyOS-Setup** (password `tidyos123`). The desktop pops up, or open **http://192.168.4.1**.
 3. Open **Settings**, join your home Wi-Fi, **Save**.
 4. Back on your home Wi-Fi, open **http://tidyos.local** (or the address at the bottom of the desktop).
+
+No luck with the hotspot? With the board plugged into a computer, open a serial monitor at 115200 and type `!wifi Your network name|your password` then Enter. `!status` shows the address to open.
 
 How it works: TidyOS still draws into its normal 640 × 480 screen memory. A small web server on port 80 sends only the rows that changed to the browser over a WebSocket (about 20 updates a second), and the browser sends keys, clicks, wheel and touches back. A phone's on-screen keyboard works through the **Keyboard** button in the top bar.
 

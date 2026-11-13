@@ -341,7 +341,9 @@ static void apStart()
   // (the hotspot only needs to reach across a room)
   WiFi.softAP(SCREEN_AP_NAME, SCREEN_AP_PASS, 6, 0, 4);
   WiFi.setTxPower(WIFI_POWER_11dBm);
+  WiFi.setSleep(false);
   delay(100);
+  Serial.printf("[TidyOS] hotspot up on channel %d, free RAM %u\n", WiFi.channel(), (unsigned)ESP.getFreeHeap());
   s_dns.setErrorReplyCode(DNSReplyCode::NoError);
   s_dns.start(53, "*", WiFi.softAPIP());
   s_ap = true;
