@@ -17,7 +17,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.6.6. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.6.7. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---

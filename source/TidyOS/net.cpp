@@ -1,5 +1,6 @@
 // TidyOS networking
 #include "screen.h"
+#include "shelfmsg.h"
 #include "lwip/dns.h"
 #include <sys/time.h>
 #include <WiFi.h>
@@ -109,7 +110,7 @@ void netTick()
   static bool was = false;
   static uint32_t lastTry = 0;
   bool now = WiFi.status() == WL_CONNECTED;
-  if (now && !was) { netFixDns(); netApplyClock(); lastTry = millis(); }
+  if (now && !was) { netFixDns(); netApplyClock(); lastTry = millis(); msgBegin(); }
   else if (now && !netClockSet() && millis() - lastTry > 30000) { netFixDns(); netApplyClock(); lastTry = millis(); }
   was = now;
 }

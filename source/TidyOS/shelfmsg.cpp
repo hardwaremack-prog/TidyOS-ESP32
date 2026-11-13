@@ -766,8 +766,13 @@ static void msgTask(void *)
 
 // ====================================================================== public API
 
+static bool s_msgStarted = false;
+bool msgStarted() { return s_msgStarted; }
+
 void msgBegin()
 {
+  if (s_msgStarted) return;
+  s_msgStarted = true;
   s_mp.begin("tidymsg", false);
   s_myId   = s_mp.getString("id", "").c_str();
   if (!validId(s_myId)) { s_myId = uuid4(); s_mp.putString("id", s_myId.c_str()); }

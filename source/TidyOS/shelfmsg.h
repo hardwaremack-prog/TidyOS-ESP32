@@ -50,4 +50,5 @@ bool        comsUp();
 int         comsChannel();
 int         comsUnread();
 void        comsMarkRead();
+bool        msgStarted();                       // false until msgBegin (HTML5: until on home Wi-Fi)
 void        comsCounts(int & sent, int & heard);   // ESP-NOW frames since start

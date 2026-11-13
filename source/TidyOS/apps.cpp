@@ -1434,6 +1434,10 @@ AppFrame * MessagesApp::inst = nullptr;
 
 void openMessages()
 {
+  if (!msgStarted()) {
+    gApp->messageBox("Messages", "Messages start once TidyOS is on your home Wi-Fi (Settings).", "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
+    return;
+  }
   if (!MessagesApp::inst) new MessagesApp();
   MessagesApp::inst->open();
 }

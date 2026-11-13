@@ -307,10 +307,17 @@ static void handleHttp(WiFiClient c)
     Serial.println("[TidyOS] browser connected");
     return;
   }
-  if (path == "/favicon.ico") {
+  std::string p = path.substr(0, path.find('?'));
+  if (p == "/favicon.ico") {
     c.print("HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+  } else if (p != "/" && p != "/index.html") {
+    // phones' "is there internet?" checks and anything else: a tiny redirect to the desktop
+    // (makes the phone offer to open it, without sending the whole page to every check)
+    std::string host = s_ap && WiFi.status() != WL_CONNECTED ? WiFi.softAPIP().toString().c_str() : WiFi.localIP().toString().c_str();
+    std::string r = "HTTP/1.0 302 Found\r\nLocation: http://" + host + "/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    c.write((const uint8_t *)r.data(), r.size());
   } else {
-    // anything else gets the desktop page (this also makes phones pop it up when joining the setup hotspot)
+    // the desktop page
     char h[160];
     snprintf(h, sizeof(h), "HTTP/1.0 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %u\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n", (unsigned)(sizeof(PAGE) - 1));
     c.print(h);

@@ -686,6 +686,18 @@ static void splash(const char * msg, int percent)
 
 RGB888 themePal(int i) { return PAL[i & 15]; }
 
+// If memory runs out for a moment (e.g. a phone opening several connections at once),
+// wait and retry instead of crashing. Gives up after 5 s of no memory at all.
+#include <new>
+static void lowMemoryWait()
+{
+  static uint32_t since = 0;
+  uint32_t now = millis();
+  if (!since || now - since > 6000) since = now;
+  if (now - since > 5000) { since = 0; std::set_new_handler(nullptr); Serial.println("[TidyOS] out of memory"); return; }
+  vTaskDelay(pdMS_TO_TICKS(25));
+}
+
 static void memLog(const char * step)
 {
   Serial.printf("[TidyOS] mem after %-18s free %6u  biggest %6u\n", step, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
@@ -704,6 +716,7 @@ void setup()
 
   settingsLoad();
   inputBegin();     // Bluetooth first: it needs a big block of RAM
+  std::set_new_handler(lowMemoryWait);
   memLog("start");
   netBegin();       // Wi-Fi radio
   memLog("Wi-Fi");
@@ -730,7 +743,11 @@ void setup()
   spellBegin();
   memLog("dictionary");
   splash("Looking for your Shelves", 70);
+#ifdef TIDYOS_HTML5
+  if (gSet.ssid.length()) msgBegin();   // otherwise started once on home Wi-Fi (saves RAM for the setup hotspot)
+#else
   msgBegin();       // The Shelf messaging + Coms mesh
+#endif
   memLog("Shelf + mesh");
   if (gSet.fileShare) fileServerSet(true);
   screenBegin();    // HTML5 edition: the desktop in a web browser
