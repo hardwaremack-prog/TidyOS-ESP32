@@ -1,6 +1,6 @@
 {
   "name": "TidyOS for ESP32 (VGA)",
-  "version": "1.6.9",
+  "version": "1.6.10",
   "new_install_prompt_erase": true,
   "builds": [
     {
