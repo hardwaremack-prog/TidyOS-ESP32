@@ -262,10 +262,16 @@ static size_t queueChanges()
       s_hash[y] = hh;
       ++n; ++y;
     }
-    size_t len = 4 + (size_t)n * rb;                 // always >= 126, so the 4-byte ws header fits
-    s_ob[0] = 0x82; s_ob[1] = 126; s_ob[2] = len >> 8; s_ob[3] = len & 255;
+    size_t len = 4 + (size_t)n * rb;
     s_ob[4] = 2; s_ob[5] = y0 & 255; s_ob[6] = y0 >> 8; s_ob[7] = n;
-    s_obLen = 4 + len; s_obPos = 0;
+    if (len >= 126) {                                // WebSocket: 2-byte length form
+      s_ob[0] = 0x82; s_ob[1] = 126; s_ob[2] = len >> 8; s_ob[3] = len & 255;
+      s_obPos = 0;
+    } else {                                         // short frame (one black-and-white row): the
+      s_ob[2] = 0x82; s_ob[3] = len;                 // short length form is required, or browsers drop us
+      s_obPos = 2;
+    }
+    s_obLen = 4 + len;
     gNetTx += s_obLen;
     return s_obLen;
   }
