@@ -2362,7 +2362,9 @@ struct PingTarget {
 };
 
 static std::vector<PingTarget> s_pt;
-static std::vector<std::string> s_plog;
+// log: a fixed ring of lines (no memory is asked for while pinging)
+static char     s_plog[48][60];
+static uint32_t s_plogN = 0;              // lines written so far
 static std::mutex s_pmx;
 static volatile bool s_pRun = false, s_pTaskAlive = false;
 static volatile int  s_pChanged = 0;
@@ -2373,8 +2375,8 @@ static void plog(const std::string & l)
   struct tm tmv; localtime_r(&now, &tmv);
   char t[16] = "";
   if (tmv.tm_year > 100) snprintf(t, sizeof(t), "%02d:%02d:%02d ", tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
-  s_plog.push_back(t + l);
-  if (s_plog.size() > 300) s_plog.erase(s_plog.begin(), s_plog.begin() + 50);
+  snprintf(s_plog[s_plogN % 48], sizeof(s_plog[0]), "%s%s", t, l.c_str());
+  s_plogN++;
 }
 
 static uint32_t resolveHost(const std::string & h)
@@ -2506,7 +2508,7 @@ public:
     button("Clear stats", cx, cy + 408 - 4, 100)->onClick = [this]() {
       std::lock_guard<std::mutex> lk(s_pmx);
       for (auto & t : s_pt) { auto a = t.addr; t = PingTarget(); t.addr = a; }
-      s_plog.clear(); s_pChanged++;
+      s_plogN = 0; s_pChanged++;
     };
     load();
     refresh(true);
@@ -2608,8 +2610,9 @@ public:
           snprintf(b, sizeof(b), "%s%-17.17s %s", st, t.addr.c_str(), t.sent ? (std::string("no replies, ") + std::to_string(t.sent) + " sent").c_str() : "not pinged yet");
         rows.push_back(b);
       }
-      size_t from = s_plog.size() > 200 ? s_plog.size() - 200 : 0;
-      for (size_t i = from; i < s_plog.size(); ++i) logl.push_back(s_plog[i]);
+      // only the lines that fit in the log box
+      uint32_t show = imin(imin((int)s_plogN, 48), logView->visRows());
+      for (uint32_t i = s_plogN - show; i < s_plogN; ++i) logl.push_back(s_plog[i % 48]);
     }
     int sel = list->firstSelectedItem();
     list->items().clear();
@@ -2619,9 +2622,8 @@ public:
     char b[120];
     snprintf(b, sizeof(b), "%s   %d up, %d down, %d addresses   (saved in tidyos/ping.txt)", running ? "Pinging every second..." : "Stopped.", up, down, (int)rows.size());
     summary->setText(b); summary->repaint();
-    int n = (int)logl.size();
     logView->setLines(std::move(logl));
-    logView->scrollTo(imax(0, n - logView->visRows()));
+    logView->scrollTo(0);
     logView->repaint();
   }
 };
