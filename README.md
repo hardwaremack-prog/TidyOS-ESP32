@@ -237,6 +237,13 @@ sudo systemctl enable --now tidyos-helper
 - Spell check is English only. Capitalised names it doesn't know get underlined; use *Add to dictionary*.
 - The NodeMCU has no power meter, so Task Manager's power figure is an **estimate** from what's switched on. CPU % is measured from each core's idle time, so it settles after a few seconds. The chip temperature sensor is rough (±10 °C) and missing on some chips.
 
+## 13. Guides
+
+Two reference books for the hardware TidyOS runs on (PDF):
+
+- **[The ESP32 Classic Field Guide](docs/guides/ESP32-Classic-Field-Guide.pdf)**: the chip, CPU, memory, radios, a colour-coded pinout of the NodeMCU / DevKit V1 board, every pin and what it can do, sleep modes, and project ideas.
+- **[Heltec V3 vs Heltec V4 vs NodeMCU ESP32](docs/guides/Heltec-V3-vs-V4-vs-NodeMCU-ESP32.pdf)**: side-by-side specs, ESP32-S3 vs classic ESP32, what changed on the V4, which pins each board uses, and which board to pick for which project.
+
 ## 12. Building from source
 
 **PlatformIO:** open this folder and click Build/Upload (`platformio.ini` is included).
