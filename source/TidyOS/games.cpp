@@ -656,7 +656,8 @@ public:
   BricksBoard(uiWindow * p, Point pos) : Board(p, pos, Size(W + 2, H + 2)) { newGame(); }
 
   uint8_t br[ROWS][COLS];                 // hits left (0 = gone)
-  float bx, by, vx, vy, speed, px;
+  float bx, by, vx, vy, speed, px, drawnPx = W / 2;   // drawnPx: where the paddle is on screen now
+  int   drawnPw = 64;
   int   pw = 64, score = 0, lives = 3, level = 1, left = 0, held = 0;
   bool  stuck = true, over = false, paused = false;
   int   capX = -1, capY = 0, capT = 0;    // falling capsule (capX < 0 = none)
@@ -729,7 +730,7 @@ public:
   }
   void tick() override {
     if (over || paused) return;
-    Rect oldPad = padR(), oldBall = ballR();
+    Rect oldPad((int)drawnPx - drawnPw / 2 - 1, PY, (int)drawnPx + drawnPw / 2 + 1, PY + PH), oldBall = ballR();
     if (held) px += held * 9;
     px = fmaxf(pw / 2, fminf(W - pw / 2, px));
     if (stuck) { bx = px; by = PY - 4; }
@@ -778,6 +779,7 @@ public:
       } else if (capY > H) capX = -1;
     }
     dirty(oldPad.merge(padR()));
+    drawnPx = px; drawnPw = pw;
     dirty(oldBall.merge(ballR()));
     flushDirty();
     static int lastScore = -1;

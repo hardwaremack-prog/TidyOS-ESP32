@@ -111,10 +111,7 @@ static bool verifyPeer(WiFiClientSecure & c, const std::string & host)
   if (!checkChain(certs, host)) return false;
   s_okHost = host;
   s_okLeaf = certs[0];
-  certs.clear();
-  if (!c.connect(host.c_str(), 443)) { snprintf(s_lastErr, sizeof(s_lastErr), "no answer from %s", host.c_str()); return false; }
-  if (!peerIsTrusted(c, host)) { snprintf(s_lastErr, sizeof(s_lastErr), "%s changed its certificate - try again", host.c_str()); return false; }
-  return true;
+  return false;                                 // checked: the caller connects again with a fresh client
 }
 
 #define UPD_HOST "hardwaremack-prog.github.io"
@@ -154,9 +151,24 @@ bool updateModeRequested()
 
 // ---------------------------------------------------------------- HTTPS GET
 // sink gets the body in pieces; returns the HTTP status (or -1)
+static int httpsGet1(std::string host, std::string path, const std::function<bool(const uint8_t *, size_t, size_t)> & sink, int redirects);
+
+// A closed WiFiClientSecure can't be reused (its TLS state is wiped), so the certificate
+// check (which hangs up) is followed by a second try with a brand-new client.
 static int httpsGet(std::string host, std::string path, const std::function<bool(const uint8_t *, size_t, size_t)> & sink, int redirects = 3)
 {
   s_lastErr[0] = 0;
+  int code = httpsGet1(host, path, sink, redirects);
+  if (code == -3) {
+    delay(100);
+    code = httpsGet1(host, path, sink, redirects);
+    if (code == -3) { snprintf(s_lastErr, sizeof(s_lastErr), "%s changed its certificate - try again", host.c_str()); code = -1; }
+  }
+  return code;
+}
+
+static int httpsGet1(std::string host, std::string path, const std::function<bool(const uint8_t *, size_t, size_t)> & sink, int redirects)
+{
   WiFiClientSecure c;
   c.setInsecure();       // the handshake doesn't check; verifyPeer() below does, before anything is used
   c.setTimeout(20);
@@ -172,7 +184,12 @@ static int httpsGet(std::string host, std::string path, const std::function<bool
     Serial.printf("[update] can't connect to %s: %s (%d), free RAM %u\n", host.c_str(), e, code, (unsigned)ramFree());
     return -1;
   }
-  if (!verifyPeer(c, host)) { c.stop(); return -1; }
+  if (!verifyPeer(c, host)) {
+    c.stop();
+    // just checked and trusted (no error set): connect again
+    bool checked = !s_lastErr[0] && host == s_okHost && !s_okLeaf.empty();
+    return checked ? -3 : -1;
+  }
   std::string req = "GET " + path + " HTTP/1.0\r\nHost: " + host + "\r\nUser-Agent: TidyOS/" TIDYOS_VERSION "\r\nConnection: close\r\n\r\n";
   c.write((const uint8_t *)req.data(), req.size());
   int code = -1;
