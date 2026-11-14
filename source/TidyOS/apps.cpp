@@ -1752,6 +1752,10 @@ AppFrame * MessagesApp::inst = nullptr;
 
 void openMessages()
 {
+  if (!msgWanted()) {
+    gApp->messageBox("Messages", "Shelf messages are off. Turn them on at start-up.", "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
+    return;
+  }
   if (!msgStarted()) {
     gApp->messageBox("Messages", "Messages start once TidyOS is on your home Wi-Fi (Settings).", "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
     return;
@@ -2294,17 +2298,16 @@ public:
     add(new uiLabel(p, "End task closes the app. Apps with unsaved work ask first.", Point(0, 330), Size(600, 18)))->labelStyle().textFont = &FONT_std_12;
     add(new uiLabel(p, "Tip: Ctrl+Shift+Esc opens the Task Manager from anywhere.", Point(0, 350), Size(600, 18)))->labelStyle().textFont = &FONT_std_12;
     // Tasks, Network, Storage, Power: text views
+    // the four text tabs share one panel and one text view (saves memory)
     p = pane(2); tasksView = new TextArea(p, Point(0, 0), Size(612, 386), false);
-    p = pane(3); netView   = new TextArea(p, Point(0, 0), Size(612, 386), false);
-    p = pane(4); storeView = new TextArea(p, Point(0, 0), Size(612, 386), false);
-    p = pane(5); powerView = new TextArea(p, Point(0, 0), Size(612, 386), false);
+    panes[3] = panes[4] = panes[5] = p;
+    netView = storeView = powerView = tasksView;
 
     // CPU meters
     esp_register_freertos_idle_hook_for_cpu(idleHook0, 0);
     esp_register_freertos_idle_hook_for_cpu(idleHook1, 1);
     hooks = true;
     lastIdle[0] = s_idleCount[0]; lastIdle[1] = s_idleCount[1];
-    startPing();
     startTimer(1000);
     onTimer = [this](uiTimerHandle) { tick(); };
     show(0);
@@ -2355,9 +2358,12 @@ public:
   void stopPing() { if (s_ping) { esp_ping_stop(s_ping); esp_ping_delete_session(s_ping); s_ping = nullptr; } }
 
   void show(int i) {
+    if (i >= 2 && i != tab) { tasksView->setLines(std::vector<std::string>()); tasksView->top = 0; }
     tab = i;
+    int pi = i >= 2 ? 2 : i;
+    for (int k = 0; k < 3; ++k) gApp->showWindow(panes[k], k == pi);
+    if (i == 3) startPing(); else stopPing();         // the router ping only matters on the Network tab
     for (int k = 0; k < 6; ++k) {
-      gApp->showWindow(panes[k], k == i);
       tabs[k]->buttonStyle().backgroundColor = k == i ? T.accent : T.face;
       tabs[k]->buttonStyle().textColor       = k == i ? T.accentText : T.text;
       tabs[k]->repaint();
@@ -2389,7 +2395,7 @@ public:
     ramGraph->push(ramPct);
     snprintf(b, sizeof(b), "%d%% used", (int)(ramPct + 0.5f));
     ramLbl->setText(b); ramLbl->repaint();
-    if (!s_ping && netConnected()) startPing();
+    if (tab == 3 && !s_ping && netConnected()) startPing();
     refresh(false);
   }
 

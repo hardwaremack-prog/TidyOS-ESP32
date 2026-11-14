@@ -722,6 +722,14 @@ static void msgTask(void *)
       vTaskDelay(50 / portTICK_PERIOD_MS);
       continue;
     }
+    if (ramFree() < 10000) {            // memory is nearly gone: don't make it worse, wait for apps to close
+      vTaskDelay(500 / portTICK_PERIOD_MS);
+      continue;
+    }
+    if (!gSet.shelfOn) {                // only the mesh is on: no Shelf server, presence or sending
+      vTaskDelay(20 / portTICK_PERIOD_MS);
+      continue;
+    }
     if (!s_udpUp) s_udpUp = s_udp.begin(DISCOVERY_PORT);
     if (!s_serverUp) { s_server.begin(); s_serverUp = true; }
 
@@ -785,6 +793,8 @@ static void msgTask(void *)
 
 static bool s_msgStarted = false;
 bool msgStarted() { return s_msgStarted; }
+
+bool msgWanted() { return gSet.shelfOn || gSet.meshOn; }
 
 void msgBegin()
 {
@@ -960,6 +970,7 @@ bool comsUp() { return s_nowUp; }
 
 void comsSetOn(bool on)
 {
+  if (on && !s_msgStarted && WiFi.status() == WL_CONNECTED) msgBegin();
   if (on && s_msgStarted) loadComs();
   if (on && !s_nowUp && s_msgStarted) s_nowUp = nowStart();
   if (!on && s_nowUp) { s_nowUp = false; delay(50); esp_now_deinit(); }

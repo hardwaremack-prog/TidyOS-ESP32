@@ -1,0 +1,28 @@
+176a177,186
+> // TidyOS patch: remember recently deleted handlers so events still queued for them are dropped
+> // (otherwise run() calls into freed memory - a crash at PC 0)
+> static void * s_deadHandlers[16];
+> static int    s_deadPos = 0;
+> bool fabglHandlerIsDead(void * h)
+> {
+>   for (auto d : s_deadHandlers) if (d == h) return true;
+>   return false;
+> }
+> 
+180a191
+>   for (auto & d : s_deadHandlers) if (d == this) d = nullptr;     // this address is alive again
+187a199,200
+>   s_deadHandlers[s_deadPos] = this;
+>   s_deadPos = (s_deadPos + 1) % 16;
+298a312,314
+>       if (event.dest && fabglHandlerIsDead(event.dest))
+>         continue;                                           // TidyOS: its window is already gone
+> 
+385a402,404
+>     if (event.dest && fabglHandlerIsDead(event.dest))
+>       continue;
+> 
+860a880,882
+> 
+>     if (event.dest && fabglHandlerIsDead(event.dest))
+>       continue;

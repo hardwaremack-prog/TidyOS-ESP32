@@ -53,6 +53,7 @@ struct Settings {
   bool   sdOn;        // use the microSD card (off by default: saves ~23 KB of RAM)
   bool   meshOn;      // Coms wireless mesh (ESP-NOW) on (off by default)
   bool   ledOn;       // blue status light on (off by default)
+  bool shelfOn = false;   // Shelf messages over Wi-Fi (start-up switch)
   int    neatFont;    // Neat Lite font family (index)
   int    neatSize;    // Neat Lite font size (index within the family)
 };
@@ -102,4 +103,5 @@ Point clientOrigin(fabgl::uiFrame * f);   // top-left of the client area in wind
 fabgl::uiLabel * makeSavedLight(fabgl::uiWindow * parent, int x, int y);
 void setSavedLight(fabgl::uiLabel * l, bool saved);
 void bringToFront(fabgl::uiFrame * f);
+bool msgWanted();                        // Shelf messages or the mesh switched on
 std::string fmtMoney(double v);

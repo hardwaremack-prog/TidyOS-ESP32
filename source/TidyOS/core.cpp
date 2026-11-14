@@ -55,6 +55,7 @@ void settingsLoad()
   gSet.sdOn      = s_prefs.getBool("sdon", false);
   gSet.meshOn    = s_prefs.getBool("mesh", false);
   gSet.ledOn     = s_prefs.getBool("led", false);
+  gSet.shelfOn   = s_prefs.getBool("shelf", false);
   gSet.neatFont  = s_prefs.getInt("nfont", 0);
   gSet.neatSize  = s_prefs.getInt("nsize", 1);
 }
@@ -74,6 +75,7 @@ void settingsSave()
   s_prefs.putBool("sdon", gSet.sdOn);
   s_prefs.putBool("mesh", gSet.meshOn);
   s_prefs.putBool("led", gSet.ledOn);
+  s_prefs.putBool("shelf", gSet.shelfOn);
   s_prefs.putInt("nfont", gSet.neatFont);
   s_prefs.putInt("nsize", gSet.neatSize);
 }
@@ -310,6 +312,23 @@ static void openNeat0()    { openNeat(nullptr); }
 static void openTidy0()    { openTidy(nullptr); }
 static void openBrowser0() { openBrowser(nullptr); }
 
+// roughly how much memory each app takes while open (measured on the board), in KB
+static int appNeedKB(const char * label)
+{
+  static const struct { const char * n; int kb; } T_[] = {
+    { "Task Manager", 18 }, { "Files", 14 }, { "Neat", 22 }, { "Tidy", 20 }, { "Doodle", 18 }, { "Browser", 30 },
+    { "Rugged", 18 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
+  };
+  for (auto & e : T_) if (!strcmp(e.n, label)) return e.kb;
+  return 10;
+}
+static bool appIsOpen(const char * label)
+{
+  for (uiWindow * w = gApp->rootWindow()->firstChild(); w; w = w->next())
+    if (w->objectType().uiFrame && w->state().visible && ((uiFrame *)w)->title() && !strncmp(((uiFrame *)w)->title(), label, strlen(label))) return true;
+  return false;
+}
+
 static const DeskIcon ICONS[] = {
   { "Calculator", ART_CALC,  nullptr, openCalculator },
   { "Neat",       ART_NEAT,  nullptr, openNeat0 },
@@ -360,9 +379,13 @@ public:
           repaintIcon(i);
           if (hit(event->params.mouse.status.X, event->params.mouse.status.Y) == i) {
             Serial.printf("[TidyOS] open %s, free RAM %u (biggest %u)\n", ICONS[i].label, (unsigned)ramFree(), (unsigned)ramBiggest());
-            if (ramFree() < 16000 && ICONS[i].open != openSystem)
-              gApp->messageBox("Low memory", "Low on memory. Close an app first (see Task Manager).", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
-            else
+            int need = appNeedKB(ICONS[i].label);
+            if (!appIsOpen(ICONS[i].label) && (int)(ramFree() / 1024) < need + 10) {
+              char m[100];
+              snprintf(m, sizeof(m), "%s needs ~%d KB, %u KB free. Close an app, or pick Black & white at start-up.",
+                       ICONS[i].label, need, (unsigned)(ramFree() / 1024));
+              gApp->messageBox("Not enough memory", m, "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+            } else
               ICONS[i].open();
           }
         }
@@ -865,11 +888,11 @@ static void memLog(const char * step)
 // Shown in the browser before anything big starts, so memory-hungry parts can be left off
 // for this boot. Boots by itself after a countdown, so a restart with nobody watching still
 // comes up. Click anything (or press a key) to stop the countdown.
-static const int BW_X = 130, BW_Y = 60, BW_W = 380, BW_H = 342;
+static const int BW_X = 130, BW_Y = 30, BW_W = 380, BW_H = 400;
 
 static void bootRow(Canvas & cv, int i, const char * name, const char * note, bool on)
 {
-  int y = BW_Y + 44 + i * 52;
+  int y = BW_Y + 40 + i * 50;
   cv.setBrushColor(T.win);
   cv.fillRectangle(BW_X + 1, y - 4, BW_X + BW_W - 2, y + 44);
   cv.setPenColor(T.text);
@@ -915,6 +938,7 @@ static void bootDraw(Canvas & cv)
   bootRow(cv, 1, "Wireless mesh", "A few KB. Coms boards nearby", gSet.meshOn);
   bootRow(cv, 2, "Blue light", "~2 KB. Breathes when TidyOS is ready", gSet.ledOn);
   bootRow(cv, 3, "Black & white", "Saves ~37 KB. Restarts TidyOS to switch", gSet.colors == 2);
+  bootRow(cv, 4, "Shelf messages", "~9 KB. Chat with your Shelves on Wi-Fi", gSet.shelfOn);
   // Boot button
   int bx = BW_X + BW_W / 2 - 80, by = BW_Y + BW_H - 70;
   cv.setBrushColor(T.face);
@@ -953,8 +977,8 @@ static void bootChooser()
     int x, y;
     if (inputBootClick(x, y)) {
       timer = false;
-      for (int i = 0; i < 4; ++i) {
-        int ry = BW_Y + 44 + i * 52;
+      for (int i = 0; i < 5; ++i) {
+        int ry = BW_Y + 40 + i * 50;
         if (x >= BW_X && x < BW_X + BW_W && y >= ry - 4 && y < ry + 44) toggled = i;
       }
       int bx = BW_X + BW_W / 2 - 80, by = BW_Y + BW_H - 70;
@@ -963,13 +987,20 @@ static void bootChooser()
     int k;
     while ((k = inputBootKey()) >= 0) {
       timer = false;
-      if (k >= 0x1E && k <= 0x21) toggled = k - 0x1E;        // keys 1, 2, 3, 4
+      if (k >= 0x1E && k <= 0x22) toggled = k - 0x1E;        // keys 1 to 5
       if (k == 0x28 || k == 0x58) boot = true;                // Enter
     }
     if (toggled == 3) {
       gSet.colors = gSet.colors == 2 ? 0 : 2;
       settingsSave();
       bootRow(cv, 3, "Black & white", "Saves ~37 KB. Restarts TidyOS to switch", gSet.colors == 2);
+      shown = -2;
+      toggled = -1;
+    }
+    if (toggled == 4) {
+      gSet.shelfOn = !gSet.shelfOn;
+      settingsSave();
+      bootRow(cv, 4, "Shelf messages", "~9 KB. Chat with your Shelves on Wi-Fi", gSet.shelfOn);
       shown = -2;
       toggled = -1;
     }
@@ -1002,7 +1033,7 @@ static void bootChooser()
     delay(600);
     ESP.restart();
   }
-  Serial.printf("[TidyOS] start-up switches: SD %s, mesh %s, light %s\n", gSet.sdOn ? "on" : "off", gSet.meshOn ? "on" : "off", gSet.ledOn ? "on" : "off");
+  Serial.printf("[TidyOS] start-up switches: SD %s, mesh %s, light %s, shelf %s, colours %d\n", gSet.sdOn ? "on" : "off", gSet.meshOn ? "on" : "off", gSet.ledOn ? "on" : "off", gSet.shelfOn ? "on" : "off", gSet.colors);
 }
 #endif
 
@@ -1063,9 +1094,9 @@ void setup()
   memLog("dictionary");
   splash("Looking for your Shelves", 70);
 #ifdef TIDYOS_HTML5
-  if (gSet.ssid.length()) msgBegin();   // otherwise started once on home Wi-Fi (saves RAM for the setup hotspot)
+  if (gSet.ssid.length() && msgWanted()) msgBegin();   // otherwise started once on home Wi-Fi (saves RAM for the setup hotspot)
 #else
-  msgBegin();       // The Shelf messaging + Coms mesh
+  if (msgWanted()) msgBegin();       // The Shelf messaging + Coms mesh
 #endif
   memLog("Shelf + mesh");
   if (gSet.fileShare) fileServerSet(true);
