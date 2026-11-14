@@ -1,5 +1,6 @@
 // TidyOS custom widgets: multi-line TextArea and spreadsheet grid
 #pragma once
+#include "stream.h"
 #include <map>
 #include "core.h"
 
@@ -62,6 +63,8 @@ public:
   std::string display(int r, int c, bool & isNum);
   std::string toCSV();
   void fromCSV(const std::string & s);
+  void writeCSV(RSink & o);
+  void readCSV(RSource & in);
   static std::string cellName(int r, int c);
 
 private:

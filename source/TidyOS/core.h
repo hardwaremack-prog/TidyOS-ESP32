@@ -68,6 +68,11 @@ bool  sdTurnOn();                          // mount the card now (and from now o
 void  sdTurnOff();                         // unmount it now (and from now on); files go to internal flash
 bool  readFileStr(const char * path, std::string & out, size_t maxLen = 48 * 1024);
 bool  writeFileStr(const char * path, const std::string & data);
+struct RSink;
+// Streams a file out through a 256-byte buffer: writes "<path>.tmp" then swaps it in, so a
+// failed save (card full, pulled out) leaves the old file alone.
+bool  writeFileWith(const char * path, const std::function<void(RSink &)> & fill);
+long  fileSize(const char * path);              // -1 if it doesn't exist
 const char * fileExt(const char * path);  // lower-case extension without dot, or ""
 
 // ---------------------------------------------------------------- app launching

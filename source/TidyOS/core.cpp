@@ -13,6 +13,7 @@
 #include "driver/gpio.h"
 #include "esp_bt.h"
 #include "core.h"
+#include "stream.h"
 #include "input.h"
 #include "net.h"
 #include "style.h"
@@ -112,6 +113,30 @@ bool writeFileStr(const char * path, const std::string & data)
   bool ok = fwrite(data.data(), 1, data.size(), f) == data.size();
   fclose(f);
   return ok;
+}
+
+bool writeFileWith(const char * path, const std::function<void(RSink &)> & fill)
+{
+  std::string tmp = std::string(path) + ".tmp";
+  FILE * f = fopen(tmp.c_str(), "wb");
+  bool direct = !f;                             // e.g. name too long for the flash filesystem
+  if (direct) f = fopen(path, "wb");
+  if (!f) return false;
+  FileSink o(f);
+  fill(o);
+  bool ok = o.flush();
+  if (fclose(f) != 0) ok = false;
+  if (direct) return ok;
+  if (!ok) { remove(tmp.c_str()); return false; }
+  remove(path);
+  return rename(tmp.c_str(), path) == 0;
+}
+
+long fileSize(const char * path)
+{
+  struct stat st;
+  if (stat(path, &st) != 0) return -1;
+  return (long)st.st_size;
 }
 
 const char * fileExt(const char * path)

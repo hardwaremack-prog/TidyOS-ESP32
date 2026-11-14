@@ -576,35 +576,48 @@ std::string Sheet::display(int r, int c, bool & isNum)
 
 std::string Sheet::toCSV()
 {
+  std::string out;
+  StrSink o(out);
+  writeCSV(o);
+  return out;
+}
+
+void Sheet::writeCSV(RSink & o)
+{
   int maxR = -1, maxC = -1;
   for (auto & kv : cells) { maxR = imax(maxR, kv.first / COLS); maxC = imax(maxC, kv.first % COLS); }
-  std::string out;
   for (int r = 0; r <= maxR; ++r) {
     for (int c = 0; c <= maxC; ++c) {
       const std::string & s = raw(r, c);
       if (s.find_first_of(",\"\n") != std::string::npos) {
-        out += '"';
-        for (char ch : s) { if (ch == '"') out += '"'; out += ch; }
-        out += '"';
-      } else out += s;
-      if (c < maxC) out += ',';
+        o.put('"');
+        for (char ch : s) { if (ch == '"') o.put('"'); o.put(ch); }
+        o.put('"');
+      } else o.put(s);
+      if (c < maxC) o.put(',');
     }
-    out += '\n';
+    o.put('\n');
   }
-  return out;
 }
 
 void Sheet::fromCSV(const std::string & s)
+{
+  StrSource in(s);
+  readCSV(in);
+}
+
+void Sheet::readCSV(RSource & in)
 {
   cells.clear();
   int r = 0, c = 0;
   std::string cur;
   bool q = false;
-  for (size_t i = 0; i <= s.size(); ++i) {
-    char ch = i < s.size() ? s[i] : '\n';
+  for (bool end = false; !end; ) {
+    int ch = in.peek();
+    if (ch < 0) { ch = '\n'; end = true; } else in.skip();
     if (q) {
-      if (ch == '"') { if (i + 1 < s.size() && s[i + 1] == '"') { cur += '"'; ++i; } else q = false; }
-      else cur += ch;
+      if (ch == '"') { if (in.peek() == '"') { cur += '"'; in.skip(); } else q = false; }
+      else cur += (char)ch;
       continue;
     }
     if (ch == '"') { q = true; continue; }
@@ -614,7 +627,7 @@ void Sheet::fromCSV(const std::string & s)
       if (ch == '\n') { ++r; c = 0; } else ++c;
       continue;
     }
-    if (ch != '\r') cur += ch;
+    if (ch != '\r') cur += (char)ch;
   }
 }
 

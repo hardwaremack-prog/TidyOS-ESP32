@@ -172,6 +172,18 @@ void RichText::setPlain(const std::string & s)
   if (onSelChange) onSelChange();
 }
 
+void RichText::load(RSource & in)
+{
+  bool rtf = doc.readRtf(in);
+  if (!rtf) doc.readPlain(in, normal);
+  cur = anchor = RPos(0, 0);
+  typing = rtf ? doc.styleAt(0, 0) : normal;
+  top = 0;
+  hlA = hlB = RPos();
+  relayout();
+  if (onSelChange) onSelChange();
+}
+
 bool RichText::setRtf(const std::string & s)
 {
   if (!doc.fromRtf(s)) return false;

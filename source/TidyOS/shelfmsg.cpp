@@ -8,6 +8,7 @@
 #include <map>
 #include <algorithm>
 #include <time.h>
+#include "stream.h"
 #include "shelfmsg.h"
 #include "core.h"
 
@@ -837,24 +838,38 @@ void msgConversation(const std::string & peerId, std::vector<ChatLine> & out)
     Peer * p = findPeer(peerId);
     if (p) { name = p->name; p->unread = 0; }
   }
-  std::string s;
-  if (!readFileStr(convPath(peerId).c_str(), s, 48 * 1024)) return;
-  size_t st = 0;
-  for (size_t i = 0; i <= s.size(); ++i)
-    if (i == s.size() || s[i] == '\n') {
-      std::string l = s.substr(st, i - st);
-      st = i + 1;
-      size_t a = l.find('|'), b = l.find('|', a + 1);
-      if (l.size() < 3 || a == std::string::npos || b == std::string::npos) continue;
-      ChatLine c;
-      c.in = l[0] == 'I';
-      c.failed = l[0] == 'F';
-      c.t = strtoull(l.c_str() + a + 1, nullptr, 10);
-      c.who = c.in ? name : "Me";
-      c.text = l.substr(b + 1);
-      for (auto & ch : c.text) if (ch == '\x1F') ch = '\n';
-      out.push_back(c);
-    }
+  // Stream the last 48 KB of the log line by line instead of loading it whole.
+  FILE * f = fopen(convPath(peerId).c_str(), "rb");
+  if (!f) return;
+  fseek(f, 0, SEEK_END);
+  long size = ftell(f);
+  long from = size > 48 * 1024 ? size - 48 * 1024 : 0;
+  fseek(f, from, SEEK_SET);
+  FileSource in(f);
+  if (from > 0) { int ch; while ((ch = in.peek()) >= 0) { in.skip(); if (ch == '\n') break; } }   // partial first line
+  auto addLine = [&](const std::string & l) {
+    size_t a = l.find('|'), b = l.find('|', a + 1);
+    if (l.size() < 3 || a == std::string::npos || b == std::string::npos) return;
+    ChatLine c;
+    c.in = l[0] == 'I';
+    c.failed = l[0] == 'F';
+    c.t = strtoull(l.c_str() + a + 1, nullptr, 10);
+    c.who = c.in ? name : "Me";
+    c.text = l.substr(b + 1);
+    for (auto & ch : c.text) if (ch == '\x1F') ch = '\n';
+    out.push_back(c);
+    if (out.size() >= 300) out.erase(out.begin(), out.end() - 150);
+  };
+  std::string l;
+  for (;;) {
+    int ch = in.peek();
+    if (ch >= 0) in.skip();
+    if (ch >= 0 && ch != '\n') { if (l.size() < 2200) l += (char)ch; continue; }
+    if (!l.empty()) addLine(l);
+    l.clear();
+    if (ch < 0) break;
+  }
+  fclose(f);
   if (out.size() > 150) out.erase(out.begin(), out.end() - 150);
 }
 

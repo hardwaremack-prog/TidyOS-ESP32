@@ -46,6 +46,7 @@ public:
 
   void setPlain(const std::string & s);
   bool setRtf(const std::string & s);
+  void load(RSource & in);                // RTF if it looks like RTF, otherwise plain text
   void selectRange(RPos a, RPos b);                   // select + scroll into view
   void replaceSel(const std::string & s);             // typed text / spelling fix
   void selectAll();

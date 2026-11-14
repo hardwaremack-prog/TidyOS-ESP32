@@ -423,9 +423,16 @@ public:
   static bool isRtf(const std::string & p) { return strcasecmp(fileExt(p.c_str()), "rtf") == 0; }
 
   void loadFile(const char * p) {
-    std::string s;
-    if (!readFileStr(p, s, 96 * 1024)) { gApp->messageBox("Neat", "Could not open that file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
-    if (!(s.compare(0, 5, "{\\rtf") == 0 && rt->setRtf(s))) rt->setPlain(s);
+    // Read straight from the file in small pieces: only the document itself takes RAM.
+    long sz = fileSize(p);
+    if (sz > 200 * 1024 || (sz > 0 && (size_t)sz * 2 + 24000 > ramBiggest())) {
+      gApp->messageBox("Neat", "That file is too big for the free memory.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error);
+      return;
+    }
+    FILE * f = fopen(p, "rb");
+    if (!f) { gApp->messageBox("Neat", "Could not open that file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
+    { FileSource in(f); rt->load(in); }
+    fclose(f);
     setPath(p);
     dirty = false;
     setSavedLight(saved, true);
@@ -466,8 +473,8 @@ public:
         setPath(p + ".rtf");
       }
     }
-    std::string out = isRtf(path) ? rt->doc.toRtf() : rt->doc.plain();
-    if (!writeFileStr(path.c_str(), out)) {
+    bool rtf = isRtf(path);
+    if (!writeFileWith(path.c_str(), [&](RSink & o) { if (rtf) rt->doc.writeRtf(o); else rt->doc.writePlain(o); })) {
       gApp->messageBox("Neat", "Could not save the document.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error);
       return false;
     }
@@ -588,9 +595,15 @@ public:
   }
 
   void loadFile(const char * p) {
-    std::string s;
-    if (!readFileStr(p, s, 64 * 1024)) { gApp->messageBox("Tidy", "Could not open that file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
-    sheet.fromCSV(s);
+    long sz = fileSize(p);
+    if (sz > 128 * 1024 || (sz > 0 && (size_t)sz * 3 + 24000 > ramBiggest())) {
+      gApp->messageBox("Tidy", "That file is too big for the free memory.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error);
+      return;
+    }
+    FILE * f = fopen(p, "rb");
+    if (!f) { gApp->messageBox("Tidy", "Could not open that file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
+    { FileSource in(f); sheet.readCSV(in); }
+    fclose(f);
     grid->selR = grid->selC = grid->topR = grid->leftC = 0;
     grid->repaint();
     setPath(p);
@@ -620,7 +633,7 @@ public:
   bool save() {
     grid->commit();
     if (path.empty()) return saveAs();
-    if (!writeFileStr(path.c_str(), sheet.toCSV())) {
+    if (!writeFileWith(path.c_str(), [&](RSink & o) { sheet.writeCSV(o); })) {
       gApp->messageBox("Tidy", "Could not save. Is the SD card in?", "OK", nullptr, nullptr, uiMessageBoxIcon::Error);
       return false;
     }
@@ -832,7 +845,7 @@ public:
       tmp.set(i, 2, std::to_string(bills[i].day));
       tmp.set(i, 3, bills[i].paid ? "1" : "0");
     }
-    setSavedLight(saved, writeFileStr(dataPath("steady.csv").c_str(), tmp.toCSV()));
+    setSavedLight(saved, writeFileWith(dataPath("steady.csv").c_str(), [&](RSink & o) { tmp.writeCSV(o); }));
   }
 
   static const char * suffix(int d) {

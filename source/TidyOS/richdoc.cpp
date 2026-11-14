@@ -334,8 +334,40 @@ void RichDoc::setPlain(const std::string & s, const RStyle & st)
 std::string RichDoc::plain() const
 {
   std::string s;
-  for (size_t p = 0; p < paras.size(); ++p) { if (p) s += '\n'; s += text(p); }
+  StrSink o(s);
+  writePlain(o);
   return s;
+}
+
+void RichDoc::writePlain(RSink & o) const
+{
+  for (size_t p = 0; p < paras.size(); ++p) {
+    if (p) o.put('\n');
+    for (auto & r : paras[p].runs) o.put(r.t);
+  }
+}
+
+void RichDoc::readPlain(RSource & in, const RStyle & st)
+{
+  clear(st);
+  char chunk[128];
+  int n = 0;
+  for (;;) {
+    int c = in.peek();
+    if (c >= 0) { in.skip(); if (c != '\r') chunk[n++] = (char)c; }
+    if (n && (n == (int)sizeof(chunk) || c < 0)) { insert(endPos(), std::string(chunk, n), st); n = 0; }
+    if (c < 0) break;
+  }
+  compact();
+}
+
+void RichDoc::compact()
+{
+  for (auto & P : paras) {
+    for (auto & r : P.runs) r.t.shrink_to_fit();
+    P.runs.shrink_to_fit();
+  }
+  paras.shrink_to_fit();
 }
 
 bool RichDoc::hasFormatting(const RStyle & normal) const
@@ -364,33 +396,46 @@ static const int RTF_FONT_COUNT = sizeof(RTF_FONTS) / sizeof(RTF_FONTS[0]);
 
 std::string RichDoc::toRtf() const
 {
-  std::string o = "{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl";
+  std::string o;
+  StrSink k(o);
+  writeRtf(k);
+  return o;
+}
+
+void RichDoc::writeRtf(RSink & o) const
+{
+  o.put("{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl");
   char b[96];
-  for (int i = 0; i < RTF_FONT_COUNT; ++i) { snprintf(b, sizeof(b), "{\\f%d %s;}", i, RTF_FONTS[i]); o += b; }
-  o += "}\n";
+  for (int i = 0; i < RTF_FONT_COUNT; ++i) { snprintf(b, sizeof(b), "{\\f%d %s;}", i, RTF_FONTS[i]); o.put(b); }
+  o.put("}\n");
   for (auto & P : paras) {
     snprintf(b, sizeof(b), "\\pard%s\\sa%d\\sl%d\\slmult1 ", P.align == 1 ? "\\qc" : P.align == 2 ? "\\qr" : "\\ql", P.after * 15, P.spacing * 240 / 100);
-    o += b;
+    o.put(b);
     for (auto & r : P.runs) {
       if (r.t.empty()) continue;
       snprintf(b, sizeof(b), "{\\f%d\\fs%d%s%s ", r.s.font, (r.s.size * 3 + 1) / 2, r.s.flags & RS_BOLD ? "\\b" : "", r.s.flags & RS_UNDER ? "\\ul" : "");
-      o += b;
+      o.put(b);
       for (unsigned char c : r.t) {
-        if (c == '\\' || c == '{' || c == '}') { o += '\\'; o += c; }
-        else if (c >= 128) { snprintf(b, sizeof(b), "\\'%02x", c); o += b; }
-        else o += c;
+        if (c == '\\' || c == '{' || c == '}') { o.put('\\'); o.put((char)c); }
+        else if (c >= 128) { snprintf(b, sizeof(b), "\\'%02x", c); o.put(b); }
+        else o.put((char)c);
       }
-      o += "}";
+      o.put("}");
     }
-    o += "\\par\n";
+    o.put("\\par\n");
   }
-  o += "}\n";
-  return o;
+  o.put("}\n");
 }
 
 bool RichDoc::fromRtf(const std::string & s)
 {
-  if (s.compare(0, 5, "{\\rtf") != 0) return false;
+  StrSource in(s);
+  return readRtf(in);
+}
+
+bool RichDoc::readRtf(RSource & in)
+{
+  if (!(in.peek(0) == '{' && in.peek(1) == '\\' && in.peek(2) == 'r' && in.peek(3) == 't' && in.peek(4) == 'f')) return false;
   paras.clear();
   RPara cur;
   struct St { RStyle s; bool skip; };
@@ -418,33 +463,35 @@ bool RichDoc::fromRtf(const std::string & s)
     n.after = cur.after; n.spacing = cur.spacing; n.align = cur.align;
     cur = n;
   };
-  size_t i = 0, n = s.size();
   bool firstInGroup = false;
-  while (i < n) {
-    char c = s[i];
-    if (c == '{') { stack.push_back(st); firstInGroup = true; ++i; continue; }
-    if (c == '}') { flush(); if (!stack.empty()) { st = stack.back(); stack.pop_back(); } firstInGroup = false; ++i; continue; }
-    if (c == '\r' || c == '\n') { ++i; continue; }
-    if (c != '\\') { addChar(c); firstInGroup = false; ++i; continue; }
+  for (;;) {
+    int c = in.peek();
+    if (c < 0) break;
+    if (c == '{') { stack.push_back(st); firstInGroup = true; in.skip(); continue; }
+    if (c == '}') { flush(); if (!stack.empty()) { st = stack.back(); stack.pop_back(); } firstInGroup = false; in.skip(); continue; }
+    if (c == '\r' || c == '\n') { in.skip(); continue; }
+    if (c != '\\') { addChar((char)c); firstInGroup = false; in.skip(); continue; }
     // control word / symbol
-    ++i;
-    if (i >= n) break;
-    char d = s[i];
-    if (d == '\\' || d == '{' || d == '}') { addChar(d); ++i; firstInGroup = false; continue; }
+    in.skip();
+    int d = in.peek();
+    if (d < 0) break;
+    if (d == '\\' || d == '{' || d == '}') { addChar((char)d); in.skip(); firstInGroup = false; continue; }
     if (d == '\'') {
-      if (i + 2 < n) { char h[3] = { s[i + 1], s[i + 2], 0 }; addChar((char)strtol(h, nullptr, 16)); }
-      i += 3; firstInGroup = false; continue;
+      int h1 = in.peek(1), h2 = in.peek(2);
+      if (h1 >= 0 && h2 >= 0) { char h[3] = { (char)h1, (char)h2, 0 }; addChar((char)strtol(h, nullptr, 16)); }
+      in.skip(3); firstInGroup = false; continue;
     }
-    if (d == '*') { st.skip = true; ++i; continue; }
-    if (!isalpha((unsigned char)d)) { ++i; continue; }   // other symbols (\~, \-, ...)
-    size_t w0 = i;
-    while (i < n && isalpha((unsigned char)s[i])) ++i;
-    std::string word = s.substr(w0, i - w0);
+    if (d == '*') { st.skip = true; in.skip(); continue; }
+    if (!isalpha(d)) { in.skip(); continue; }   // other symbols (\~, \-, ...)
+    char wb[24]; int wl = 0;
+    while ((c = in.peek()) >= 0 && isalpha(c)) { if (wl < (int)sizeof(wb) - 1) wb[wl++] = (char)c; in.skip(); }
+    wb[wl] = 0;
+    std::string word(wb);
     bool hasNum = false; long num = 0; bool neg = false;
-    if (i < n && s[i] == '-') { neg = true; ++i; }
-    while (i < n && isdigit((unsigned char)s[i])) { hasNum = true; num = num * 10 + (s[i] - '0'); ++i; }
+    if (in.peek() == '-') { neg = true; in.skip(); }
+    while ((c = in.peek()) >= 0 && isdigit(c)) { hasNum = true; num = num * 10 + (c - '0'); in.skip(); }
     if (neg) num = -num;
-    if (i < n && s[i] == ' ') ++i;
+    if (in.peek() == ' ') in.skip();
     // destinations we don't show
     if (firstInGroup && (word == "fonttbl" || word == "colortbl" || word == "stylesheet" || word == "info" || word == "pict" ||
                          word == "header" || word == "footer" || word == "listtable" || word == "listoverridetable" || word == "generator")) st.skip = true;
@@ -463,12 +510,13 @@ bool RichDoc::fromRtf(const std::string & s)
     else if (word == "ql" || word == "qj") cur.align = 0;
     else if (word == "sa" && hasNum) cur.after = std::max(0L, std::min(60L, num / 15));
     else if (word == "sl" && hasNum) { long sp = labs(num) * 100 / 240; cur.spacing = sp >= 175 ? 200 : sp >= 125 ? 150 : 100; }
-    else if (word == "u" && hasNum) { addChar(num > 0 && num < 256 ? (char)num : '?'); if (i < n && s[i] == '?') ++i; }
+    else if (word == "u" && hasNum) { addChar(num > 0 && num < 256 ? (char)num : '?'); if (in.peek() == '?') in.skip(); }
   }
   flush();
   bool anyText = false;
   for (auto & r : cur.runs) if (!r.t.empty()) anyText = true;
   if (anyText || paras.empty()) { if (cur.runs.empty()) cur.runs.push_back(RRun{ "", st.s }); paras.push_back(cur); }
   for (size_t p = 0; p < paras.size(); ++p) tidy(p);
+  compact();
   return true;
 }

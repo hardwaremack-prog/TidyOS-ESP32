@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 #include <stdint.h>
+#include "stream.h"
 
 enum { RS_BOLD = 1, RS_UNDER = 2 };
 
@@ -86,6 +87,11 @@ public:
   std::string plain() const;
   std::string toRtf() const;
   bool fromRtf(const std::string & s);
+  void writePlain(RSink & o) const;
+  void writeRtf(RSink & o) const;
+  bool readRtf(RSource & in);                     // false (nothing read) if it isn't RTF
+  void readPlain(RSource & in, const RStyle & st = RStyle());
+  void compact();                                  // give spare string capacity back
   bool hasFormatting(const RStyle & normal) const;
   size_t bytes() const;
 
