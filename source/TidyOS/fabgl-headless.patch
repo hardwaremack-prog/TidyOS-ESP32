@@ -1,0 +1,112 @@
+--- /tmp/vgabasecontroller.h.orig	2026-11-14 10:55:43.616353459 -0500
++++ vgabasecontroller.h	2026-11-14 10:55:43.697614292 -0500
+@@ -120,6 +120,12 @@
+ 
+ public:
+ 
++  // TidyOS patch: headless = keep the frame buffer and drawing, but generate no VGA signal
++  // (no DMA descriptors, line buffers or video interrupt). Set before setResolution().
++  void setHeadless(bool value)  { m_headless = value; }
++  bool headless() const         { return m_headless; }
++
++
+   VGABaseController();
+ 
+   // unwanted methods
+@@ -312,6 +318,9 @@
+ 
+ protected:
+ 
++  bool m_headless = false;
++
++
+   static void setupGPIO(gpio_num_t gpio, int bit, gpio_mode_t mode);
+ 
+   void startGPIOStream();
+--- /tmp/vgabasecontroller.cpp.orig	2026-11-14 10:55:43.618143890 -0500
++++ vgabasecontroller.cpp	2026-11-14 10:55:43.699397360 -0500
+@@ -384,8 +384,10 @@
+ 
+   m_HLineSize = m_timings.HFrontPorch + m_timings.HSyncPulse + m_timings.HBackPorch + m_timings.HVisibleArea;
+ 
+-  m_HBlankLine_withVSync = (uint8_t*) heap_caps_malloc(m_HLineSize, MALLOC_CAP_DMA);
+-  m_HBlankLine           = (uint8_t*) heap_caps_malloc(m_HLineSize, MALLOC_CAP_DMA);
++  if (!m_headless) {
++    m_HBlankLine_withVSync = (uint8_t*) heap_caps_malloc(m_HLineSize, MALLOC_CAP_DMA);
++    m_HBlankLine           = (uint8_t*) heap_caps_malloc(m_HLineSize, MALLOC_CAP_DMA);
++  }
+ 
+   m_viewPortWidth  = ~3 & (viewPortWidth <= 0 || viewPortWidth >= m_timings.HVisibleArea ? m_timings.HVisibleArea : viewPortWidth); // view port width must be 32 bit aligned
+   m_viewPortHeight = viewPortHeight <= 0 || viewPortHeight >= m_timings.VVisibleArea ? m_timings.VVisibleArea : viewPortHeight;
+@@ -404,7 +406,8 @@
+   m_rawFrameHeight = m_timings.VVisibleArea + m_timings.VFrontPorch + m_timings.VSyncPulse + m_timings.VBackPorch;
+ 
+   // allocate DMA descriptors
+-  setDMABuffersCount(calcRequiredDMABuffersCount(m_viewPortHeight));
++  if (!m_headless)
++    setDMABuffersCount(calcRequiredDMABuffersCount(m_viewPortHeight));
+ 
+   // allocate the viewport
+   allocateViewPort();
+@@ -412,16 +415,18 @@
+   // adjust again view port size if necessary
+   checkViewPortSize();
+ 
+-  // this may free space if m_viewPortHeight has been reduced
+-  setDMABuffersCount(calcRequiredDMABuffersCount(m_viewPortHeight));
+-
+-  // fill buffers
+-  fillVertBuffers(0);
+-  fillHorizBuffers(0);
++  if (!m_headless) {
++    // this may free space if m_viewPortHeight has been reduced
++    setDMABuffersCount(calcRequiredDMABuffersCount(m_viewPortHeight));
++
++    // fill buffers
++    fillVertBuffers(0);
++    fillHorizBuffers(0);
++  }
+ 
+   resetPaintState();
+ 
+-  if (m_doubleBufferOverDMA)
++  if (m_doubleBufferOverDMA && !m_headless)
+     m_DMABuffersHead->qe.stqe_next = (lldesc_t*) &m_DMABuffersVisible[0];
+ }
+ 
+--- /tmp/vgapalettedcontroller.cpp.orig	2026-11-14 10:55:43.620066313 -0500
++++ vgapalettedcontroller.cpp	2026-11-14 10:55:59.710826016 -0500
+@@ -130,7 +130,7 @@
+   VGABaseController::allocateViewPort(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL, m_viewPortWidth / m_viewPortRatioDiv * m_viewPortRatioMul);
+ 
+   for (int i = 0; i < m_linesCount; ++i)
+-    m_lines[i] = (uint8_t*) heap_caps_malloc(m_viewPortWidth, MALLOC_CAP_DMA);
++    m_lines[i] = m_headless ? nullptr : (uint8_t*) heap_caps_malloc(m_viewPortWidth, MALLOC_CAP_DMA);
+ }
+ 
+ 
+@@ -162,10 +162,11 @@
+   calculateAvailableCyclesForDrawings();
+ 
+   // must be started before interrupt alloc
+-  startGPIOStream();
++  if (!m_headless)
++    startGPIOStream();
+ 
+   // ESP_INTR_FLAG_LEVEL1: should be less than PS2Controller interrupt level, necessary when running on the same core
+-  if (m_isr_handle == nullptr) {
++  if (m_isr_handle == nullptr && !m_headless) {
+     CoreUsage::setBusiestCore(FABGLIB_VIDEO_CPUINTENSIVE_TASKS_CORE);
+     esp_intr_alloc_pinnedToCore(ETS_I2S1_INTR_SOURCE, ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_IRAM, m_isrHandler, this, &m_isr_handle, FABGLIB_VIDEO_CPUINTENSIVE_TASKS_CORE);
+     I2S1.int_clr.val     = 0xFFFFFFFF;
+@@ -283,8 +284,8 @@
+       ctrl->m_taskProcessingPrimitives = false;
+     }
+ 
+-    // wait for vertical sync
+-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
++    // wait for vertical sync (headless: no video interrupt, so wake up every 2 ms instead)
++    ulTaskNotifyTake(pdTRUE, ctrl->m_headless ? pdMS_TO_TICKS(2) : portMAX_DELAY);
+   }
+ 
+ }

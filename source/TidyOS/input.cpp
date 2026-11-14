@@ -723,9 +723,13 @@ static void bleTask(void *)
 }
 
 // key repeat task
+static void serialStep();
+
+// key repeat + the serial keyboard share one small task (each task costs its own stack)
 static void repeatTask(void *)
 {
   for (;;) {
+    serialStep();
     uint8_t u = s_repUsage;
     if (u && esp_timer_get_time() >= s_repNextUS) {
       VirtualKey vk; uint8_t ascii;
@@ -770,12 +774,12 @@ static void serialCommand(const std::string & c)
   }
 }
 
-static void serialTask(void *)
+static void serialStep()       // one pass over the serial input (runs inside the key-repeat task)
 {
-  int esc = 0;
-  bool cmd = false, lineStart = true;
-  std::string cmdLine;
-  for (;;) {
+  static int esc = 0;
+  static bool cmd = false, lineStart = true;
+  static std::string cmdLine;
+  {
     while (Serial.available()) {
       int ch = Serial.read();
       if (lineStart && ch == '!') { cmd = true; cmdLine.clear(); lineStart = false; continue; }
@@ -812,9 +816,8 @@ static void serialTask(void *)
     }
     // some serial monitors send a line without Enter: run the command after a short pause
     static int idle = 0;
-    if (cmd && !cmdLine.empty() && !Serial.available()) { if (++idle > 40) { cmd = false; lineStart = true; idle = 0; serialCommand(cmdLine); } }
+    if (cmd && !cmdLine.empty() && !Serial.available()) { if (++idle > 50) { cmd = false; lineStart = true; idle = 0; serialCommand(cmdLine); } }
     else idle = 0;
-    vTaskDelay(20 / portTICK_PERIOD_MS);
   }
 }
 
@@ -911,8 +914,7 @@ void inputAttach(uiApp * app, Keyboard * kbd, BitmappedDisplayController * dc)
   if (!started) {
     started = true;
     if (s_bleOn) xTaskCreatePinnedToCore(bleTask, "ble", 6144, nullptr, 3, nullptr, 0);
-    xTaskCreatePinnedToCore(repeatTask, "keyrep", 2048, nullptr, 4, nullptr, 0);
-    xTaskCreatePinnedToCore(serialTask, "serkbd", 2048, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(repeatTask, "keyrep", 3072, nullptr, 4, nullptr, 0);
   }
 #ifdef TIDYOS_HTML5
   if (dc) dc->setMouseCursorPos(-100, -100);       // keep FabGL's pointer off screen

@@ -600,6 +600,9 @@ static BitmappedDisplayController * tryMode(size_t fbBytes, size_t margin = 6000
   Serial.printf("[TidyOS] free %u, need %u\n", (unsigned)freeMem, (unsigned)(fbBytes + margin));
   if (freeMem < fbBytes + margin) return nullptr;
   C * c = new C;
+#ifdef TIDYOS_HTML5
+  c->setHeadless(true);     // no monitor: keep the picture in RAM, skip the VGA signal (~16 KB + CPU time)
+#endif
   c->begin(VGA_RED1, VGA_RED0, VGA_GREEN1, VGA_GREEN0, VGA_BLUE1, VGA_BLUE0, VGA_HSYNC, VGA_VSYNC);
   c->setResolution(VGA_640x480_60Hz);
   if (c->getViewPortHeight() >= SCREEN_H && c->getViewPortWidth() >= SCREEN_W) return c;
@@ -611,6 +614,9 @@ static BitmappedDisplayController * tryMode(size_t fbBytes, size_t margin = 6000
 
 static void startDisplay()
 {
+  // FabGL queues drawing commands; its default 1024-entry queue is ~15 KB of RAM. 256 is plenty
+  // (when it fills, the app just waits a moment for drawing to catch up).
+  BitmappedDisplayController::queueSize = 256;
   int want = gSet.colors;   // 0 = auto
 #ifdef TIDYOS_HTML5
   if (want == 0) want = 4;  // HTML5: 4 colours unless asked for 8 - leaves ~38 KB more for Wi-Fi and apps
@@ -624,6 +630,9 @@ static void startDisplay()
   if (!dc) {
     // last resort: 4 colours without the safety margin
     auto c = new V4;
+#ifdef TIDYOS_HTML5
+    c->setHeadless(true);
+#endif
     c->begin(VGA_RED1, VGA_RED0, VGA_GREEN1, VGA_GREEN0, VGA_BLUE1, VGA_BLUE0, VGA_HSYNC, VGA_VSYNC);
     c->setResolution(VGA_640x480_60Hz);
     dc = c; got = 4;
@@ -695,7 +704,7 @@ void sdTurnOff()
     gSDWiring = "none";
     Serial.println("[TidyOS] SD card turned off");
   }
-  if (!gFlashMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 4);
+  if (!gFlashMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 2);
 }
 
 #ifdef TIDYOS_HTML5
@@ -1085,7 +1094,7 @@ void setup()
   barStart();
   splash(gSDMounted ? "SD card found" : gSet.sdOn ? "No SD card - preparing internal storage..." : "Preparing internal storage...", 30);
 
-  if (!gSDMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 4);
+  if (!gSDMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 2);
   memLog("display + storage");
   makeDirs();
   crashSave(dataPath("crash.txt"));

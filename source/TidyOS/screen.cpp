@@ -187,7 +187,7 @@ static bool wsSend(WiFiClient & c, const uint8_t * d, size_t n, uint8_t opcode =
 // ---- outbox: one frame for the browser waits here and drains without ever blocking the server.
 // A fixed buffer reserved at start-up: no memory is asked for while running (on a busy hotspot
 // RAM is too broken up to grow a buffer, even with plenty free in total).
-static uint8_t  s_ob[4 + 4 + 24 * 240];   // ws header + frame header + up to 24 rows
+static uint8_t  s_ob[4 + 4 + 16 * 160];   // ws header + frame header + 16 rows (4 colours) / 10 rows (8 colours)
 static size_t   s_obLen = 0, s_obPos = 0;
 static uint32_t s_outStuck = 0;          // when the outbox last made no progress
 

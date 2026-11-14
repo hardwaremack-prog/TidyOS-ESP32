@@ -81,26 +81,24 @@ public:
 
   // undo: swaps the rows kept in the undo file with the picture (so undo again = redo)
   bool undo() {
-    FILE * u = fopen(doodleUndo().c_str(), "rb");
+    // swap the rows kept in the undo file with the picture, in place (2 files open at most)
+    FILE * u = fopen(doodleUndo().c_str(), "r+b");
     if (!u) return false;
     int16_t b[4];
     if (fread(b, 2, 4, u) != 4) { fclose(u); return false; }
-    std::string tmp = doodleUndo() + ".t";
-    FILE * t = fopen(tmp.c_str(), "wb");
     FILE * p = fopen(doodleWork().c_str(), "r+b");
-    if (!t || !p) { fclose(u); if (t) fclose(t); if (p) fclose(p); return false; }
-    fwrite(b, 2, 4, t);
+    if (!p) { fclose(u); return false; }
     int bx0 = b[0] >> 3, bn = (b[2] >> 3) - bx0 + 1;
     uint8_t oldr[DROW], cur[DROW];
-    for (int y = b[1]; y <= b[3]; ++y) {
+    long uo = sizeof(b);
+    for (int y = b[1]; y <= b[3]; ++y, uo += bn) {
+      fseek(u, uo, SEEK_SET);
       if (fread(oldr, 1, bn, u) != (size_t)bn) break;
       fseek(p, dRowOff(y) + bx0, SEEK_SET); fread(cur, 1, bn, p);
-      fwrite(cur, 1, bn, t);
       fseek(p, dRowOff(y) + bx0, SEEK_SET); fwrite(oldr, 1, bn, p);
+      fseek(u, uo, SEEK_SET); fwrite(cur, 1, bn, u);
     }
-    fclose(u); fclose(t); fclose(p);
-    remove(doodleUndo().c_str());
-    rename(tmp.c_str(), doodleUndo().c_str());
+    fclose(u); fclose(p);
     Rect cr = clientRect(uiOrigin::Window);
     repaint(Rect(cr.X1 + b[0], cr.Y1 + b[1], cr.X1 + b[2], cr.Y1 + b[3]));
     return true;
@@ -155,7 +153,8 @@ private:
     cv->fillRectangle(clip);
     FILE * f = fopen(doodleWork().c_str(), "rb");
     if (!f) return;
-    static uint8_t strip[16 * DROW];           // 960 bytes, reused for every strip
+    uint8_t * strip = (uint8_t *)malloc(16 * DROW);   // 960 bytes, only while drawing
+    if (!strip) { fclose(f); return; }
     int y0 = clip.Y1 - cr.Y1, y1 = clip.Y2 - cr.Y1;
     for (int y = y0; y <= y1; y += 16) {
       int n = imin(16, y1 - y + 1);
@@ -167,6 +166,7 @@ private:
       cv->drawBitmap(cr.X1, cr.Y1 + y, &bm);
       cv->waitCompletion();                     // the strip buffer is reused next time round
     }
+    free(strip);
     fclose(f);
   }
 
@@ -508,7 +508,10 @@ public:
     fseek(f, 14 + hsz, SEEK_SET); fread(pal, 1, 8, f);
     bool zeroDark = pal[0] + pal[1] + pal[2] < pal[4] + pal[5] + pal[6];     // which colour is the ink?
     int srcRow = ((w + 31) / 32) * 4;
+    fclose(f);                                     // reopened below: only 2 files may be open at once
     cvs->wholeChange([&]() {
+      FILE * f = fopen(p.c_str(), "rb");
+      if (!f) return;
       writeFileWith(doodleWork().c_str(), [&](RSink & o) {
         uint8_t hd[BMP_HDR]; bmpHeader(hd);
         o.write((const char *)hd, BMP_HDR);
@@ -529,8 +532,8 @@ public:
           o.write((const char *)row, DROW);
         }
       });
+      fclose(f);
     });
-    fclose(f);
     path = p;
     setTitle(("Doodle - " + baseName(p)).c_str());
     markSaved(true);
