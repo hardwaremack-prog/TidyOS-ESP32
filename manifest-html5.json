@@ -1,6 +1,6 @@
 {
   "name": "TidyOS for ESP32 (HTML5)",
-  "version": "1.9.3",
+  "version": "1.9.4",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -30,9 +30,9 @@
     }
   ],
   "tidyos": {
-    "version": "1.9.3",
+    "version": "1.9.4",
     "app": "firmware/parts-html5/tidyos.bin",
-    "size": 2699296,
-    "sha256": "e73c094a698418a5dc173dc61cc95f6ea3852a69ed6eac3ffa6b8f0595be5df8"
+    "size": 2657792,
+    "sha256": "355f689347ee9479c63a78efad691037d0846d1fd864b715d7355f7f72f50274"
   }
 }

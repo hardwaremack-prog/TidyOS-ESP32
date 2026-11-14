@@ -18,11 +18,42 @@
 #include "config.h"
 #include "core.h"
 #include "update.h"
-// ESP-IDF's certificate bundle (the common root certificates browsers trust), built into
-// the Arduino core's mbedTLS library.
-extern const uint8_t x509_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
+#include "update_roots.h"
+#include "mbedtls/x509_crt.h"
 
 static char s_lastErr[100] = "";
+
+// Checks the whole certificate chain the server sent against our root certificates with
+// mbedTLS's standard verify (handles cross-signed chains, which Arduino's bundle shortcut
+// doesn't), and that the certificate is for `host`.
+static bool verifyPeer(WiFiClientSecure & c, const std::string & host)
+{
+  const mbedtls_x509_crt * peer = c.getPeerCertificate();
+  if (!peer) { snprintf(s_lastErr, sizeof(s_lastErr), "no certificate from %s", host.c_str()); return false; }
+  static mbedtls_x509_crt ca;
+  static bool caReady = false;
+  if (!caReady) {
+    mbedtls_x509_crt_init(&ca);
+    int r = mbedtls_x509_crt_parse(&ca, (const unsigned char *)UPDATE_ROOTS, sizeof(UPDATE_ROOTS));
+    if (r < 0) { snprintf(s_lastErr, sizeof(s_lastErr), "root certificates unreadable (%d)", r); return false; }
+    caReady = true;
+  }
+  uint32_t flags = 0;
+  int r = mbedtls_x509_crt_verify((mbedtls_x509_crt *)peer, &ca, nullptr, host.c_str(), &flags, nullptr, nullptr);
+  if (r == 0) { Serial.printf("[update] %s certificate checked OK\n", host.c_str()); return true; }
+  char info[160];
+  mbedtls_x509_crt_verify_info(info, sizeof(info), "", flags);
+  for (char * q = info; *q; ++q) if (*q == '\n') *q = ' ';
+  snprintf(s_lastErr, sizeof(s_lastErr), "certificate: %s", info);
+  Serial.printf("[update] certificate check failed: %s (flags %x)\n", info, (unsigned)flags);
+  for (const mbedtls_x509_crt * x = peer; x; x = x->next) {
+    char sub[110], iss[110];
+    mbedtls_x509_dn_gets(sub, sizeof(sub), &x->subject);
+    mbedtls_x509_dn_gets(iss, sizeof(iss), &x->issuer);
+    Serial.printf("[update]   chain: %s\n[update]       issued by %s\n", sub, iss);
+  }
+  return false;
+}
 
 #define UPD_HOST "hardwaremack-prog.github.io"
 #define UPD_BASE "/TidyOS-ESP32/"
@@ -64,7 +95,7 @@ bool updateModeRequested()
 static int httpsGet(std::string host, std::string path, const std::function<bool(const uint8_t *, size_t, size_t)> & sink, int redirects = 3)
 {
   WiFiClientSecure c;
-  c.setCACertBundle(x509_crt_bundle_start);
+  c.setInsecure();       // the handshake doesn't check; verifyPeer() below does, before anything is used
   c.setTimeout(20);
   if (!c.connect(host.c_str(), 443)) {
     char e[80] = "";
@@ -77,6 +108,7 @@ static int httpsGet(std::string host, std::string path, const std::function<bool
     Serial.printf("[update] can't connect to %s: %s (%d), free RAM %u\n", host.c_str(), e, code, (unsigned)ramFree());
     return -1;
   }
+  if (!verifyPeer(c, host)) { c.stop(); return -1; }
   std::string req = "GET " + path + " HTTP/1.0\r\nHost: " + host + "\r\nUser-Agent: TidyOS/" TIDYOS_VERSION "\r\nConnection: close\r\n\r\n";
   c.write((const uint8_t *)req.data(), req.size());
   int code = -1;
