@@ -224,9 +224,9 @@ public:
     button("Save as",  cx + 146, cy, 60)->onClick = [this]() { saveAs(); };
     button("Print",    cx + 210, cy, 46)->onClick = [this]() { print(); };
     button("Spelling", cx + 260, cy, 70)->onClick = [this]() { spelling(); };
-    auto hint = label("Ctrl+B bold  Ctrl+U underline  Ctrl+C/X/V", cx + 338, cy + 4, 230, 16);
+    auto hint = label("Ctrl+B bold   Ctrl+U underline", cx + 338, cy + 4, 200, 16);
     hint->labelStyle().textFont = &FONT_std_12;
-    saved = makeSavedLight(this, cx + 576, cy + 2);
+    saved = makeSavedLight(this, cx + 546, cy + 2);
 
     // row 2: text
     int y = cy + 26;
@@ -2503,9 +2503,9 @@ public:
     list->listBoxStyle().itemHeight = 18;
     summary = label("", cx, cy + 186, 586, 18);
     summary->labelStyle().textFont = &FONT_std_12;
-    logView = new TextArea(this, Point(cx, cy + 206), Size(586, 196), false);
+    logView = new TextArea(this, Point(cx, cy + 206), Size(586, 178), false);
 
-    button("Clear stats", cx, cy + 408 - 4, 100)->onClick = [this]() {
+    button("Clear stats", cx, cy + 388, 100)->onClick = [this]() {
       std::lock_guard<std::mutex> lk(s_pmx);
       for (auto & t : s_pt) { auto a = t.addr; t = PingTarget(); t.addr = a; }
       s_plogN = 0; s_pChanged++;

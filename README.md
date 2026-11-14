@@ -17,7 +17,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.9.2. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.9.3. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -27,6 +27,16 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 ![TidyOS previews](docs/previews/TidyOS-previews.png)
 
 *These are drawn previews made from TidyOS's own layouts, 4-colour palette and FabGL fonts, not photos of a running board. The real screen should look very close.*
+
+### What's new
+
+| | |
+|---|---|
+| ![Neat Lite word processor](docs/previews/03-neat-word-processor.png) | **Neat Lite word processor** – fonts, a size slider for any word, bold, underline, alignment, paragraph spacing, spell check; saves .rtf. *The text area is drawn by Neat's real layout code with FabGL's fonts.* |
+| ![Ping](docs/previews/14-ping.png) | **Ping** – keep pinging a saved list of addresses until you press Stop, with up/down, times and loss for each. |
+| ![Switches](docs/previews/15-switches.png) | **Switches** – SD card, wireless mesh and blue light on/off to save memory. |
+| ![Updating](docs/previews/16-update.png) | **Updating from GitHub** – Settings → Check for updates downloads and installs a new version by itself. |
+| ![HTML5 edition](docs/previews/13-html5-in-browser.png) | **HTML5 edition** – the whole desktop in a web browser on any phone or PC. |
 
 ## HTML5 edition (desktop in your web browser)
 
