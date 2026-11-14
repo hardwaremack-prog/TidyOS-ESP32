@@ -764,7 +764,7 @@ static void serialCommand(const std::string & c)
   } else if (c == "status") {
     Serial.printf("[TidyOS] Wi-Fi %s, SSID \"%s\", address %s, hotspot %s, free RAM %u\n",
                   WiFi.status() == WL_CONNECTED ? "connected" : "not connected", WiFi.SSID().c_str(),
-                  WiFi.localIP().toString().c_str(), WiFi.softAPIP().toString().c_str(), (unsigned)ESP.getFreeHeap());
+                  WiFi.localIP().toString().c_str(), WiFi.softAPIP().toString().c_str(), (unsigned)ramFree());
   } else {
     Serial.println("[TidyOS] commands:  !wifi Network name|password    !status");
   }

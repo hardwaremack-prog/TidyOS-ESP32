@@ -200,75 +200,119 @@ void openCalculator()
 
 // ====================================================================== Neat Lite (text editor)
 
-// fixed-width fonts for Neat (the editor lays text out in columns)
-struct NeatFont { const char * name; const FontInfo * sizes[4]; };
-static const NeatFont NEAT_FONTS[] = {
-  { "Standard",    { &FONT_6x10, &FONT_8x14, &FONT_9x18, &FONT_10x20 } },
-  { "Sans serif",  { &FONT_SANSERIF_8x14, &FONT_SANSERIF_8x16, nullptr, nullptr } },
-  { "Serif",       { &FONT_BIGSERIF_8x14, &FONT_BIGSERIF_8x16, nullptr, nullptr } },
-  { "Courier",     { &FONT_COURIER_8x14, nullptr, nullptr, nullptr } },
-  { "Slant",       { &FONT_SLANT_8x14, nullptr, nullptr, nullptr } },
-  { "Computer",    { &FONT_COMPUTER_8x14, nullptr, nullptr, nullptr } },
-  { "LCD",         { &FONT_LCD_8x14, nullptr, nullptr, nullptr } },
-  { "Old English", { &FONT_OLDENGL_8x16, nullptr, nullptr, nullptr } },
-};
-static const int NEAT_FONT_COUNT = sizeof(NEAT_FONTS) / sizeof(NEAT_FONTS[0]);
-static int neatSizes(int f) { int n = 0; while (n < 4 && NEAT_FONTS[f].sizes[n]) ++n; return n; }
+// Neat Lite: a small word processor. Fonts, sizes (slider), bold, underline, alignment,
+// paragraph spacing; saves .rtf (opens in Word / LibreOffice) or plain .txt.
+#include "richtext.h"
 
 class NeatApp : public AppFrame {
 public:
-  uiButton * fontBtn, * sizeBtn;
   static AppFrame * inst;
-  TextArea * ta;
+  RichText * rt;
   uiLabel *  saved;
+  uiButton * fontBtn, * boldBtn, * underBtn, * alignBtn[3], * linesBtn;
+  uiSlider * sizeSl;
+  uiLabel  * sizeLbl, * afterLbl;
   std::string path;
   bool dirty = false;
+  bool updating = false;
 
-  NeatApp() : AppFrame("Neat Lite - Untitled", Point(150, 20), Size(484, 432), &inst) {
+  NeatApp() : AppFrame("Neat Lite - Untitled", Point(4, 4), Size(632, 452), &inst) {
+    // row 1: file
     button("New",      cx,       cy, 44)->onClick = [this]() { newDoc(); };
     button("Open",     cx + 48,  cy, 46)->onClick = [this]() { openDoc(); };
     button("Save",     cx + 98,  cy, 44)->onClick = [this]() { save(); };
     button("Save as",  cx + 146, cy, 60)->onClick = [this]() { saveAs(); };
     button("Print",    cx + 210, cy, 46)->onClick = [this]() { print(); };
     button("Spelling", cx + 260, cy, 70)->onClick = [this]() { spelling(); };
-    saved = makeSavedLight(this, cx + 396, cy + 2);
-    fontBtn = button("", cx, cy + 26, 150);
-    fontBtn->onClick = [this]() { gSet.neatFont = (gSet.neatFont + 1) % NEAT_FONT_COUNT; applyFont(true); };
-    sizeBtn = button("", cx + 154, cy + 26, 104);
-    sizeBtn->onClick = [this]() { gSet.neatSize = (gSet.neatSize + 1) % neatSizes(gSet.neatFont); applyFont(true); };
-    auto tip = label("Font and size apply to the whole document", cx + 264, cy + 30, 200, 16);
+    auto hint = label("Ctrl+B bold  Ctrl+U underline  Ctrl+C/X/V", cx + 338, cy + 4, 230, 16);
+    hint->labelStyle().textFont = &FONT_std_12;
+    saved = makeSavedLight(this, cx + 576, cy + 2);
+
+    // row 2: text
+    int y = cy + 26;
+    fontBtn = button("", cx, y, 120);
+    fontBtn->onClick = [this]() { rt->setFont((rt->styleHere().font + 1) % richFontCount()); refreshBar(); focusText(); };
+    boldBtn = button("B", cx + 124, y, 26);
+    boldBtn->buttonStyle().textFont = &FONT_std_16;
+    boldBtn->onClick = [this]() { rt->toggleFlag(RS_BOLD); refreshBar(); focusText(); };
+    underBtn = button("U", cx + 154, y, 26);
+    underBtn->onClick = [this]() { rt->toggleFlag(RS_UNDER); refreshBar(); focusText(); };
+    label("Size", cx + 188, y + 4, 30, 16);
+    sizeSl = S(new uiSlider(this, Point(cx + 220, y + 1), Size(190, 20), uiOrientation::Horizontal));
+    sizeSl->setup(8, 48, 8);
+    sizeSl->sliderStyle().backgroundColor    = T.win;
+    sizeSl->sliderStyle().slideColor         = T.face;
+    sizeSl->sliderStyle().rangeColor         = T.accent;
+    sizeSl->sliderStyle().gripColor          = T.text;
+    sizeSl->sliderStyle().mouseOverGripColor = T.accent;
+    sizeSl->sliderStyle().ticksColor         = T.shadow;
+    sizeSl->onChange = [this]() { if (!updating) { rt->setSize(sizeSl->position()); refreshBar(); } };
+    sizeLbl = label("", cx + 414, y + 4, 42, 16);
+    static const char * al[3] = { "Left", "Centre", "Right" };
+    for (int i = 0; i < 3; ++i) {
+      alignBtn[i] = button(al[i], cx + 462 + i * 54, y, 50);
+      alignBtn[i]->onClick = [this, i]() { rt->paraAlign(i); refreshBar(); focusText(); };
+    }
+
+    // row 3: paragraph
+    y = cy + 52;
+    label("Paragraph:", cx, y + 4, 74, 16);
+    label("space after", cx + 76, y + 4, 70, 16)->labelStyle().textFont = &FONT_std_12;
+    button("-", cx + 148, y, 24)->onClick = [this]() { rt->paraAfter(-4); refreshBar(); focusText(); };
+    afterLbl = label("", cx + 176, y + 4, 44, 16);
+    button("+", cx + 222, y, 24)->onClick = [this]() { rt->paraAfter(4); refreshBar(); focusText(); };
+    linesBtn = button("", cx + 256, y, 110);
+    linesBtn->onClick = [this]() {
+      int sp = rt->doc.paras[rt->cur.p].spacing;
+      rt->paraSpacing(sp == 100 ? 150 : sp == 150 ? 200 : 100);
+      refreshBar(); focusText();
+    };
+    auto tip = label("Select text first to change just that part", cx + 374, y + 4, 240, 16);
     tip->labelStyle().textFont = &FONT_std_12;
-    ta = new TextArea(this, Point(cx, cy + 54), Size(466, 348), true);
-    ta->isMisspelled = [](const std::string & w) { return !spellIsWord(w); };
-    ta->onModified = [this]() { if (!dirty) { dirty = true; setSavedLight(saved, false); } };
-    ta->onKey = [this](uiKeyEventInfo const & k) {
+
+    rt = new RichText(this, Point(cx, cy + 78), Size(618, 344));
+    rt->isMisspelled = [](const std::string & w) { return !spellIsWord(w); };
+    rt->onModified = [this]() { if (!dirty) { dirty = true; setSavedLight(saved, false); } };
+    rt->onSelChange = [this]() { refreshBar(); };
+    rt->onKey = [this](uiKeyEventInfo const & k) {
       if (!k.CTRL) return false;
       if (k.VK == VK_s || k.VK == VK_S) { save(); return true; }
       if (k.VK == VK_o || k.VK == VK_O) { openDoc(); return true; }
       if (k.VK == VK_n || k.VK == VK_N) { newDoc(); return true; }
       if (k.VK == VK_p || k.VK == VK_P) { print(); return true; }
-      if (k.VK == VK_PLUS || k.VK == VK_EQUALS || k.VK == VK_KP_PLUS) { if (gSet.neatSize + 1 < neatSizes(gSet.neatFont)) { gSet.neatSize++; applyFont(true); } return true; }
-      if (k.VK == VK_MINUS || k.VK == VK_KP_MINUS) { if (gSet.neatSize > 0) { gSet.neatSize--; applyFont(true); } return true; }
+      if (k.VK == VK_PLUS || k.VK == VK_EQUALS || k.VK == VK_KP_PLUS) { rt->setSize(rt->styleHere().size + 2); refreshBar(); return true; }
+      if (k.VK == VK_MINUS || k.VK == VK_KP_MINUS) { rt->setSize(rt->styleHere().size - 2); refreshBar(); return true; }
       return false;
     };
-    applyFont(false);
+    refreshBar();
   }
 
-  void applyFont(bool save) {
-    if (gSet.neatFont < 0 || gSet.neatFont >= NEAT_FONT_COUNT) gSet.neatFont = 0;
-    int n = neatSizes(gSet.neatFont);
-    if (gSet.neatSize < 0 || gSet.neatSize >= n) gSet.neatSize = n > 1 ? 1 : 0;   // the medium size when the family has it
-    const FontInfo * f = NEAT_FONTS[gSet.neatFont].sizes[gSet.neatSize];
-    ta->font = f;
-    ta->scrollTo(ta->crow);
-    ta->repaint();
+  void focusText() { gApp->setFocusedWindow(rt); }
+
+  static void mark(uiButton * b, bool on) {
+    b->buttonStyle().backgroundColor = on ? T.accent : T.face;
+    b->buttonStyle().textColor       = on ? T.accentText : T.text;
+    b->repaint();
+  }
+
+  void refreshBar() {
+    updating = true;
+    RStyle st = rt->styleHere();
     char b[40];
-    snprintf(b, sizeof(b), "Font: %s", NEAT_FONTS[gSet.neatFont].name);
+    snprintf(b, sizeof(b), "Font: %s", richFontName(st.font));
     fontBtn->setText(b); fontBtn->repaint();
-    snprintf(b, sizeof(b), n > 1 ? "Size: %d  (%d of %d)" : "Size: %d", f->height, gSet.neatSize + 1, n);
-    sizeBtn->setText(b); sizeBtn->repaint();
-    if (save) settingsSave();
-    gApp->setFocusedWindow(ta);
+    mark(boldBtn, st.flags & RS_BOLD);
+    mark(underBtn, st.flags & RS_UNDER);
+    if (sizeSl->position() != st.size) sizeSl->setPosition(st.size);
+    snprintf(b, sizeof(b), "%d px", st.size);
+    sizeLbl->setText(b); sizeLbl->repaint();
+    const RPara & P = rt->doc.paras[rt->doc.clamp(rt->cur).p];
+    for (int i = 0; i < 3; ++i) mark(alignBtn[i], P.align == i);
+    snprintf(b, sizeof(b), "%d px", P.after);
+    afterLbl->setText(b); afterLbl->repaint();
+    snprintf(b, sizeof(b), "Lines: %s", P.spacing == 200 ? "double" : P.spacing == 150 ? "1.5" : "single");
+    linesBtn->setText(b); linesBtn->repaint();
+    updating = false;
   }
 
   std::string docTitle() { return path.empty() ? std::string("Untitled") : baseName(path); }
@@ -276,20 +320,21 @@ public:
   void print() {
     PrintDoc d;
     d.title = docTitle();
-    d.lines = ta->lines;
+    for (size_t p = 0; p < rt->doc.paras.size(); ++p) d.lines.push_back(rt->doc.text(p));
     printDialog(d);
   }
 
-  // next misspelled word at or after (r, c)
-  bool findNext(int r, int c, int stopRow, int & fr, int & fc, int & flen) {
-    for (int row = r; row < (int)ta->lines.size() && row <= stopRow; ++row) {
-      const std::string & l = ta->lines[row];
-      int i = row == r ? c : 0, n = l.size();
+  // next misspelled word at or after `from` (stops at `stop` if given)
+  bool findNext(RPos from, RPos stop, bool useStop, RPos & a, RPos & b) {
+    for (int p = from.p; p < (int)rt->doc.paras.size(); ++p) {
+      std::string l = rt->doc.text(p);
+      int i = p == from.p ? from.o : 0, n = l.size();
       while (i < n) {
         while (i < n && !isalpha((unsigned char)l[i])) ++i;
         int st = i;
         while (i < n && (isalpha((unsigned char)l[i]) || (l[i] == '\'' && i + 1 < n && isalpha((unsigned char)l[i + 1])))) ++i;
-        if (i > st && !spellIsWord(l.substr(st, i - st))) { fr = row; fc = st; flen = i - st; return true; }
+        if (useStop && !(RPos(p, st) < stop)) return false;
+        if (i > st && !spellIsWord(l.substr(st, i - st))) { a = RPos(p, st); b = RPos(p, i); return true; }
       }
     }
     return false;
@@ -334,45 +379,39 @@ public:
   }
 
   void spelling() {
-    int startR = ta->crow, startC = ta->ccol;
-    int r = startR, c = startC, stopRow = ta->lines.size() - 1;
+    RPos start = rt->cur, at = start;
     bool wrapped = false;
     int fixed = 0;
     for (;;) {
-      int fr, fc, flen;
-      bool found = findNext(r, c, stopRow, fr, fc, flen);
-      if (found && wrapped && (fr > startR || (fr == startR && fc >= startC))) found = false;
+      RPos a, b;
+      bool found = findNext(at, start, wrapped, a, b);
       if (!found) {
-        if (!wrapped && (startR > 0 || startC > 0)) { wrapped = true; r = 0; c = 0; stopRow = startR; continue; }
+        if (!wrapped && start != RPos(0, 0)) { wrapped = true; at = RPos(0, 0); continue; }
         break;
       }
-      // show the word
-      ta->crow = fr; ta->ccol = fc;
-      ta->hlRow = fr; ta->hlCol = fc; ta->hlLen = flen;
-      if (fr < ta->top || fr >= ta->top + ta->visRows() - 1) ta->top = imax(0, fr - 2);
-      ta->left = 0;
-      ta->repaint();
-      std::string word = ta->lines[fr].substr(fc, flen), rep;
-      int a = spellAsk(word, rep);
-      if (a == 0) break;
-      if (a == 1) {
-        ta->lines[fr].replace(fc, flen, rep);
-        c = fc + rep.size();
+      rt->hlA = a; rt->hlB = b;
+      rt->selectRange(a, a);
+      std::string word = rt->doc.plainRange(a, b), rep;
+      int r = spellAsk(word, rep);
+      if (r == 0) break;
+      if (r == 1) {
+        rt->selectRange(a, b);
+        rt->replaceSel(rep);
+        at = RPos(a.p, a.o + rep.size());
+        if (wrapped) start = rt->doc.clamp(start);
         ++fixed;
-        if (!dirty) { dirty = true; setSavedLight(saved, false); }
       } else {
-        if (a == 2) spellIgnore(word);
-        if (a == 3) spellAddWord(word);
-        c = fc + flen;
+        if (r == 2) spellIgnore(word);
+        if (r == 3) spellAddWord(word);
+        at = b;
       }
-      r = fr;
     }
-    ta->hlRow = -1;
-    ta->repaint();
+    rt->hlA = rt->hlB = RPos();
+    rt->repaint();
     char b[80];
     snprintf(b, sizeof(b), fixed ? "Spell check done. %d word%s fixed." : "Spell check done.", fixed, fixed == 1 ? "" : "s");
     gApp->messageBox("Spelling", b, "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
-    gApp->setFocusedWindow(ta);
+    focusText();
   }
 
   void setPath(const std::string & p) {
@@ -381,14 +420,16 @@ public:
     repaint();
   }
 
+  static bool isRtf(const std::string & p) { return strcasecmp(fileExt(p.c_str()), "rtf") == 0; }
+
   void loadFile(const char * p) {
     std::string s;
-    if (!readFileStr(p, s)) { gApp->messageBox("Neat", "Could not open that file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
-    ta->setText(s);
+    if (!readFileStr(p, s, 96 * 1024)) { gApp->messageBox("Neat", "Could not open that file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
+    if (!(s.compare(0, 5, "{\\rtf") == 0 && rt->setRtf(s))) rt->setPlain(s);
     setPath(p);
     dirty = false;
     setSavedLight(saved, true);
-    gApp->setFocusedWindow(ta);
+    focusText();
   }
 
   bool askSave() {    // true = go on
@@ -400,10 +441,11 @@ public:
 
   void newDoc() {
     if (!askSave()) return;
-    ta->setText("");
+    rt->setPlain("");
     setPath("");
     dirty = false;
     setSavedLight(saved, true);
+    focusText();
   }
 
   void openDoc() {
@@ -414,8 +456,19 @@ public:
 
   bool save() {
     if (path.empty()) return saveAs();
-    if (!writeFileStr(path.c_str(), ta->getText())) {
-      gApp->messageBox("Neat", "Could not save. Is the SD card in?", "OK", nullptr, nullptr, uiMessageBoxIcon::Error);
+    if (!isRtf(path) && rt->doc.hasFormatting(rt->normal)) {
+      auto r = gApp->messageBox("Neat", "A .txt file can't keep fonts and sizes.", "Save as .rtf", "Plain text", "Cancel", uiMessageBoxIcon::Question);
+      if (r == uiMessageBoxResult::Button3 || r == uiMessageBoxResult::Cancel) return false;
+      if (r == uiMessageBoxResult::Button1) {
+        std::string p = path;
+        size_t dot = p.rfind('.');
+        if (dot != std::string::npos && dot > p.rfind('/')) p.erase(dot);
+        setPath(p + ".rtf");
+      }
+    }
+    std::string out = isRtf(path) ? rt->doc.toRtf() : rt->doc.plain();
+    if (!writeFileStr(path.c_str(), out)) {
+      gApp->messageBox("Neat", "Could not save the document.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error);
       return false;
     }
     dirty = false;
@@ -424,9 +477,9 @@ public:
   }
 
   bool saveAs() {
-    std::string p = askFile("Save document", "Save", path.empty() ? "note.txt" : baseName(path).c_str(), path.empty() ? documentsDir() : dirOf(path));
+    std::string p = askFile("Save document", "Save", path.empty() ? "note.rtf" : baseName(path).c_str(), path.empty() ? documentsDir() : dirOf(path));
     if (p.empty()) return false;
-    if (!strlen(fileExt(p.c_str()))) p += ".txt";
+    if (!strlen(fileExt(p.c_str()))) p += ".rtf";
     setPath(p);
     return save();
   }
@@ -441,7 +494,7 @@ void openNeat(const char * path)
   auto n = (NeatApp*)NeatApp::inst;
   n->open();
   if (path) { if (n->askSave()) n->loadFile(path); }
-  else gApp->setFocusedWindow(n->ta);
+  else gApp->setFocusedWindow(n->rt);
 }
 
 // ====================================================================== Tidy Lite (spreadsheet)
@@ -1651,7 +1704,7 @@ public:
   }
 
   void show(int i) {
-    if (!panes[i] && ESP.getFreeHeap() < 30000) {
+    if (!panes[i] && ramFree() < 16000) {
       gApp->messageBox("Low memory", "Not enough memory for this tab. Close an app first.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
       return;
     }
@@ -2050,7 +2103,7 @@ public:
       else snprintf(b, sizeof(b), "Core %d: %d%%", c, (int)(load[c] + 0.5f));
       cpuLbl[c]->setText(b); cpuLbl[c]->repaint();
     }
-    size_t total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL), freeB = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t total = heap_caps_get_total_size(MALLOC_CAP_8BIT), freeB = ramFree();
     float ramPct = total ? 100.0f * (total - freeB) / total : 0;
     ramGraph->push(ramPct);
     snprintf(b, sizeof(b), "%d%% used", (int)(ramPct + 0.5f));
@@ -2077,7 +2130,7 @@ public:
              up / 3600, (up / 60) % 60, up % 60, (unsigned)getCpuFrequencyMhz(), (unsigned)uxTaskGetNumberOfTasks());
     summary->setText(b); summary->repaint();
     snprintf(b, sizeof(b), "Free RAM %s   (biggest piece %s, lowest ever %s)",
-             kb(ESP.getFreeHeap()).c_str(), kb(ESP.getMaxAllocHeap()).c_str(), kb(ESP.getMinFreeHeap()).c_str());
+             kb(ramFree()).c_str(), kb(ramBiggest()).c_str(), kb(ramLowest()).c_str());
     summary2->setText(b); summary2->repaint();
   }
 
@@ -2211,11 +2264,11 @@ public:
     }
     l.push_back("");
     l.push_back("MEMORY (RAM)");
-    size_t tot = heap_caps_get_total_size(MALLOC_CAP_INTERNAL), fr = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t tot = heap_caps_get_total_size(MALLOC_CAP_8BIT), fr = ramFree();
     snprintf(b, sizeof(b), "  %s  %s used of %s", bar(tot ? (double)(tot - fr) / tot : 0).c_str(), kb(tot - fr).c_str(), kb(tot).c_str()); l.push_back(b);
     int fb = gColors == 8 ? 640 * 480 * 3 / 8 : 640 * 480 / 4;
     snprintf(b, sizeof(b), "  Screen      %s  (640x480, %d colours)", kb(fb).c_str(), gColors); l.push_back(b);
-    snprintf(b, sizeof(b), "  Free        %s   biggest piece %s   lowest ever %s", kb(fr).c_str(), kb(ESP.getMaxAllocHeap()).c_str(), kb(ESP.getMinFreeHeap()).c_str()); l.push_back(b);
+    snprintf(b, sizeof(b), "  Free        %s   biggest piece %s   lowest ever %s", kb(fr).c_str(), kb(ramBiggest()).c_str(), kb(ramLowest()).c_str()); l.push_back(b);
     snprintf(b, sizeof(b), "  DMA-able    %s free", kb(heap_caps_get_free_size(MALLOC_CAP_DMA)).c_str()); l.push_back(b);
     l.push_back("  Extra RAM   none (this board has no PSRAM)");
     setLinesKeep(storeView, std::move(l));
@@ -2624,7 +2677,7 @@ public:
                              "Turn off", "Cancel", nullptr, uiMessageBoxIcon::Question) != uiMessageBoxResult::Button1) return;
         sdTurnOff();
       } else {
-        if (ESP.getFreeHeap() < 32000) {
+        if (ramFree() < 30000) {
           gApp->messageBox("SD card", "Not enough memory to turn the card on. Close an app.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
           return;
         }
@@ -2672,7 +2725,7 @@ public:
     show(2, gSet.ledOn, "ON", "OFF");
     set(note[2], gSet.ledOn ? "Breathing = ready, flicker = SD card busy. Uses ~2 KB." : "Off: the blue LED stays dark. Saves ~2 KB.");
     char b[80];
-    snprintf(b, sizeof(b), "Free memory now: %u KB   (switches are remembered)", (unsigned)(ESP.getFreeHeap() / 1024));
+    snprintf(b, sizeof(b), "Free memory now: %u KB   (switches are remembered)", (unsigned)(ramFree() / 1024));
     set(mem, b);
   }
 };

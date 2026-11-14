@@ -322,8 +322,8 @@ public:
           m_pressed = -1;
           repaintIcon(i);
           if (hit(event->params.mouse.status.X, event->params.mouse.status.Y) == i) {
-            Serial.printf("[TidyOS] open %s, free RAM %u (biggest %u)\n", ICONS[i].label, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
-            if (ESP.getFreeHeap() < 28000 && ICONS[i].open != openSystem)
+            Serial.printf("[TidyOS] open %s, free RAM %u (biggest %u)\n", ICONS[i].label, (unsigned)ramFree(), (unsigned)ramBiggest());
+            if (ramFree() < 16000 && ICONS[i].open != openSystem)
               gApp->messageBox("Low memory", "Low on memory. Close an app first (see Task Manager).", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
             else
               ICONS[i].open();
@@ -334,7 +334,7 @@ public:
         if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
         if (++m_tick % 4) break;
         netTick();
-        gHeapSnap = ESP.getFreeHeap(); gMinHeapSnap = ESP.getMinFreeHeap();
+        gHeapSnap = ramFree(); gMinHeapSnap = ramLowest();
         if (m_tick % 120 == 0) Serial.printf("[TidyOS] still running: up %us, free RAM %uK\n", (unsigned)(millis() / 1000), (unsigned)(gHeapSnap / 1024));
         repaint(Rect(0, SCREEN_H - BAR_H, SCREEN_W - 1, SCREEN_H - 1));
         {
@@ -496,10 +496,10 @@ private:
       std::string notice = msgLastNotice();
       if (!notice.empty()) snprintf(b, sizeof(b), "%s", notice.substr(0, 40).c_str());
 #ifdef TIDYOS_HTML5
-      else snprintf(b, sizeof(b), "Browser:%s  RAM %uK", screenViewer() ? "on" : "--", (unsigned)(ESP.getFreeHeap() / 1024));
+      else snprintf(b, sizeof(b), "Browser:%s  RAM %uK", screenViewer() ? "on" : "--", (unsigned)(ramFree() / 1024));
 #else
       else snprintf(b, sizeof(b), "Keyboard:%s  Mouse:%s  RAM %uK", inputKeyboards() ? "on" : "--", inputMice() ? "on" : "--",
-               (unsigned)(ESP.getFreeHeap() / 1024));
+               (unsigned)(ramFree() / 1024));
 #endif
       cv->drawText(&FONT_std_12, 330, by + 4, b);
       time_t now = time(nullptr);
@@ -569,7 +569,7 @@ static void startDisplay()
   }
   s_dc = dc;
   themeSetup(dc, got);
-  Serial.printf("[TidyOS] display 640x480, %d colours, free heap %u\n", got, (unsigned)ESP.getFreeHeap());
+  Serial.printf("[TidyOS] display 640x480, %d colours, free heap %u\n", got, (unsigned)ramFree());
 }
 
 const char * gSDWiring = "none";
@@ -762,7 +762,8 @@ static void lowMemoryWait()
 
 static void memLog(const char * step)
 {
-  Serial.printf("[TidyOS] mem after %-18s free %6u  biggest %6u\n", step, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+  Serial.printf("[TidyOS] mem after %-18s free %6u  biggest %6u  (32-bit-only extra %u)\n", step, (unsigned)ramFree(), (unsigned)ramBiggest(),
+                (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) - ramFree()));
 }
 
 void setup()

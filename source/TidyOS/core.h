@@ -1,5 +1,11 @@
 // TidyOS core: theme, settings, storage helpers, shared declarations
 #pragma once
+#include <esp_heap_caps.h>
+// Memory that ordinary data can use. (ESP.getFreeHeap() also counts the 32-bit-only part of
+// instruction RAM, which strings, lists and buffers can't use, so it reads too high.)
+inline uint32_t ramFree()    { return heap_caps_get_free_size(MALLOC_CAP_8BIT); }
+inline uint32_t ramBiggest() { return heap_caps_get_largest_free_block(MALLOC_CAP_8BIT); }
+inline uint32_t ramLowest()  { return heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT); }
 
 #include <Arduino.h>
 #include <string>

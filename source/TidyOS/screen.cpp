@@ -12,6 +12,7 @@
 #ifdef TIDYOS_HTML5
 
 #include <WiFi.h>
+#include "esp_wifi.h"
 #include <DNSServer.h>
 #include "lwip/sockets.h"
 #include "mbedtls/sha1.h"
@@ -35,7 +36,7 @@ static WiFiClient    s_ws;
 static volatile bool s_view = false;
 static uint32_t      s_hash[SCREEN_H];
 static uint32_t      s_apSince = 0, s_connSince = 0;
-static std::string   s_sentHome;          // last "home Wi-Fi" address sent to this browser
+static char          s_sentHome[64];      // last "home Wi-Fi" address sent to this browser
 
 // ---------------------------------------------------------------- the page
 static const char PAGE[] = R"HTML(<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -349,7 +350,7 @@ static void handleHttp(WiFiClient c, const std::string & req)
     memset(s_hash, 0, sizeof(s_hash));
     s_obLen = s_obPos = 0; s_outStuck = 0;
     sendPalette(s_ws);
-    s_sentHome.clear();
+    s_sentHome[0] = 0;
     s_view = true;
     Serial.println("[TidyOS] browser connected");
     return;
@@ -397,7 +398,7 @@ static void apStart()
   WiFi.setTxPower(WIFI_POWER_11dBm);
   WiFi.setSleep(false);
   delay(100);
-  Serial.printf("[TidyOS] hotspot up on channel %d, free RAM %u\n", WiFi.channel(), (unsigned)ESP.getFreeHeap());
+  Serial.printf("[TidyOS] hotspot up on channel %d, free RAM %u\n", WiFi.channel(), (unsigned)ramFree());
   s_dns.setErrorReplyCode(DNSReplyCode::NoError);
   s_dns.start(53, "*", WiFi.softAPIP());
   s_ap = true;
@@ -495,11 +496,14 @@ static void screenTask(void *)
       if (!s_ws.connected() || !pollInput(s_ws)) { dropViewer(); Serial.println("[TidyOS] browser left"); }
       else if (now - lastAp == 0 && WiFi.status() == WL_CONNECTED) {
         // tell the page where TidyOS lives on the home Wi-Fi (it shows this if it's on the hotspot)
-        std::string home = std::string(WiFi.SSID().c_str()) + "\n" + WiFi.localIP().toString().c_str();
-        if (home != s_sentHome) {
-          std::string m = "\x07" + home;
-          if (wsQueue((const uint8_t *)m.data(), m.size())) s_sentHome = home;
-        }
+        // (fixed buffers: nothing is allocated here, it runs every second)
+        static char m[64];
+        IPAddress ip = WiFi.localIP();
+        wifi_ap_record_t ap;
+        const char * ssid = esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? (const char *)ap.ssid : "";
+        int n = snprintf(m, sizeof(m), "\x07%.32s\n%u.%u.%u.%u", ssid, ip[0], ip[1], ip[2], ip[3]);
+        if (n > 0 && n < (int)sizeof(m) && strcmp(m + 1, s_sentHome) != 0 && wsQueue((const uint8_t *)m, n))
+          strncpy(s_sentHome, m + 1, sizeof(s_sentHome) - 1);
       }
       if (s_view && !flushOut(s_ws)) { dropViewer(); Serial.println("[TidyOS] browser stopped receiving"); }
       else if (s_view && now - lastFrame >= 50 && outPending() == 0) {

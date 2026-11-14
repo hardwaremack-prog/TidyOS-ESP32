@@ -2,7 +2,7 @@
 // Pin map and build-time settings.
 #pragma once
 
-#define TIDYOS_VERSION "1.8"
+#define TIDYOS_VERSION "1.9"
 
 // Edition. The VGA edition draws on a monitor and uses Bluetooth keyboard + mouse.
 // The HTML5 edition shows the desktop in a web browser (keyboard + mouse come from the browser).

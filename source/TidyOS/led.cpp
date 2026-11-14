@@ -47,7 +47,7 @@ static void ledTask(void *)
     uint32_t sd = gSdActivityMs;
     if (!s_ready) duty = (now / 500) % 2 ? 255 : 0;                                   // starting: slow blink
     else if (sd && now - sd < 90) duty = (now / 35) % 2 ? 255 : 0;                    // card busy: flicker
-    else if (ESP.getFreeHeap() < 20000) duty = (now / 70) % 2 ? 255 : 0;              // low memory: fast flash
+    else if (ramFree() < 10000) duty = (now / 70) % 2 ? 255 : 0;              // low memory: fast flash
     else {                                                                            // ready: breathing
       float t = (now % 4000) / 4000.0f;
       float v = 0.5f - 0.5f * cosf(t * 2 * PI);
