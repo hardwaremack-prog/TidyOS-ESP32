@@ -17,7 +17,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
 
-> Status: version 1.7.2. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 1.8. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -70,6 +70,16 @@ When switched on (Switches), the blue LED on the NodeMCU (GPIO 2) shows what Tid
 | Breathing (slow fade in and out) | Ready |
 | Quick flicker | The microSD card is being read or written |
 | Fast flash | Low on memory: close an app |
+
+## Updating from inside TidyOS
+
+**Settings → Check for updates.** TidyOS restarts into a lean update mode, checks this repo's web-flasher manifest, and if there's a newer version it downloads it to the **SD card** (HTTPS, certificate-checked, SHA-256 verified). It then restarts into a small **update loader**, which checks the file again, installs it and starts the new TidyOS. It takes about 2 minutes. Your Wi-Fi, settings and files stay.
+
+- Needs Wi-Fi and the microSD card in the board (TidyOS switches the card on just for the update).
+- The loader lives in its own flash slot, so a board needs **one install from the web flasher** (1.8 or later) before in-app updates work.
+- If anything goes wrong (no Wi-Fi, no card, a damaged download), nothing is changed and TidyOS starts as before.
+
+Flash layout (4 MB): TidyOS app 0x10000 (2.9 MB) · update loader 0x300000 (384 KB) · internal storage 0x360000 (576 KB).
 
 ## If it crashes
 

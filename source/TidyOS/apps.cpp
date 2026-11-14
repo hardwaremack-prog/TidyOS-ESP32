@@ -2,6 +2,7 @@
 //              Browser, Files, Settings, System
 #include "screen.h"
 #include "crashlog.h"
+#include "update.h"
 #include <sys/stat.h>
 #include <algorithm>
 #include <WiFi.h>
@@ -1207,7 +1208,17 @@ public:
     y += 48;
     button("Save",           cx + 300, y, 136, 26)->onClick = [this]() { saveAll(); gApp->messageBox("Settings", "Saved.", "OK", nullptr, nullptr, uiMessageBoxIcon::Info); };
     button("Save + restart", cx + 450, y, 136, 26)->onClick = [this]() { saveAll(); delay(300); ESP.restart(); };
-    label("Screen colours apply after restart.", cx, y + 5, 280, 18)->labelStyle().textFont = &FONT_std_12;
+    button("Check for updates", cx, y, 150, 26)->onClick = [this]() {
+      if (!updateLoaderPresent()) {
+        gApp->messageBox("Updates", "Install once from the web flasher to enable this.", "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
+        return;
+      }
+      if (gApp->messageBox("Updates", "Restart and check GitHub? Needs Wi-Fi and the SD card.", "Check", "Cancel", nullptr, uiMessageBoxIcon::Question) == uiMessageBoxResult::Button1) {
+        saveAll();
+        updateRequest();
+      }
+    };
+    label("Colours apply after restart.", cx + 156, y + 5, 140, 18)->labelStyle().textFont = &FONT_std_12;
 
     startTimer(500);
     onTimer = [this](uiTimerHandle) { tick(); };

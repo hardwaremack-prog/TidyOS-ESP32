@@ -6,6 +6,7 @@
 #include "screen.h"
 #include "led.h"
 #include "crashlog.h"
+#include "update.h"
 #include "driver/spi_master.h"
 #include <SPI.h>
 #include <SD.h>
@@ -606,6 +607,12 @@ static bool mountAnySD()
 
 static void makeDirs();
 
+bool sdMountForUpdate()
+{
+  if (!gSDMounted) gSDMounted = mountAnySD();
+  return gSDMounted;
+}
+
 bool sdTurnOn()
 {
   gSet.sdOn = true;
@@ -727,7 +734,7 @@ static void splash(const char * msg, int percent)
 {
   Canvas cv(s_dc);
   cv.setBrushColor(T.desk);
-  cv.fillRectangle(BAR_X - 40, BAR_Y + 20, BAR_X + BAR_W + 40, BAR_Y + 40);
+  cv.fillRectangle(0, BAR_Y + 20, SCREEN_W - 1, BAR_Y + 40);
   cv.setBrushColor(T.desk);
   cv.fillRectangle(BAR_X, BAR_Y, BAR_X + BAR_W - 1, BAR_Y + BAR_H - 1);
   cv.setBrushColor(T.win);
@@ -770,6 +777,20 @@ void setup()
   Serial.println("\n[TidyOS] " TIDYOS_VERSION " (" TIDYOS_EDITION " edition) starting");
 
   settingsLoad();
+
+  if (updateModeRequested()) {
+    // update mode: screen + Wi-Fi only, so there's room for HTTPS
+    Serial.println("[TidyOS] update mode");
+    esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
+    netBegin();
+    startDisplay();
+#ifdef TIDYOS_HTML5
+    releaseVgaPins();
+    screenBegin();
+#endif
+    splashLogo();
+    updateRun(splash);
+  }
   inputBegin();     // Bluetooth first: it needs a big block of RAM
   std::set_new_handler(lowMemoryWait);
   memLog("start");
