@@ -19,6 +19,8 @@
 #include "core.h"
 #include "update.h"
 #include "update_roots.h"
+#include <memory>
+#include <new>
 #include "mbedtls/x509_crt.h"
 
 static char s_lastErr[100] = "";
@@ -154,7 +156,10 @@ static int httpsGet(std::string host, std::string path, const std::function<bool
     return httpsGet(rest.substr(0, sl), sl == std::string::npos ? "/" : rest.substr(sl), sink, redirects - 1);
   }
   if (code != 200) return code;
-  static uint8_t buf[2048];
+  // borrowed only while downloading (it used to sit in RAM all the time)
+  std::unique_ptr<uint8_t[]> hold(new (std::nothrow) uint8_t[2048]);
+  uint8_t * buf = hold.get();
+  if (!buf) return -1;
   size_t got = 0;
   t0 = millis();
   while (len < 0 || (long)got < len) {
@@ -165,7 +170,7 @@ static int httpsGet(std::string host, std::string path, const std::function<bool
       delay(2);
       continue;
     }
-    int r = c.read(buf, std::min((size_t)a, sizeof(buf)));
+    int r = c.read(buf, std::min((size_t)a, (size_t)2048));
     if (r <= 0) continue;
     t0 = millis();
     got += r;

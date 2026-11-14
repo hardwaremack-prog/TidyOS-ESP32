@@ -415,7 +415,7 @@ static const uint8_t BCAST[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
 static bool      s_nowUp = false;
 static uint32_t  s_myNode = 0;
-static uint32_t  s_seen[512];
+static uint32_t * s_seen = nullptr;        // 512 ids; allocated when the mesh is first switched on
 static int       s_seenPos = 0;
 static const size_t COMS_KEEP = 40;          // mesh lines kept in RAM (all of them stay in coms-log.txt)
 static std::vector<ChatLine> s_coms;
@@ -427,15 +427,15 @@ static std::vector<Member> s_members;
 static uint32_t  s_lastWhoAnswer = 0, s_lastSyncAsk = 0, s_lastHello = 0, s_bootMs = 0;
 
 struct NowPkt { uint8_t len; uint8_t buf[250]; };
-static NowPkt s_ring[8];
+static NowPkt * s_ring = nullptr;          // 8 packets; allocated with s_seen
 static volatile uint8_t s_rw = 0, s_rr = 0;
 static portMUX_TYPE s_ringMux = portMUX_INITIALIZER_UNLOCKED;
 
 struct Tx { uint8_t buf[250]; uint8_t len; uint32_t due; };
 static std::vector<Tx> s_tx;
 
-static bool wasSeen(uint32_t id) { for (uint32_t s : s_seen) if (s == id) return true; return false; }
-static void markSeen(uint32_t id) { s_seen[s_seenPos] = id; s_seenPos = (s_seenPos + 1) % 512; }
+static bool wasSeen(uint32_t id) { if (!s_seen) return false; for (int i = 0; i < 512; ++i) if (s_seen[i] == id) return true; return false; }
+static void markSeen(uint32_t id) { if (!s_seen) return; s_seen[s_seenPos] = id; s_seenPos = (s_seenPos + 1) % 512; }
 
 static void onNowRecv(const uint8_t *, const uint8_t * data, int len)
 {
@@ -661,6 +661,9 @@ static wifi_interface_t s_nowIf = WIFI_IF_STA;
 
 static bool nowStart()
 {
+  if (!s_seen) s_seen = (uint32_t *)calloc(512, sizeof(uint32_t));
+  if (!s_ring) s_ring = (NowPkt *)calloc(8, sizeof(NowPkt));
+  if (!s_seen || !s_ring) return false;
   if (esp_now_init() != ESP_OK) return false;
   esp_now_register_recv_cb(onNowRecv);
   esp_now_peer_info_t peer = {};

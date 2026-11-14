@@ -1043,12 +1043,11 @@ public:
       view->setLines(std::move(lines));
       return;
     }
-    std::string title, finalUrl, body;
+    std::string title, finalUrl;
     size_t sep = r.find("\n---\n");
     std::string head = sep == std::string::npos ? "" : r.substr(0, sep);
     size_t bodyStart = sep == std::string::npos ? 0 : sep + 5;
     size_t lk = r.find("\n#LINKS#\n", bodyStart);
-    body = r.substr(bodyStart, lk == std::string::npos ? std::string::npos : lk - bodyStart);
     if (lk != std::string::npos) {
       size_t p = lk + 9;
       while (p < r.size()) {
@@ -1062,10 +1061,11 @@ public:
     }
     size_t t = head.find("TITLE: ");
     if (t != std::string::npos) title = head.substr(t + 7, head.find('\n', t) - t - 7);
-    r.clear();
-    r.shrink_to_fit();
-    wrapText(body, view->visCols(), lines);
-    body.clear();
+    // cut the page text out in place instead of copying it
+    if (lk != std::string::npos) r.erase(lk);
+    r.erase(0, bodyStart);
+    wrapText(r, view->visCols(), lines);
+    std::string().swap(r);
     view->setLines(std::move(lines));
     setTitle(title.empty() ? "Browser" : (std::string("Browser - ") + title.substr(0, 60)).c_str());
     repaint();
@@ -2376,7 +2376,7 @@ struct PingTarget {
 
 static std::vector<PingTarget> s_pt;
 // log: a fixed ring of lines (no memory is asked for while pinging)
-static char     s_plog[48][60];
+static char   (*s_plog)[60] = nullptr;    // 48 lines, only allocated once Ping is opened
 static uint32_t s_plogN = 0;              // lines written so far
 static std::mutex s_pmx;
 static volatile bool s_pRun = false, s_pTaskAlive = false;
@@ -2388,6 +2388,7 @@ static void plog(const std::string & l)
   struct tm tmv; localtime_r(&now, &tmv);
   char t[16] = "";
   if (tmv.tm_year > 100) snprintf(t, sizeof(t), "%02d:%02d:%02d ", tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+  if (!s_plog) return;
   snprintf(s_plog[s_plogN % 48], sizeof(s_plog[0]), "%s%s", t, l.c_str());
   s_plogN++;
 }
@@ -2502,6 +2503,7 @@ public:
   bool wasRunning = false;
 
   PingApp() : AppFrame("Ping", Point(20, 10), Size(600, 440), &inst) {
+    if (!s_plog) s_plog = (char (*)[60])calloc(48, 60);
     label("Address (IP or name)", cx, cy + 3, 140, 18);
     addrEd = edit("", cx + 142, cy, 190);
     button("Add", cx + 338, cy, 60)->onClick = [this]() { addTarget(); };
@@ -2624,7 +2626,7 @@ public:
         rows.push_back(b);
       }
       // only the lines that fit in the log box
-      uint32_t show = imin(imin((int)s_plogN, 48), logView->visRows());
+      uint32_t show = s_plog ? imin(imin((int)s_plogN, 48), logView->visRows()) : 0;
       for (uint32_t i = s_plogN - show; i < s_plogN; ++i) logl.push_back(s_plog[i % 48]);
     }
     int sel = list->firstSelectedItem();

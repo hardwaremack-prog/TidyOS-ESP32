@@ -188,13 +188,15 @@ public:
 
   void feed(const char * p, size_t n) { for (size_t i = 0; i < n; ++i) put((unsigned char)p[i]); }
 
-  std::string result() {
-    std::string out;
-    out.reserve(text.size() + 64 + links.size() * 40);
-    out += "TITLE: " + title + "\nURL: " + base + "\n---\n" + text + "\n#LINKS#\n";
-    for (size_t i = 0; i < links.size(); ++i)
-      out += std::to_string(i + 1) + " " + links[i] + "\n";
-    return out;
+  std::string result() {          // builds the result inside `text` (no second copy of the page)
+    text.insert(0, "TITLE: " + title + "\nURL: " + base + "\n---\n");
+    text += "\n#LINKS#\n";
+    for (size_t i = 0; i < links.size(); ++i) {
+      text += std::to_string(i + 1) + " " + links[i] + "\n";
+      std::string().swap(links[i]);
+    }
+    std::vector<std::string>().swap(links);
+    return std::move(text);
   }
 
 private:
@@ -507,7 +509,7 @@ static void fetchTask(void *)
     delete h;
   }
   if (out.empty() && err.empty()) err = "The page was empty.";
-  s_result = err.empty() ? out : err;
+  if (err.empty()) s_result = std::move(out); else s_result = err;
   s_state  = err.empty() ? FETCH_DONE : FETCH_ERROR;
   vTaskDelete(nullptr);
 }
