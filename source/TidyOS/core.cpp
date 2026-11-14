@@ -583,7 +583,7 @@ static bool mountSD(int miso, int mosi, int clk, int cs, const char * name)
   s_sdSpi.begin(clk, miso, mosi, cs);
   for (int pin : { miso, mosi, cs }) gpio_pullup_en((gpio_num_t)pin);      // SD lines need pull-ups
   for (uint32_t hz : { 10000000u, 4000000u, 1000000u }) {
-    if (SD.begin(cs, s_sdSpi, hz, SD_MOUNT, 4)) {
+    if (SD.begin(cs, s_sdSpi, hz, SD_MOUNT, 2)) {     // 2 open files at once: each one reserves a 4 KB buffer up front
       gSDWiring = name;
       Serial.printf("[TidyOS] SD card found on %s wiring at %u MHz (%llu MB)\n", name, (unsigned)(hz / 1000000), SD.cardSize() >> 20);
       return true;

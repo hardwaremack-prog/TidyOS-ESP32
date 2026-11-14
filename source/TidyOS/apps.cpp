@@ -2715,10 +2715,10 @@ public:
       FileBrowser::getFSInfo(DriveType::SDCard, 0, &total, &used);
       char b[120];
       snprintf(b, sizeof(b), "%s free of %s  -  wiring %s", kb(total - used).c_str(), kb(total).c_str(), gSDWiring);
-      set(note[0], "Documents and TidyOS data are on the card. Uses ~23 KB of memory.");
+      set(note[0], "Documents and TidyOS data are on the card. Uses ~15 KB of memory.");
       set(sdInfo, b);
     } else {
-      set(note[0], "Off: files go to internal storage. Saves ~23 KB of memory.");
+      set(note[0], "Off: files go to internal storage. Saves ~15 KB of memory.");
       set(sdInfo, "Files already on the card stay there for next time.");
     }
     show(1, gSet.meshOn, "ON", "OFF");

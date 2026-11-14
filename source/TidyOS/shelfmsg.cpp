@@ -416,6 +416,7 @@ static bool      s_nowUp = false;
 static uint32_t  s_myNode = 0;
 static uint32_t  s_seen[512];
 static int       s_seenPos = 0;
+static const size_t COMS_KEEP = 40;          // mesh lines kept in RAM (all of them stay in coms-log.txt)
 static std::vector<ChatLine> s_coms;
 static std::vector<uint32_t> s_comsIds;     // message id for each s_coms entry
 static int       s_comsUnread = 0;
@@ -521,7 +522,7 @@ static void addComs(uint32_t id, const ChatLine & cl, bool save)
   LOCK;
   s_coms.push_back(cl);
   s_comsIds.push_back(id);
-  if (s_coms.size() > 120) { s_coms.erase(s_coms.begin()); s_comsIds.erase(s_comsIds.begin()); }
+  if (s_coms.size() > COMS_KEEP) { s_coms.erase(s_coms.begin()); s_comsIds.erase(s_comsIds.begin()); }
   if (cl.in) s_comsUnread++;
   bump();
   if (save) {
@@ -535,31 +536,43 @@ static void addComs(uint32_t id, const ChatLine & cl, bool save)
   }
 }
 
+// Keeps only the newest COMS_KEEP lines in memory; the whole history stays in coms-log.txt on
+// the card. Reads just the end of the file, one line at a time (no big buffers).
+static bool s_comsLoaded = false;
+
 static void loadComs()
 {
-  std::string s;
-  if (!readFileStr(dataPath("coms-log.txt").c_str(), s, 64 * 1024)) return;
-  std::vector<std::string> lines;
-  size_t st = 0;
-  for (size_t i = 0; i <= s.size(); ++i)
-    if (i == s.size() || s[i] == '\n') { if (i > st) lines.push_back(s.substr(st, i - st)); st = i + 1; }
-  if (lines.size() > 120) lines.erase(lines.begin(), lines.end() - 120);
-  for (auto & l : lines) {
+  if (s_comsLoaded) return;
+  s_comsLoaded = true;
+  FILE * f = fopen(dataPath("coms-log.txt").c_str(), "rb");
+  if (!f) return;
+  fseek(f, 0, SEEK_END);
+  long size = ftell(f);
+  long from = size > 12 * 1024 ? size - 12 * 1024 : 0;
+  fseek(f, from, SEEK_SET);
+  char l[320];
+  if (from > 0) fgets(l, sizeof(l), f);            // skip the partial first line
+  LOCK;
+  while (fgets(l, sizeof(l), f)) {
+    size_t n = strlen(l);
+    while (n && (l[n - 1] == '\n' || l[n - 1] == '\r')) l[--n] = 0;
     // I|id|t|hops|who|text
-    size_t p[5]; size_t pos = 0; bool ok = true;
-    for (int k = 0; k < 5; ++k) { p[k] = l.find('|', pos); if (p[k] == std::string::npos) { ok = false; break; } pos = p[k] + 1; }
+    char * p[5]; char * q = l; bool ok = true;
+    for (int k = 0; k < 5; ++k) { p[k] = strchr(q, '|'); if (!p[k]) { ok = false; break; } q = p[k] + 1; }
     if (!ok) continue;
     ChatLine cl;
     cl.in   = l[0] == 'I';
-    uint32_t id = strtoul(l.substr(p[0] + 1, 8).c_str(), nullptr, 16);
-    cl.t    = strtoull(l.c_str() + p[1] + 1, nullptr, 10);
-    cl.hops = atoi(l.c_str() + p[2] + 1);
-    cl.who  = l.substr(p[3] + 1, p[4] - p[3] - 1);
-    cl.text = l.substr(p[4] + 1);
+    uint32_t id = strtoul(p[0] + 1, nullptr, 16);
+    cl.t    = strtoull(p[1] + 1, nullptr, 10);
+    cl.hops = atoi(p[2] + 1);
+    cl.who.assign(p[3] + 1, p[4] - p[3] - 1);
+    cl.text = p[4] + 1;
     s_coms.push_back(cl);
     s_comsIds.push_back(id);
+    if (s_coms.size() > COMS_KEEP) { s_coms.erase(s_coms.begin()); s_comsIds.erase(s_comsIds.begin()); }
     markSeen(id);
   }
+  fclose(f);
 }
 
 static void handleNowPacket(const uint8_t * b, size_t len)
@@ -785,7 +798,7 @@ void msgBegin()
   s_myNode = ((uint32_t)mac[2] << 24) | ((uint32_t)mac[3] << 16) | ((uint32_t)mac[4] << 8) | mac[5];
   s_bootMs = millis();
   loadPeers();
-  loadComs();
+  if (gSet.meshOn) loadComs();            // mesh history only matters (and only costs RAM) with the mesh on
   s_comsUnread = 0;
   s_nowUp = gSet.meshOn && nowStart();
   xTaskCreatePinnedToCore(msgTask, "shelfmsg", 8192, nullptr, 1, nullptr, 0);
@@ -929,6 +942,7 @@ bool comsUp() { return s_nowUp; }
 
 void comsSetOn(bool on)
 {
+  if (on && s_msgStarted) loadComs();
   if (on && !s_nowUp && s_msgStarted) s_nowUp = nowStart();
   if (!on && s_nowUp) { s_nowUp = false; delay(50); esp_now_deinit(); }
 }
