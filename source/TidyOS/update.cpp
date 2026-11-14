@@ -69,7 +69,14 @@ static bool checkChain(std::vector<std::vector<uint8_t>> & certs, const std::str
     char info[160];
     mbedtls_x509_crt_verify_info(info, sizeof(info), "", bestFlags);
     for (char * q = info; *q; ++q) if (*q == '\n') *q = ' ';
-    snprintf(s_lastErr, sizeof(s_lastErr), "certificate: %s", info);
+    // name the top certificate's issuer and the free RAM, so a screenshot says what went wrong
+    const mbedtls_x509_crt * top = &chain;
+    while (top->next && top->next->raw.len) top = top->next;
+    char iss[100] = "";
+    mbedtls_x509_dn_gets(iss, sizeof(iss), &top->issuer);
+    const char * cn = strstr(iss, "CN=");
+    snprintf(s_lastErr, sizeof(s_lastErr), "not trusted: %.40s (%u KB free)", cn ? cn + 3 : iss, (unsigned)(ramFree() / 1024));
+    Serial.printf("[update] %s\n", info);
     for (const mbedtls_x509_crt * x = &chain; x; x = x->next) {
       char sub[110], iss[110];
       mbedtls_x509_dn_gets(sub, sizeof(sub), &x->subject);
