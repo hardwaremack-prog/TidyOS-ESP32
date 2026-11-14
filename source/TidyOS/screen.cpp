@@ -87,6 +87,7 @@ function connect(){
     if(bpp==2){for(var x=0;x<160;x++){var b=d[o+x];px[p++]=pal[b>>6];px[p++]=pal[b>>4&3];px[p++]=pal[b>>2&3];px[p++]=pal[b&3];}}
     else{for(var k=0;k<80;k++){var q=o+k*3,v=d[q]|d[q+1]<<8|d[q+2]<<16;for(var i=0;i<8;i++)px[p++]=pal[v>>(21-3*i)&7];}}}
    dirty=true;}
+  else if(d[0]==8){var t=new TextDecoder().decode(d.subarray(1)).split('\n');ver=t[0];upBase=parseInt(t[1])||0;upAt=Date.now();}
   else if(d[0]==3){kicked=true;show('TidyOS was opened in another browser.',true);}
   else if(d[0]==7){var t=new TextDecoder().decode(d.subarray(1)).split('\n');home={ssid:t[0],ip:t[1]};
    var hb=document.getElementById('home');
@@ -101,7 +102,10 @@ btn.onclick=function(){connect();};
 function frame(){if(dirty){og.putImageData(img,0,0);g.imageSmoothingEnabled=false;g.drawImage(o,0,0,640*ZK,480*ZK);dirty=false;}
  if(mDirty){mDirty=false;send([2,mx&255,mx>>8,my&255,my>>8,mb,0]);}requestAnimationFrame(frame);}
 requestAnimationFrame(frame);
-setInterval(function(){if(ws&&ws.readyState==1)st.textContent='Connected  '+(rx/1024).toFixed(0)+' KB/s';rx=0;},1000);
+var ver='',upBase=-1,upAt=0;
+function upStr(){if(upBase<0)return '';var u=upBase+Math.floor((Date.now()-upAt)/1000),d=Math.floor(u/86400),h=Math.floor(u/3600)%24,m=Math.floor(u/60)%60,s=u%60;
+ return 'Up '+(d?d+'d '+h+'h '+m+'m':h?h+'h '+m+'m':m+'m '+s+'s');}
+setInterval(function(){if(ws&&ws.readyState==1)st.textContent='Connected  '+(rx/1024).toFixed(0)+' KB/s'+(upBase>=0?'   \u00b7   '+upStr():'')+(ver?'   \u00b7   v'+ver:'');rx=0;},1000);
 // ---- keyboard: browser key codes -> USB HID usages
 var K={Enter:40,Escape:41,Backspace:42,Tab:43,Space:44,Minus:45,Equal:46,BracketLeft:47,BracketRight:48,Backslash:49,Semicolon:51,Quote:52,Backquote:53,Comma:54,Period:55,Slash:56,CapsLock:57,
 PrintScreen:70,ScrollLock:71,Pause:72,Insert:73,Home:74,PageUp:75,Delete:76,End:77,PageDown:78,ArrowRight:79,ArrowLeft:80,ArrowDown:81,ArrowUp:82,NumLock:83,
@@ -350,6 +354,11 @@ static void handleHttp(WiFiClient c, const std::string & req)
     memset(s_hash, 0, sizeof(s_hash));
     s_obLen = s_obPos = 0; s_outStuck = 0;
     sendPalette(s_ws);
+    {   // version + uptime for the page's top bar (the page keeps counting from here)
+      char m[48];
+      int n = snprintf(m, sizeof(m), "\x08" TIDYOS_VERSION "\n%lu", (unsigned long)(millis() / 1000));
+      if (n > 0 && n < (int)sizeof(m)) wsSend(s_ws, (const uint8_t *)m, n);
+    }
     s_sentHome[0] = 0;
     s_view = true;
     Serial.println("[TidyOS] browser connected");

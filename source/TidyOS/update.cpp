@@ -30,17 +30,37 @@ static bool verifyPeer(WiFiClientSecure & c, const std::string & host)
 {
   const mbedtls_x509_crt * peer = c.getPeerCertificate();
   if (!peer) { snprintf(s_lastErr, sizeof(s_lastErr), "no certificate from %s", host.c_str()); return false; }
-  static mbedtls_x509_crt ca;
-  static bool caReady = false;
-  if (!caReady) {
+  // Check against one root at a time (parse, verify, free), so this needs ~2 KB instead of
+  // ~30 KB for all fifteen at once - after the TLS handshake there often isn't 30 KB left.
+  uint32_t flags = 0, bestFlags = 0;
+  bool haveBest = false;
+  const char * p = UPDATE_ROOTS;
+  static const char END[] = "-----END CERTIFICATE-----";
+  while ((p = strstr(p, "-----BEGIN CERTIFICATE-----")) != nullptr) {
+    const char * e = strstr(p, END);
+    if (!e) break;
+    e += sizeof(END) - 1;
+    size_t n = e - p;
+    char * pem = (char *)malloc(n + 2);
+    if (!pem) { snprintf(s_lastErr, sizeof(s_lastErr), "out of memory checking the certificate"); return false; }
+    memcpy(pem, p, n); pem[n] = '\n'; pem[n + 1] = 0;
+    p = e;
+    mbedtls_x509_crt ca;
     mbedtls_x509_crt_init(&ca);
-    int r = mbedtls_x509_crt_parse(&ca, (const unsigned char *)UPDATE_ROOTS, sizeof(UPDATE_ROOTS));
-    if (r < 0) { snprintf(s_lastErr, sizeof(s_lastErr), "root certificates unreadable (%d)", r); return false; }
-    caReady = true;
+    int pr = mbedtls_x509_crt_parse(&ca, (const unsigned char *)pem, n + 2);
+    free(pem);
+    if (pr != 0) {
+      mbedtls_x509_crt_free(&ca);
+      if (pr == MBEDTLS_ERR_X509_ALLOC_FAILED) { snprintf(s_lastErr, sizeof(s_lastErr), "out of memory checking the certificate"); return false; }
+      continue;
+    }
+    flags = 0;
+    int r = mbedtls_x509_crt_verify((mbedtls_x509_crt *)peer, &ca, nullptr, host.c_str(), &flags, nullptr, nullptr);
+    mbedtls_x509_crt_free(&ca);
+    if (r == 0) { Serial.printf("[update] %s certificate checked OK\n", host.c_str()); return true; }
+    if (!haveBest || !(flags & MBEDTLS_X509_BADCERT_NOT_TRUSTED)) { bestFlags = flags; haveBest = true; }
   }
-  uint32_t flags = 0;
-  int r = mbedtls_x509_crt_verify((mbedtls_x509_crt *)peer, &ca, nullptr, host.c_str(), &flags, nullptr, nullptr);
-  if (r == 0) { Serial.printf("[update] %s certificate checked OK\n", host.c_str()); return true; }
+  flags = bestFlags;
   char info[160];
   mbedtls_x509_crt_verify_info(info, sizeof(info), "", flags);
   for (char * q = info; *q; ++q) if (*q == '\n') *q = ' ';
