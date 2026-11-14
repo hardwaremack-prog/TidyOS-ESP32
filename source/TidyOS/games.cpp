@@ -1,7 +1,9 @@
-// TidyOS games: Sammy the Snake, Minesweeper, Blocks, 2048
+// TidyOS games: Sammy the Snake, Minesweeper, Blocks, 2048, Bricks, Paradrop
 // Small and light: each board only repaints the squares that change.
 #include <Preferences.h>
 #include <deque>
+#include <math.h>
+#include <vector>
 #include "core.h"
 #include "style.h"
 
@@ -34,8 +36,16 @@ public:
         paint(Rect(e->params.rect.X1, e->params.rect.Y1, e->params.rect.X2, e->params.rect.Y2));
         break;
       case UIEVT_KEYDOWN:
-        key(e->params.key);
+        keyIn(e->params.key, true);
         break;
+      case UIEVT_KEYUP:
+        keyIn(e->params.key, false);
+        break;
+      case UIEVT_MOUSEMOVE: {
+        Rect cr = clientRect(uiOrigin::Window);
+        mouseMove(e->params.mouse.status.X - cr.X1, e->params.mouse.status.Y - cr.Y1);
+        break;
+      }
       case UIEVT_MOUSEBUTTONDOWN: {
         app()->setFocusedWindow(this);
         Rect cr = clientRect(uiOrigin::Window);
@@ -53,6 +63,21 @@ public:
   virtual void paint(Rect const & clip) = 0;
   virtual void key(uiKeyEventInfo const &) {}
   virtual void click(int, int, int) {}
+  virtual void keyUp(uiKeyEventInfo const &) {}
+
+  // every game: W A S D work like the arrow keys
+  void keyIn(uiKeyEventInfo const & k0, bool down) {
+    uiKeyEventInfo k = k0;
+    switch (k.VK) {
+      case VK_w: case VK_W: k.VK = VK_UP; break;
+      case VK_a: case VK_A: k.VK = VK_LEFT; break;
+      case VK_s: case VK_S: k.VK = VK_DOWN; break;
+      case VK_d: case VK_D: k.VK = VK_RIGHT; break;
+      default: break;
+    }
+    if (down) key(k); else keyUp(k);
+  }
+  virtual void mouseMove(int, int) {}
   virtual void tick() {}
   virtual void newGame() = 0;
 
@@ -64,6 +89,31 @@ public:
 protected:
   uiTimerHandle m_timer = nullptr;
   Rect cr() { return clientRect(uiOrigin::Window); }
+  // action games: collect the areas that changed this tick (board coords), then repaint them
+  Rect m_dirty[40];
+  int  m_nd = 0;
+  bool m_all = false;
+  void dirty(Rect const & d) {
+    if (m_all) return;
+    for (int i = 0; i < m_nd; ++i) if (m_dirty[i].intersects(d)) { m_dirty[i] = m_dirty[i].merge(d); return; }
+    if (m_nd >= 40) { m_all = true; return; }
+    m_dirty[m_nd++] = d;
+  }
+  void flushDirty() {
+    Rect r = cr();
+    if (m_all) repaint();
+    else for (int i = 0; i < m_nd; ++i) {
+      Rect d(r.X1 + m_dirty[i].X1, r.Y1 + m_dirty[i].Y1, r.X1 + m_dirty[i].X2, r.Y1 + m_dirty[i].Y2);
+      d = d.intersection(r);
+      if (d.X1 <= d.X2 && d.Y1 <= d.Y2) repaint(d);
+    }
+    m_nd = 0; m_all = false;
+  }
+  // does board-coords rect b touch the paint clip (window coords)?
+  bool hits(Rect const & clip, int x1, int y1, int x2, int y2) {
+    Rect r = cr();
+    return clip.intersects(Rect(r.X1 + x1, r.Y1 + y1, r.X1 + x2, r.Y1 + y2));
+  }
   void repaintCell(int x, int y, int cs, int ox = 0, int oy = 0) {
     Rect r = cr();
     repaint(Rect(r.X1 + ox + x * cs, r.Y1 + oy + y * cs, r.X1 + ox + x * cs + cs - 1, r.Y1 + oy + y * cs + cs - 1));
@@ -598,11 +648,491 @@ public:
   }
 };
 
+// ====================================================================== Bricks (Arkanoid-style)
+
+class BricksBoard : public Board {
+public:
+  static const int W = 448, H = 360, COLS = 14, ROWS = 8, BW = 32, BH = 14, TOP = 34, PY = H - 22, PH = 8;
+  BricksBoard(uiWindow * p, Point pos) : Board(p, pos, Size(W + 2, H + 2)) { newGame(); }
+
+  uint8_t br[ROWS][COLS];                 // hits left (0 = gone)
+  float bx, by, vx, vy, speed, px;
+  int   pw = 64, score = 0, lives = 3, level = 1, left = 0, held = 0;
+  bool  stuck = true, over = false, paused = false;
+  int   capX = -1, capY = 0, capT = 0;    // falling capsule (capX < 0 = none)
+
+  void layout() {
+    memset(br, 0, sizeof(br));
+    left = 0;
+    for (int r = 0; r < ROWS; ++r)
+      for (int c = 0; c < COLS; ++c) {
+        int v = 0;
+        switch ((level - 1) % 4) {
+          case 0: v = r == 0 ? 2 : (r < 6 ? 1 : 0); break;                                         // wall
+          case 1: v = (abs(c * 2 - (COLS - 1)) <= r * 2 + 1) ? (r == 7 ? 2 : 1) : 0; break;        // pyramid
+          case 2: v = ((r + c) % 2 == 0) ? ((r % 3 == 0) ? 2 : 1) : 0; break;                      // checks
+          default: v = (esp_random() % 10 < 7) ? ((esp_random() % 4 == 0) ? 2 : 1) : 0; break;    // random
+        }
+        br[r][c] = v;
+        if (v) ++left;
+      }
+  }
+  void report(const char * m = "") {
+    if (!onScore) return;
+    char b[110];
+    snprintf(b, sizeof(b), "Score %d   Lives %d   Level %d   Best %d   %s", score, lives, level, imax(score, bestScore("bricks")), m);
+    onScore(score, b);
+  }
+  void serve() {
+    stuck = true; pw = 64;
+    speed = 3.6f + level * 0.35f;
+    bx = px; by = PY - 4;
+  }
+  void newGame() override {
+    score = 0; lives = 3; level = 1; over = paused = false; capX = -1; held = 0;
+    px = W / 2;
+    layout(); serve();
+    startTimer(30);
+    repaint();
+    report("Mouse or arrows move, Space or click launches, P pauses.");
+  }
+  Rect ballR()   { return Rect((int)bx - 4, (int)by - 4, (int)bx + 4, (int)by + 4); }
+  Rect padR()    { return Rect((int)px - pw / 2 - 1, PY, (int)px + pw / 2 + 1, PY + PH); }
+  Rect brickR(int r, int c) { return Rect(c * BW, TOP + r * BH, c * BW + BW - 1, TOP + r * BH + BH - 1); }
+
+  void hitBrick(int r, int c) {
+    if (--br[r][c] == 0) {
+      --left; score += 10 + level * 2;
+      if (capX < 0 && esp_random() % 7 == 0) { capX = c * BW + BW / 2; capY = TOP + r * BH; capT = esp_random() % 3; }
+    } else score += 2;
+    dirty(brickR(r, c));
+  }
+  // does the ball (as a box) touch a brick? hit the first one found
+  bool brickAt(float x, float y) {
+    int x0 = ((int)x - 3) / BW, x1 = ((int)x + 3) / BW, y0 = ((int)y - 3 - TOP) / BH, y1 = ((int)y + 3 - TOP) / BH;
+    if ((int)y + 3 < TOP) return false;
+    for (int r = imax(0, y0); r <= imin(ROWS - 1, y1); ++r)
+      for (int c = imax(0, x0); c <= imin(COLS - 1, x1); ++c)
+        if (br[r][c]) { hitBrick(r, c); return true; }
+    return false;
+  }
+  void lose() {
+    if (--lives <= 0) {
+      over = true; stopTimer();
+      if (score > bestScore("bricks")) { saveBest("bricks", score); report("Game over - new high score! Space plays again."); }
+      else report("Game over. Space plays again.");
+      return;
+    }
+    capX = -1;
+    serve();
+    report("Ball lost - Space or click to launch.");
+  }
+  void tick() override {
+    if (over || paused) return;
+    Rect oldPad = padR(), oldBall = ballR();
+    if (held) px += held * 9;
+    px = fmaxf(pw / 2, fminf(W - pw / 2, px));
+    if (stuck) { bx = px; by = PY - 4; }
+    else {
+      int steps = (int)(fmaxf(fabsf(vx), fabsf(vy)) / 3) + 1;
+      for (int s = 0; s < steps; ++s) {
+        float ox = bx, oy = by;
+        bx += vx / steps;
+        if (bx < 3) { bx = 3; vx = fabsf(vx); }
+        if (bx > W - 4) { bx = W - 4; vx = -fabsf(vx); }
+        if (brickAt(bx, by)) { bx = ox; vx = -vx; }
+        by += vy / steps;
+        if (by < 3) { by = 3; vy = fabsf(vy); }
+        if (brickAt(bx, by)) { by = oy; vy = -vy; }
+        // paddle
+        if (vy > 0 && oy + 3 < PY && by + 3 >= PY && bx >= px - pw / 2 - 3 && bx <= px + pw / 2 + 3) {
+          float rel = fmaxf(-1, fminf(1, (bx - px) / (pw / 2)));
+          speed = fminf(7.5f, speed + 0.06f);
+          float a = rel * 1.05f;                       // up to ~60 degrees
+          vx = speed * sinf(a); vy = -speed * cosf(a);
+          by = PY - 4;
+        }
+        if (by > H + 4) { dirty(oldBall); lose(); flushDirty(); return; }
+      }
+      if (left == 0) {
+        ++level; score += 100;
+        layout(); serve(); capX = -1;
+        repaint();
+        report("Level cleared! Space or click to launch.");
+        return;
+      }
+    }
+    // capsule
+    if (capX >= 0) {
+      Rect old(capX - 12, capY - 1, capX + 12, capY + 9);
+      capY += 2;
+      Rect now(capX - 12, capY - 1, capX + 12, capY + 9);
+      dirty(old.merge(now));
+      if (now.intersects(padR())) {
+        if (capT == 0) pw = 96;
+        else if (capT == 1) { speed = fmaxf(3.2f, speed - 1.6f); float l = sqrtf(vx * vx + vy * vy); if (l > 0) { vx = vx / l * speed; vy = vy / l * speed; } }
+        else ++lives;
+        score += 20;
+        capX = -1;
+        report(capT == 0 ? "Wide paddle!" : capT == 1 ? "Slower ball!" : "Extra life!");
+      } else if (capY > H) capX = -1;
+    }
+    dirty(oldPad.merge(padR()));
+    dirty(oldBall.merge(ballR()));
+    flushDirty();
+    static int lastScore = -1;
+    if (score != lastScore) { lastScore = score; report(); }
+  }
+  void launch() {
+    if (over) { newGame(); return; }
+    if (!stuck) return;
+    stuck = false;
+    float a = ((int)(esp_random() % 61) - 30) * 0.0174f;
+    vx = speed * sinf(a); vy = -speed * cosf(a);
+    report();
+  }
+  void key(uiKeyEventInfo const & k) override {
+    if (k.VK == VK_SPACE || k.VK == VK_RETURN || k.VK == VK_UP) { launch(); return; }
+    if (k.VK == VK_p || k.VK == VK_P) { if (!over) { paused = !paused; report(paused ? "Paused." : ""); } return; }
+    if (k.VK == VK_LEFT) held = -1;
+    if (k.VK == VK_RIGHT) held = 1;
+  }
+  void keyUp(uiKeyEventInfo const & k) override {
+    if ((k.VK == VK_LEFT && held < 0) || (k.VK == VK_RIGHT && held > 0)) held = 0;
+  }
+  void mouseMove(int x, int) override { if (!paused && !over) px = x; }
+  void click(int, int, int) override { launch(); }
+
+  void paint(Rect const & clip) override {
+    auto cv = canvas();
+    Rect r = cr();
+    cv->setBrushColor(T.win);
+    cv->fillRectangle(clip.X1, clip.Y1, clip.X2, clip.Y2);
+    for (int rr = 0; rr < ROWS; ++rr)
+      for (int c = 0; c < COLS; ++c) {
+        if (!br[rr][c]) continue;
+        Rect b = brickR(rr, c);
+        if (!hits(clip, b.X1, b.Y1, b.X2, b.Y2)) continue;
+        int x = r.X1 + b.X1, y = r.Y1 + b.Y1;
+        cv->setBrushColor(br[rr][c] == 2 ? T.shadow : (rr % 2 ? T.accent : T.face));
+        cv->fillRectangle(x + 1, y + 1, x + BW - 2, y + BH - 2);
+        cv->setPenColor(T.win);
+        cv->drawLine(x + 1, y + 1, x + BW - 3, y + 1);
+      }
+    Rect p = padR();
+    if (hits(clip, p.X1, p.Y1, p.X2, p.Y2)) {
+      int x1 = r.X1 + (int)px - pw / 2, x2 = r.X1 + (int)px + pw / 2, y = r.Y1 + PY;
+      cv->setBrushColor(T.accent);
+      cv->fillRectangle(x1 + 6, y, x2 - 6, y + PH);
+      cv->setBrushColor(T.shadow);
+      cv->fillRectangle(x1, y, x1 + 7, y + PH);
+      cv->fillRectangle(x2 - 7, y, x2, y + PH);
+      cv->setPenColor(T.win);
+      cv->drawLine(x1 + 8, y + 1, x2 - 8, y + 1);
+    }
+    Rect b = ballR();
+    if (!over && hits(clip, b.X1, b.Y1, b.X2, b.Y2)) {
+      cv->setBrushColor(T.text);
+      cv->fillEllipse(r.X1 + (int)bx, r.Y1 + (int)by, 7, 7);
+    }
+    if (capX >= 0 && hits(clip, capX - 12, capY - 1, capX + 12, capY + 9)) {
+      int x = r.X1 + capX, y = r.Y1 + capY;
+      cv->setBrushColor(T.face);
+      cv->fillRectangle(x - 11, y, x + 11, y + 8);
+      cv->setPenColor(T.text);
+      cv->drawRectangle(x - 11, y, x + 11, y + 8);
+      cv->setBrushColor(T.face);
+      cv->drawText(&FONT_std_12, x - 3, y - 2, capT == 0 ? "E" : capT == 1 ? "S" : "+");
+    }
+  }
+};
+
+// ====================================================================== Paradrop (Airborne!-style)
+// Guard the gun: shoot the helicopters before their paratroopers land. Four troopers on one
+// side of the gun and they storm it. From level 2, jets come over and drop bombs on the gun.
+
+class ParadropBoard : public Board {
+public:
+  static const int W = 480, H = 340, GY = H - 12, GX = W / 2, PIVY = H - 36;
+  ParadropBoard(uiWindow * p, Point pos) : Board(p, pos, Size(W + 2, H + 2)) { newGame(); }
+
+  struct Heli  { float x; int y, dir; float sp; bool drop; };
+  struct Para  { float x, y; int st; };      // st: 0 free fall, 1 chute, 2 landed, 3 shot-down chute
+  struct Shell { float x, y, vx, vy; };
+  struct Jet   { float x; int y, dir; bool bombed; };
+  struct Bomb  { float x, y, vx, vy; };
+  std::vector<Heli> helis; std::vector<Para> paras; std::vector<Shell> shells; std::vector<Jet> jets; std::vector<Bomb> bombs;
+  float ang = 0;             // barrel angle, radians, 0 = straight up
+  int   turn = 0, score = 0, level = 1, kills = 0, frame = 0, cool = 0, nextHeli = 0, nextJet = 0;
+  bool  over = false, paused = false, firing = false;
+
+  void report(const char * m = "") {
+    if (!onScore) return;
+    int l = 0, rr = 0;
+    for (auto & p : paras) if (p.st == 2) (p.x < GX ? l : rr)++;
+    char b[110];
+    snprintf(b, sizeof(b), "Score %d   Level %d   Landed %d|%d   Best %d   %s", score, level, l, rr, imax(score, bestScore("paradrop")), m);
+    onScore(score, b);
+  }
+  void newGame() override {
+    helis.clear(); paras.clear(); shells.clear(); jets.clear(); bombs.clear();
+    ang = 0; turn = 0; score = 0; level = 1; kills = 0; frame = 0; cool = 0; nextHeli = 20; nextJet = 400;
+    over = paused = firing = false;
+    startTimer(40);
+    repaint();
+    report("Left/Right aim, Space fires (or use the mouse). P pauses.");
+  }
+  void gameOver(const char * why) {
+    over = true; stopTimer();
+    char b[80];
+    if (score > bestScore("paradrop")) { saveBest("paradrop", score); snprintf(b, sizeof(b), "%s New high score! Space plays again.", why); }
+    else snprintf(b, sizeof(b), "%s Space plays again.", why);
+    report(b);
+    repaint();
+  }
+  // bounding boxes (board coords)
+  static Rect heliR(Heli const & h)  { return Rect((int)h.x - 20, h.y - 9, (int)h.x + 20, h.y + 8); }
+  static Rect paraR(Para const & p)  { return Rect((int)p.x - 9, (int)p.y - 25, (int)p.x + 9, (int)p.y + 1); }
+  static Rect shellR(Shell const & s){ return Rect((int)s.x - 2, (int)s.y - 2, (int)s.x + 2, (int)s.y + 2); }
+  static Rect jetR(Jet const & j)    { return Rect((int)j.x - 18, j.y - 6, (int)j.x + 18, j.y + 6); }
+  static Rect bombR(Bomb const & b)  { return Rect((int)b.x - 3, (int)b.y - 3, (int)b.x + 3, (int)b.y + 4); }
+  static Rect gunR()                 { return Rect(GX - 30, PIVY - 30, GX + 30, GY); }
+
+  void fire() {
+    if (over || paused || cool > 0 || shells.size() >= 6) return;
+    float sx = sinf(ang), sy = -cosf(ang);
+    shells.push_back({ GX + sx * 24, PIVY + sy * 24, sx * 9, sy * 9 });
+    cool = 3;
+  }
+  void tick() override {
+    if (over || paused) return;
+    ++frame;
+    if (cool) --cool;
+    if (firing) fire();
+    // gun
+    if (turn) {
+      float na = fmaxf(-1.4f, fminf(1.4f, ang + turn * 0.07f));
+      if (na != ang) { ang = na; dirty(gunR()); }
+    }
+    // spawn helicopters
+    if (--nextHeli <= 0) {
+      int dir = esp_random() % 2 ? 1 : -1;
+      helis.push_back({ dir > 0 ? -20.f : (float)W + 20, 24 + (int)(esp_random() % 110), dir, 1.6f + level * 0.35f + (esp_random() % 10) * 0.08f, false });
+      nextHeli = imax(18, 70 - level * 7) + esp_random() % 30;
+    }
+    if (level >= 2 && --nextJet <= 0) {
+      int dir = esp_random() % 2 ? 1 : -1;
+      jets.push_back({ dir > 0 ? -20.f : (float)W + 20, 14, dir, false });
+      nextJet = imax(120, 420 - level * 40) + esp_random() % 120;
+    }
+    // helicopters
+    for (size_t i = 0; i < helis.size(); ) {
+      Heli & h = helis[i];
+      Rect o = heliR(h);
+      h.x += h.dir * h.sp;
+      dirty(o.merge(heliR(h)));
+      if (!h.drop && fabsf(h.x - GX) > 44 && h.x > 20 && h.x < W - 20 && esp_random() % 1000 < (unsigned)(9 + level * 3)) {
+        h.drop = esp_random() % 3 != 0;          // most drop one trooper, some keep going
+        paras.push_back({ h.x, (float)h.y + 8, 0 });
+      }
+      if (h.x < -30 || h.x > W + 30) { helis.erase(helis.begin() + i); continue; }
+      ++i;
+    }
+    // jets + bombs
+    for (size_t i = 0; i < jets.size(); ) {
+      Jet & j = jets[i];
+      Rect o = jetR(j);
+      j.x += j.dir * 7;
+      dirty(o.merge(jetR(j)));
+      if (!j.bombed && fabsf(j.x - GX) < 200 && fabsf(j.x - GX) > 120) {
+        j.bombed = true;
+        float t = (PIVY - j.y) / 3.0f;
+        bombs.push_back({ j.x, (float)j.y + 6, (GX - j.x) / t, 3 });
+      }
+      if (j.x < -30 || j.x > W + 30) { jets.erase(jets.begin() + i); continue; }
+      ++i;
+    }
+    for (size_t i = 0; i < bombs.size(); ) {
+      Bomb & b = bombs[i];
+      Rect o = bombR(b);
+      b.x += b.vx; b.y += b.vy;
+      dirty(o.merge(bombR(b)));
+      if (bombR(b).intersects(Rect(GX - 16, PIVY - 10, GX + 16, GY))) { gameOver("A bomb hit your gun!"); return; }
+      if (b.y > GY) { bombs.erase(bombs.begin() + i); continue; }
+      ++i;
+    }
+    // paratroopers
+    int landedL = 0, landedR = 0;
+    for (size_t i = 0; i < paras.size(); ) {
+      Para & p = paras[i];
+      Rect o = paraR(p);
+      if (p.st == 0) { p.y += 3.2f; if (p.y > 60 + (int)(((int)p.x * 7) % 50)) p.st = 1; }
+      else if (p.st == 1) p.y += 0.9f + level * 0.1f;
+      else if (p.st == 3) p.y += 4.5f;
+      if (p.st != 2) {
+        if (p.y >= GY) {
+          p.y = GY;
+          if (p.st == 3) {           // falls on anyone below: both gone
+            for (size_t k = 0; k < paras.size(); ++k)
+              if (k != i && paras[k].st == 2 && fabsf(paras[k].x - p.x) < 8) { dirty(paraR(paras[k])); paras[k].st = 4; score += 15; }
+            dirty(o.merge(paraR(p)));
+            p.st = 4;
+          } else p.st = 2;
+        }
+        dirty(o.merge(paraR(p)));
+      }
+      if (p.st == 4) { paras.erase(paras.begin() + i); continue; }
+      if (p.st == 2) (p.x < GX ? landedL : landedR)++;
+      ++i;
+    }
+    for (size_t i = 0; i < paras.size(); ) { if (paras[i].st == 4) paras.erase(paras.begin() + i); else ++i; }
+    // shells
+    for (size_t i = 0; i < shells.size(); ) {
+      Shell & s = shells[i];
+      Rect o = shellR(s);
+      s.x += s.vx; s.y += s.vy;
+      dirty(o.merge(shellR(s)));
+      Rect sr = shellR(s);
+      bool gone = s.x < -4 || s.x > W + 4 || s.y < -4;
+      for (size_t k = 0; !gone && k < helis.size(); ++k)
+        if (sr.intersects(Rect((int)helis[k].x - 14, helis[k].y - 7, (int)helis[k].x + 14, helis[k].y + 6))) {
+          dirty(heliR(helis[k])); helis.erase(helis.begin() + k); score += 10; gone = true;
+          if (++kills % 15 == 0) { ++level; report("Next level!"); }
+        }
+      for (size_t k = 0; !gone && k < jets.size(); ++k)
+        if (sr.intersects(jetR(jets[k]))) { dirty(jetR(jets[k])); jets.erase(jets.begin() + k); score += 25; gone = true; }
+      for (size_t k = 0; !gone && k < bombs.size(); ++k)
+        if (sr.intersects(bombR(bombs[k]))) { dirty(bombR(bombs[k])); bombs.erase(bombs.begin() + k); score += 20; gone = true; }
+      for (size_t k = 0; !gone && k < paras.size(); ++k) {
+        Para & p = paras[k];
+        if (p.st == 2 || p.st == 4) continue;
+        Rect body((int)p.x - 3, (int)p.y - 11, (int)p.x + 3, (int)p.y);
+        Rect chute((int)p.x - 9, (int)p.y - 25, (int)p.x + 9, (int)p.y - 14);
+        if (sr.intersects(body)) { dirty(paraR(p)); p.st = 4; score += 5; gone = true; }
+        else if (p.st == 1 && sr.intersects(chute)) { dirty(paraR(p)); p.st = 3; score += 5; gone = true; }
+      }
+      if (gone) { shells.erase(shells.begin() + i); continue; }
+      ++i;
+    }
+    for (size_t i = 0; i < paras.size(); ) { if (paras[i].st == 4) paras.erase(paras.begin() + i); else ++i; }
+    flushDirty();
+    static int lastScore = -1, lastLand = -1;
+    if (landedL >= 4 || landedR >= 4) { gameOver("The paratroopers stormed your gun!"); return; }
+    if (score != lastScore || landedL * 10 + landedR != lastLand) { lastScore = score; lastLand = landedL * 10 + landedR; report(); }
+  }
+  void aimAt(int x, int y) {
+    float a = atan2f((float)(x - GX), (float)(PIVY - y));
+    ang = fmaxf(-1.4f, fminf(1.4f, a));
+    dirty(gunR());
+  }
+  void key(uiKeyEventInfo const & k) override {
+    if (over) { if (k.VK == VK_SPACE || k.VK == VK_RETURN) newGame(); return; }
+    if (k.VK == VK_p || k.VK == VK_P) { paused = !paused; report(paused ? "Paused." : ""); return; }
+    if (k.VK == VK_LEFT) turn = -1;
+    if (k.VK == VK_RIGHT) turn = 1;
+    if (k.VK == VK_SPACE || k.VK == VK_UP || k.VK == VK_RETURN) { firing = true; fire(); }
+  }
+  void keyUp(uiKeyEventInfo const & k) override {
+    if ((k.VK == VK_LEFT && turn < 0) || (k.VK == VK_RIGHT && turn > 0)) turn = 0;
+    if (k.VK == VK_SPACE || k.VK == VK_UP || k.VK == VK_RETURN) firing = false;
+  }
+  void mouseMove(int x, int y) override { if (!over && !paused && y < PIVY) aimAt(x, y); }
+  void click(int x, int y, int) override {
+    if (over) { newGame(); return; }
+    if (y < PIVY) aimAt(x, y);
+    cool = 0; fire();
+  }
+
+  void paint(Rect const & clip) override {
+    auto cv = canvas();
+    Rect r = cr();
+    int ox = r.X1, oy = r.Y1;
+    cv->setBrushColor(T.win);
+    cv->fillRectangle(clip.X1, clip.Y1, clip.X2, clip.Y2);
+    // ground
+    if (hits(clip, 0, GY + 1, W - 1, H - 1)) { cv->setBrushColor(T.face); cv->fillRectangle(ox, oy + GY + 1, ox + W - 1, oy + H - 1); }
+    // helicopters
+    for (auto & h : helis) {
+      Rect b = heliR(h); if (!hits(clip, b.X1, b.Y1, b.X2, b.Y2)) continue;
+      int x = ox + (int)h.x, y = oy + h.y, d = h.dir;
+      cv->setBrushColor(T.text);
+      cv->fillEllipse(x, y, 22, 11);
+      cv->fillRectangle(d > 0 ? x - 19 : x + 8, y - 2, d > 0 ? x - 8 : x + 19, y);
+      cv->setPenColor(T.text);
+      cv->drawLine(x - d * 19, y - 5, x - d * 19, y + 1);           // tail rotor
+      int rl = (frame & 1) ? 18 : 9;
+      cv->drawLine(x - rl, y - 8, x + rl, y - 8);                    // main rotor
+      cv->drawLine(x, y - 8, x, y - 5);
+      cv->drawLine(x - 8, y + 7, x + 8, y + 7);                      // skids
+      cv->setBrushColor(T.win);
+      cv->fillRectangle(x + d * 3, y - 3, x + d * 7, y);             // window
+    }
+    // jets
+    for (auto & j : jets) {
+      Rect b = jetR(j); if (!hits(clip, b.X1, b.Y1, b.X2, b.Y2)) continue;
+      int x = ox + (int)j.x, y = oy + j.y, d = j.dir;
+      cv->setBrushColor(T.accent);
+      cv->fillRectangle(x - 16, y - 2, x + 16, y + 2);
+      cv->setPenColor(T.accent);
+      for (int k = 0; k < 6; ++k) cv->drawLine(x - d * 2, y, x - d * (8 + k), y + 6 - k);   // wing
+      cv->drawLine(x - d * 16, y, x - d * 16, y - 6);
+    }
+    // bombs
+    for (auto & b : bombs) {
+      Rect q = bombR(b); if (!hits(clip, q.X1, q.Y1, q.X2, q.Y2)) continue;
+      cv->setBrushColor(T.text);
+      cv->fillEllipse(ox + (int)b.x, oy + (int)b.y, 6, 8);
+    }
+    // paratroopers
+    for (auto & p : paras) {
+      Rect q = paraR(p); if (!hits(clip, q.X1, q.Y1, q.X2, q.Y2)) continue;
+      int x = ox + (int)p.x, y = oy + (int)p.y;
+      cv->setPenColor(T.text);
+      cv->setBrushColor(T.text);
+      cv->fillRectangle(x - 1, y - 10, x + 1, y - 8);               // head
+      cv->drawLine(x, y - 8, x, y - 3);                              // body
+      cv->drawLine(x - 3, y - 7, x + 3, y - 7);                      // arms
+      cv->drawLine(x, y - 3, x - 2, y);                              // legs
+      cv->drawLine(x, y - 3, x + 2, y);
+      if (p.st == 1) {
+        cv->setBrushColor(T.accent);
+        cv->fillEllipse(x, y - 19, 18, 11);
+        cv->setBrushColor(T.win);
+        cv->fillRectangle(x - 9, y - 18, x + 9, y - 14);
+        cv->setPenColor(T.text);
+        cv->drawLine(x - 8, y - 18, x - 1, y - 9);
+        cv->drawLine(x + 8, y - 18, x + 1, y - 9);
+      }
+    }
+    // shells
+    for (auto & s : shells) {
+      Rect q = shellR(s); if (!hits(clip, q.X1, q.Y1, q.X2, q.Y2)) continue;
+      cv->setBrushColor(T.text);
+      cv->fillRectangle(ox + (int)s.x - 1, oy + (int)s.y - 1, ox + (int)s.x + 1, oy + (int)s.y + 1);
+    }
+    // the gun
+    Rect g = gunR();
+    if (hits(clip, g.X1, g.Y1, g.X2, g.Y2)) {
+      int x = ox + GX, y = oy + PIVY;
+      cv->setPenColor(T.text);
+      cv->setPenWidth(4);
+      cv->drawLine(x, y, x + (int)(sinf(ang) * 24), y - (int)(cosf(ang) * 24));
+      cv->setPenWidth(1);
+      cv->setBrushColor(over ? T.warn : T.accent);
+      cv->fillEllipse(x, y + 2, 22, 18);
+      cv->setBrushColor(T.text);
+      cv->fillRectangle(x - 18, y + 8, x + 18, oy + GY);
+      cv->setBrushColor(T.face);
+      cv->fillRectangle(x - 14, y + 12, x + 14, oy + GY - 3);
+    }
+  }
+};
+
 // ====================================================================== game windows
 
 class GameFrame : public uiFrame {
 public:
-  static GameFrame * open[4];
+  static GameFrame * open[6];
   int idx;
   Board * board;
   uiLabel * info;
@@ -612,7 +1142,7 @@ public:
     frameProps().hasMaximizeButton = false;
     frameProps().hasMinimizeButton = false;
     frameProps().resizeable = false;
-    static const char * titles[4] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048" };
+    static const char * titles[6] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop" };
     setTitle(titles[i]);
     Point o = clientOrigin(this);
     int x = o.X + 6, y = o.Y + 6;
@@ -625,11 +1155,13 @@ public:
       case 0:  board = new SnakeBoard(this, Point(x, y)); break;
       case 1:  board = new MinesBoard(this, Point(x, y)); break;
       case 2:  board = new BlocksBoard(this, Point(x, y)); break;
+      case 4:  board = new BricksBoard(this, Point(x, y)); break;
+      case 5:  board = new ParadropBoard(this, Point(x, y)); break;
       default: board = new Board2048(this, Point(x, y)); break;
     }
     Size bs = board->size();
     int w = imax(bs.width + 12 + o.X * 2, 300), h = bs.height + y + 8;
-    if (i == 0 || i == 1) w = imax(w, 520);
+    if (i == 0 || i == 1 || i >= 4) w = imax(w, 520);
     info->labelStyle().textAlign = uiHAlign::Left;
     gApp->resizeWindow(info, Size(w - 120, 18));
     gApp->reshapeWindow(this, Rect((SCREEN_W - w) / 2, imax(0, (SCREEN_H - 22 - h) / 2), (SCREEN_W - w) / 2 + w - 1, imax(0, (SCREEN_H - 22 - h) / 2) + h - 1));
@@ -658,7 +1190,7 @@ public:
     // keys meant for the game: if the board lost focus (e.g. to the launcher's button),
     // the frame still gets a copy as the active window - pass it on and take focus back
     if ((e->id == UIEVT_KEYDOWN || e->id == UIEVT_KEYUP) && gApp->focusedWindow() != board) {
-      if (e->id == UIEVT_KEYDOWN) board->key(e->params.key);
+      board->keyIn(e->params.key, e->id == UIEVT_KEYDOWN);
       gApp->setFocusedWindow(board);
       return;
     }
@@ -666,7 +1198,7 @@ public:
     if (e->id == UIEVT_ACTIVATE) gApp->setFocusedWindow(board);
   }
 };
-GameFrame * GameFrame::open[4] = { nullptr, nullptr, nullptr, nullptr };
+GameFrame * GameFrame::open[6] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 
 static void openGame(int i)
 {
@@ -680,15 +1212,16 @@ static void openGame(int i)
 class GamesFrame : public uiFrame {
 public:
   static GamesFrame * inst;
-  GamesFrame() : uiFrame(gApp->rootWindow(), "Games", Point(200, 90), Size(300, 270), false) {
+  GamesFrame() : uiFrame(gApp->rootWindow(), "Games", Point(200, 40), Size(300, 380), false) {
     applyStyle(this);
     frameProps().hasMaximizeButton = false;
     frameProps().hasMinimizeButton = false;
     frameProps().resizeable = false;
     Point o = clientOrigin(this);
-    static const char * names[4] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048" };
-    static const char * about[4] = { "Eat apples, don't bite your tail", "Find the 40 mines", "Stack and clear lines", "Slide tiles to make 2048" };
-    for (int i = 0; i < 4; ++i) {
+    static const char * names[6] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop" };
+    static const char * about[6] = { "Eat apples, don't bite your tail", "Find the 40 mines", "Stack and clear lines", "Slide tiles to make 2048",
+                                     "Arkanoid-style: break every brick", "Airborne!-style: guard the gun" };
+    for (int i = 0; i < 6; ++i) {
       auto b = S(new uiButton(this, names[i], Point(o.X + 10, o.Y + 10 + i * 56), Size(270, 30)));
       b->buttonStyle().textFont = &FONT_std_16;
       b->onClick = [i]() {

@@ -18,63 +18,88 @@
 #include "config.h"
 #include "core.h"
 #include "update.h"
-#include "update_roots.h"
+#include "update_roots_der.h"
 #include <memory>
 #include <new>
 #include "mbedtls/x509_crt.h"
 
 static char s_lastErr[100] = "";
 
-// Checks the whole certificate chain the server sent against our root certificates with
-// mbedTLS's standard verify (handles cross-signed chains, which Arduino's bundle shortcut
-// doesn't), and that the certificate is for `host`.
-static bool verifyPeer(WiFiClientSecure & c, const std::string & host)
+// Certificate check, done with the TLS connection CLOSED: a TLS session holds ~25 KB, and
+// with the screen running there isn't enough left to check certificates at the same time.
+// So: connect, copy the server's certificates (~5 KB), hang up, check them against our roots
+// (stored in flash as DER, used in place), and remember the checked server certificate.
+// Every later connection just has to present that exact certificate.
+static std::string s_okHost;
+static std::vector<uint8_t> s_okLeaf;
+
+static bool peerIsTrusted(WiFiClientSecure & c, const std::string & host)
 {
   const mbedtls_x509_crt * peer = c.getPeerCertificate();
-  if (!peer) { snprintf(s_lastErr, sizeof(s_lastErr), "no certificate from %s", host.c_str()); return false; }
-  // Check against one root at a time (parse, verify, free), so this needs ~2 KB instead of
-  // ~30 KB for all fifteen at once - after the TLS handshake there often isn't 30 KB left.
+  return peer && host == s_okHost && peer->raw.len == s_okLeaf.size() && memcmp(peer->raw.p, s_okLeaf.data(), s_okLeaf.size()) == 0;
+}
+
+static bool checkChain(std::vector<std::vector<uint8_t>> & certs, const std::string & host)
+{
+  mbedtls_x509_crt chain;
+  mbedtls_x509_crt_init(&chain);
+  for (auto & c : certs)
+    if (mbedtls_x509_crt_parse_der_nocopy(&chain, c.data(), c.size()) != 0) {
+      mbedtls_x509_crt_free(&chain);
+      snprintf(s_lastErr, sizeof(s_lastErr), "unreadable certificate from %s", host.c_str());
+      return false;
+    }
   uint32_t flags = 0, bestFlags = 0;
-  bool haveBest = false;
-  const char * p = UPDATE_ROOTS;
-  static const char END[] = "-----END CERTIFICATE-----";
-  while ((p = strstr(p, "-----BEGIN CERTIFICATE-----")) != nullptr) {
-    const char * e = strstr(p, END);
-    if (!e) break;
-    e += sizeof(END) - 1;
-    size_t n = e - p;
-    char * pem = (char *)malloc(n + 2);
-    if (!pem) { snprintf(s_lastErr, sizeof(s_lastErr), "out of memory checking the certificate"); return false; }
-    memcpy(pem, p, n); pem[n] = '\n'; pem[n + 1] = 0;
-    p = e;
+  bool haveBest = false, ok = false;
+  for (auto & r : UPDATE_ROOTS_DER) {
     mbedtls_x509_crt ca;
     mbedtls_x509_crt_init(&ca);
-    int pr = mbedtls_x509_crt_parse(&ca, (const unsigned char *)pem, n + 2);
-    free(pem);
-    if (pr != 0) {
-      mbedtls_x509_crt_free(&ca);
-      if (pr == MBEDTLS_ERR_X509_ALLOC_FAILED) { snprintf(s_lastErr, sizeof(s_lastErr), "out of memory checking the certificate"); return false; }
-      continue;
+    int pr = mbedtls_x509_crt_parse_der_nocopy(&ca, r.der, r.len);
+    if (pr == 0) {
+      flags = 0;
+      int v = mbedtls_x509_crt_verify(&chain, &ca, nullptr, host.c_str(), &flags, nullptr, nullptr);
+      if (v == 0) ok = true;
+      else if (!haveBest || !(flags & MBEDTLS_X509_BADCERT_NOT_TRUSTED)) { bestFlags = flags; haveBest = true; }
     }
-    flags = 0;
-    int r = mbedtls_x509_crt_verify((mbedtls_x509_crt *)peer, &ca, nullptr, host.c_str(), &flags, nullptr, nullptr);
     mbedtls_x509_crt_free(&ca);
-    if (r == 0) { Serial.printf("[update] %s certificate checked OK\n", host.c_str()); return true; }
-    if (!haveBest || !(flags & MBEDTLS_X509_BADCERT_NOT_TRUSTED)) { bestFlags = flags; haveBest = true; }
+    if (ok) break;
+    if (pr == MBEDTLS_ERR_X509_ALLOC_FAILED) { snprintf(s_lastErr, sizeof(s_lastErr), "out of memory checking the certificate (%u KB free)", (unsigned)(ramFree() / 1024)); break; }
   }
-  flags = bestFlags;
-  char info[160];
-  mbedtls_x509_crt_verify_info(info, sizeof(info), "", flags);
-  for (char * q = info; *q; ++q) if (*q == '\n') *q = ' ';
-  snprintf(s_lastErr, sizeof(s_lastErr), "certificate: %s", info);
-  Serial.printf("[update] certificate check failed: %s (flags %x)\n", info, (unsigned)flags);
-  for (const mbedtls_x509_crt * x = peer; x; x = x->next) {
-    char sub[110], iss[110];
-    mbedtls_x509_dn_gets(sub, sizeof(sub), &x->subject);
-    mbedtls_x509_dn_gets(iss, sizeof(iss), &x->issuer);
-    Serial.printf("[update]   chain: %s\n[update]       issued by %s\n", sub, iss);
+  if (!ok && haveBest) {
+    char info[160];
+    mbedtls_x509_crt_verify_info(info, sizeof(info), "", bestFlags);
+    for (char * q = info; *q; ++q) if (*q == '\n') *q = ' ';
+    snprintf(s_lastErr, sizeof(s_lastErr), "certificate: %s", info);
+    for (const mbedtls_x509_crt * x = &chain; x; x = x->next) {
+      char sub[110], iss[110];
+      mbedtls_x509_dn_gets(sub, sizeof(sub), &x->subject);
+      mbedtls_x509_dn_gets(iss, sizeof(iss), &x->issuer);
+      Serial.printf("[update]   chain: %s\n[update]       issued by %s\n", sub, iss);
+    }
   }
-  return false;
+  mbedtls_x509_crt_free(&chain);
+  Serial.printf("[update] %s certificate %s (free RAM %u)\n", host.c_str(), ok ? "checked OK" : "NOT trusted", (unsigned)ramFree());
+  return ok;
+}
+
+// connected: make sure we're talking to the real server. May hang up and reconnect.
+static bool verifyPeer(WiFiClientSecure & c, const std::string & host)
+{
+  if (peerIsTrusted(c, host)) return true;
+  const mbedtls_x509_crt * peer = c.getPeerCertificate();
+  if (!peer) { snprintf(s_lastErr, sizeof(s_lastErr), "no certificate from %s", host.c_str()); return false; }
+  std::vector<std::vector<uint8_t>> certs;
+  for (const mbedtls_x509_crt * x = peer; x && certs.size() < 4; x = x->next)
+    certs.emplace_back(x->raw.p, x->raw.p + x->raw.len);
+  c.stop();                                     // frees the TLS session's memory
+  delay(50);
+  if (!checkChain(certs, host)) return false;
+  s_okHost = host;
+  s_okLeaf = certs[0];
+  certs.clear();
+  if (!c.connect(host.c_str(), 443)) { snprintf(s_lastErr, sizeof(s_lastErr), "no answer from %s", host.c_str()); return false; }
+  if (!peerIsTrusted(c, host)) { snprintf(s_lastErr, sizeof(s_lastErr), "%s changed its certificate - try again", host.c_str()); return false; }
+  return true;
 }
 
 #define UPD_HOST "hardwaremack-prog.github.io"
