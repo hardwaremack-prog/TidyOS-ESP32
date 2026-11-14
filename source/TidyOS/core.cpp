@@ -162,6 +162,7 @@ std::string fmtMoney(double v)
 // ====================================================================== theme
 
 struct V8  : public VGA8Controller  { void lut() { updateRGB2PaletteLUT(); } };
+struct V2  : public VGA2Controller  { void lut() { updateRGB2PaletteLUT(); } };
 struct V4  : public VGA4Controller  { void lut() { updateRGB2PaletteLUT(); } };
 
 RGB888 themePal(int i);
@@ -177,13 +178,17 @@ void themeSetup(BitmappedDisplayController * dc, int colors)
   gColors = colors;
   if (colors == 8)  { auto c = (V8*)dc;  for (int i = 0; i < 8; ++i)  c->setPaletteItem(i, PAL[i]); c->lut(); }
   if (colors == 4)  { auto c = (V4*)dc;  for (int i = 0; i < 4; ++i)  c->setPaletteItem(i, PAL[i]); c->lut(); }
+  if (colors == 2)  { auto c = (V2*)dc;  for (int i = 0; i < 2; ++i)  c->setPaletteItem(i, PAL[i]); c->lut(); }
 
   T.win        = PAL[1];
   T.text       = PAL[0];
   T.face       = PAL[2];
   T.accent     = PAL[3];
   T.accentText = PAL[1];
-  if (colors == 4) {
+  if (colors == 2) {           // black and white, like the first Macs
+    T.face = PAL[1]; T.accent = PAL[0]; T.accentText = PAL[1];
+    T.desk = PAL[1]; T.deskText = PAL[0]; T.shadow = PAL[0]; T.good = PAL[0]; T.warn = PAL[0];
+  } else if (colors == 4) {
     T.desk = PAL[3]; T.deskText = PAL[1]; T.shadow = PAL[0]; T.good = PAL[3]; T.warn = PAL[0];
   } else {
     T.desk = PAL[5]; T.deskText = PAL[1]; T.shadow = PAL[4]; T.good = PAL[7]; T.warn = PAL[6];
@@ -590,6 +595,7 @@ static void startDisplay()
   BitmappedDisplayController * dc = nullptr;
   int got = 0;
   // 8 colours only when it still leaves plenty for Wi-Fi and apps (asked for explicitly = smaller margin)
+  if (want == 2) { dc = tryMode<V2>(640 * 480 / 8, 0); got = 2; }      // black & white: half the screen memory
   if (!dc && (want == 0 || want >= 8))  { dc = tryMode<V8>(640 * 480 * 3 / 8, want >= 8 ? 60000 : 100000); got = 8; }
   if (!dc)                              { dc = tryMode<V4>(640 * 480 / 4);     got = 4; }
   if (!dc) {
@@ -859,7 +865,7 @@ static void memLog(const char * step)
 // Shown in the browser before anything big starts, so memory-hungry parts can be left off
 // for this boot. Boots by itself after a countdown, so a restart with nobody watching still
 // comes up. Click anything (or press a key) to stop the countdown.
-static const int BW_X = 130, BW_Y = 95, BW_W = 380, BW_H = 290;
+static const int BW_X = 130, BW_Y = 60, BW_W = 380, BW_H = 342;
 
 static void bootRow(Canvas & cv, int i, const char * name, const char * note, bool on)
 {
@@ -908,6 +914,7 @@ static void bootDraw(Canvas & cv)
   bootRow(cv, 0, "SD card", "~15 KB. Off: files go to internal storage", gSet.sdOn);
   bootRow(cv, 1, "Wireless mesh", "A few KB. Coms boards nearby", gSet.meshOn);
   bootRow(cv, 2, "Blue light", "~2 KB. Breathes when TidyOS is ready", gSet.ledOn);
+  bootRow(cv, 3, "Black & white", "Saves ~37 KB. Restarts TidyOS to switch", gSet.colors == 2);
   // Boot button
   int bx = BW_X + BW_W / 2 - 80, by = BW_Y + BW_H - 70;
   cv.setBrushColor(T.face);
@@ -922,8 +929,11 @@ static void bootDraw(Canvas & cv)
   cv.drawText(&FONT_std_12, 8, SCREEN_H - 16, "TidyOS " TIDYOS_VERSION);
 }
 
+static RTC_NOINIT_ATTR uint32_t s_skipChooser;    // set before a restart the chooser itself asked for
+
 static void bootChooser()
 {
+  if (s_skipChooser == 0x5EED) { s_skipChooser = 0; return; }
   inputBootGrab(true);
   screenBegin();                         // the browser can show this window right away
   Canvas cv(s_dc);
@@ -943,7 +953,7 @@ static void bootChooser()
     int x, y;
     if (inputBootClick(x, y)) {
       timer = false;
-      for (int i = 0; i < 3; ++i) {
+      for (int i = 0; i < 4; ++i) {
         int ry = BW_Y + 44 + i * 52;
         if (x >= BW_X && x < BW_X + BW_W && y >= ry - 4 && y < ry + 44) toggled = i;
       }
@@ -953,8 +963,15 @@ static void bootChooser()
     int k;
     while ((k = inputBootKey()) >= 0) {
       timer = false;
-      if (k >= 0x1E && k <= 0x20) toggled = k - 0x1E;        // keys 1, 2, 3
+      if (k >= 0x1E && k <= 0x21) toggled = k - 0x1E;        // keys 1, 2, 3, 4
       if (k == 0x28 || k == 0x58) boot = true;                // Enter
+    }
+    if (toggled == 3) {
+      gSet.colors = gSet.colors == 2 ? 0 : 2;
+      settingsSave();
+      bootRow(cv, 3, "Black & white", "Saves ~37 KB. Restarts TidyOS to switch", gSet.colors == 2);
+      shown = -2;
+      toggled = -1;
     }
     if (toggled >= 0) {
       bool * v = toggled == 0 ? &gSet.sdOn : toggled == 1 ? &gSet.meshOn : &gSet.ledOn;
@@ -978,6 +995,13 @@ static void bootChooser()
     delay(50);
   }
   inputBootGrab(false);
+  if ((gSet.colors == 2) != (gColors == 2)) {        // screen mode changed: it's set up at power-on
+    s_skipChooser = 0x5EED;
+    bootStatus(cv, "Restarting with the new screen...");
+    cv.waitCompletion();
+    delay(600);
+    ESP.restart();
+  }
   Serial.printf("[TidyOS] start-up switches: SD %s, mesh %s, light %s\n", gSet.sdOn ? "on" : "off", gSet.meshOn ? "on" : "off", gSet.ledOn ? "on" : "off");
 }
 #endif

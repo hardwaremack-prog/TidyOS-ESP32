@@ -1458,7 +1458,7 @@ public:
     dstCb->setChecked(gSet.dst);
     label("Daylight saving", cx + 208, y + 22, 110, 18);
     colorsBtn = button("", cx + 330, y + 19, 256);
-    colorsBtn->onClick = [this]() { colors = colors == 0 ? 8 : colors == 8 ? 4 : 0; showColors(); };
+    colorsBtn->onClick = [this]() { colors = colors == 0 ? 8 : colors == 8 ? 4 : colors == 4 ? 2 : 0; showColors(); };
     showColors();
 
     y += 50;
@@ -1500,6 +1500,7 @@ public:
   void showColors() {
     char b[64];
     if (colors == 0) snprintf(b, sizeof(b), "Colours: Auto (now %d)", gColors);
+    else if (colors == 2) snprintf(b, sizeof(b), "Colours: black & white (now %d)", gColors);
     else snprintf(b, sizeof(b), "Colours: %d (now %d)", colors, gColors);
     colorsBtn->setText(b);
     colorsBtn->repaint();
@@ -2456,9 +2457,9 @@ public:
       bytes = 0; files = 0;
       dirSize(SD_MOUNT "/tidyos", bytes, files);
       snprintf(b, sizeof(b), "  TidyOS data %d files, %s (lists, bills, messages, settings)", files, kb(bytes).c_str()); l.push_back(b);
-    } else l.push_back("  No SD card");
+    } else l.push_back(gSet.sdOn ? "  No SD card found (check the card and wiring)" : "  Switched off (Switches icon, or the start-up window)");
     if (gFlashMounted && FileBrowser::getFSInfo(DriveType::SPIFFS, 0, &total, &used)) {
-      l.push_back(""); l.push_back("INTERNAL STORAGE (used because there's no SD card)");
+      l.push_back(""); l.push_back("INTERNAL STORAGE (in use while the SD card is off or missing)");
       snprintf(b, sizeof(b), "  %s  %s used of %s", bar(total ? (double)used / total : 0).c_str(), kb(used).c_str(), kb(total).c_str()); l.push_back(b);
     }
     l.push_back("");
@@ -2478,7 +2479,7 @@ public:
     l.push_back("MEMORY (RAM)");
     size_t tot = heap_caps_get_total_size(MALLOC_CAP_8BIT), fr = ramFree();
     snprintf(b, sizeof(b), "  %s  %s used of %s", bar(tot ? (double)(tot - fr) / tot : 0).c_str(), kb(tot - fr).c_str(), kb(tot).c_str()); l.push_back(b);
-    int fb = gColors == 8 ? 640 * 480 * 3 / 8 : 640 * 480 / 4;
+    int fb = gColors == 8 ? 640 * 480 * 3 / 8 : gColors == 2 ? 640 * 480 / 8 : 640 * 480 / 4;
     snprintf(b, sizeof(b), "  Screen      %s  (640x480, %d colours)", kb(fb).c_str(), gColors); l.push_back(b);
     snprintf(b, sizeof(b), "  Free        %s   biggest piece %s   lowest ever %s", kb(fr).c_str(), kb(ramBiggest()).c_str(), kb(ramLowest()).c_str()); l.push_back(b);
     snprintf(b, sizeof(b), "  DMA-able    %s free", kb(heap_caps_get_free_size(MALLOC_CAP_DMA)).c_str()); l.push_back(b);

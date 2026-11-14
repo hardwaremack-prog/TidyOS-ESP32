@@ -82,9 +82,10 @@ function connect(){
  ws.onopen=function(){show('');st.textContent='Connected';c.focus();var t=Math.floor(Date.now()/1000);send([6,t&255,t>>8&255,t>>16&255,t>>>24]);};
  ws.onmessage=function(e){var d=new Uint8Array(e.data);rx+=d.length;
   if(d[0]==1){bpp=d[1];for(var i=0;i<d[2];i++)pal[i]=0xff000000|d[5+i*3]<<16|d[4+i*3]<<8|d[3+i*3];}
-  else if(d[0]==2){var y=d[1]|d[2]<<8,n=d[3],o=4,rb=bpp==2?160:240;
+  else if(d[0]==2){var y=d[1]|d[2]<<8,n=d[3],o=4,rb=bpp==1?80:bpp==2?160:240;
    for(var r=0;r<n;r++,y++,o+=rb){var p=y*640;
-    if(bpp==2){for(var x=0;x<160;x++){var b=d[o+x];px[p++]=pal[b>>6];px[p++]=pal[b>>4&3];px[p++]=pal[b>>2&3];px[p++]=pal[b&3];}}
+    if(bpp==1){for(var x=0;x<80;x++){var b=d[o+x];for(var i=7;i>=0;i--)px[p++]=pal[b>>i&1];}}
+    else if(bpp==2){for(var x=0;x<160;x++){var b=d[o+x];px[p++]=pal[b>>6];px[p++]=pal[b>>4&3];px[p++]=pal[b>>2&3];px[p++]=pal[b&3];}}
     else{for(var k=0;k<80;k++){var q=o+k*3,v=d[q]|d[q+1]<<8|d[q+2]<<16;for(var i=0;i<8;i++)px[p++]=pal[v>>(21-3*i)&7];}}}
    dirty=true;}
   else if(d[0]==8){var t=new TextDecoder().decode(d.subarray(1)).split('\n');ver=t[0];upBase=parseInt(t[1])||0;upAt=Date.now();}
@@ -228,8 +229,8 @@ static bool flushOut(WiFiClient & c)
 static void sendPalette(WiFiClient & c)
 {
   uint8_t m[3 + 8 * 3];
-  int n = gColors == 8 ? 8 : 4;
-  m[0] = 1; m[1] = gColors == 8 ? 3 : 2; m[2] = n;
+  int n = gColors;
+  m[0] = 1; m[1] = gColors == 8 ? 3 : gColors == 2 ? 1 : 2; m[2] = n;
   for (int i = 0; i < n; ++i) { RGB888 p = themePal(i); m[3 + i * 3] = p.R; m[4 + i * 3] = p.G; m[5 + i * 3] = p.B; }
   wsSend(c, m, 3 + n * 3);
 }
@@ -246,7 +247,7 @@ static inline uint32_t rowHash(const uint8_t * row, int bytes)
 static size_t queueChanges()
 {
   if (outPending()) return 0;
-  const int rb = gColors == 8 ? 240 : 160;
+  const int rb = gColors == 8 ? 240 : gColors == 2 ? 80 : 160;
   const int maxRows = (int)((sizeof(s_ob) - 8) / rb);
   for (int y = 0; y < SCREEN_H; ++y) {
     const uint8_t * row = (const uint8_t *)fabgl::VGAPalettedController::sgetScanline(y);

@@ -42,12 +42,14 @@ static bool doodleBlank(const std::string & path)
 static inline int fbGet(int x, int y)
 {
   const uint8_t * r = (const uint8_t *)fabgl::VGAPalettedController::sgetScanline(y);
+  if (gColors == 2) return r[x >> 3] >> (7 - (x & 7)) & 1;
   if (gColors == 8) { const uint8_t * q = r + (x >> 3) * 3; uint32_t v = q[0] | q[1] << 8 | q[2] << 16; return v >> (21 - 3 * (x & 7)) & 7; }
   return r[x >> 2] >> (6 - 2 * (x & 3)) & 3;
 }
 static inline void fbSet(int x, int y, int idx)
 {
   uint8_t * r = (uint8_t *)fabgl::VGAPalettedController::sgetScanline(y);
+  if (gColors == 2) { uint8_t m = 0x80 >> (x & 7); r[x >> 3] = idx ? (r[x >> 3] | m) : (r[x >> 3] & ~m); return; }
   if (gColors == 8) {
     uint8_t * q = r + (x >> 3) * 3; uint32_t v = q[0] | q[1] << 8 | q[2] << 16;
     int sh = 21 - 3 * (x & 7);
@@ -352,7 +354,7 @@ private:
 
   // paint bucket: scanline fill straight in the screen memory, then commit what's visible
   void floodFill(Point p) {
-    if (gColors != 4 && gColors != 8) return;
+    if (gColors != 2 && gColors != 4 && gColors != 8) return;
     Rect v = visible();
     if (!v.contains(p)) return;
     Rect s = clientRect(uiOrigin::Screen);
