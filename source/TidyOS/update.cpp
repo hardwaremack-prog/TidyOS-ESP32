@@ -24,6 +24,14 @@
 #include "mbedtls/x509_crt.h"
 
 static char s_lastErr[100] = "";
+#include <stdarg.h>
+static void failMsg(const char * fmt, ...)
+{
+  char m[70];
+  va_list ap; va_start(ap, fmt); vsnprintf(m, sizeof(m), fmt, ap); va_end(ap);
+  snprintf(s_lastErr, sizeof(s_lastErr), "%s (%u KB free)", m, (unsigned)(ramFree() / 1024));
+  Serial.printf("[update] %s\n", s_lastErr);
+}
 
 // Certificate check, done with the TLS connection CLOSED: a TLS session holds ~25 KB, and
 // with the screen running there isn't enough left to check certificates at the same time.
@@ -148,9 +156,11 @@ bool updateModeRequested()
 // sink gets the body in pieces; returns the HTTP status (or -1)
 static int httpsGet(std::string host, std::string path, const std::function<bool(const uint8_t *, size_t, size_t)> & sink, int redirects = 3)
 {
+  s_lastErr[0] = 0;
   WiFiClientSecure c;
   c.setInsecure();       // the handshake doesn't check; verifyPeer() below does, before anything is used
   c.setTimeout(20);
+  static_cast<Stream &>(c).setTimeout(8000);     // header lines: wait for a slow server
   if (!c.connect(host.c_str(), 443)) {
     char e[80] = "";
     int code = c.lastError(e, sizeof(e));
@@ -171,8 +181,8 @@ static int httpsGet(std::string host, std::string path, const std::function<bool
   bool first = true;
   uint32_t t0 = millis();
   for (;;) {
-    if (!c.connected() && !c.available()) return -1;
-    if (millis() - t0 > 20000) return -1;
+    if (!c.connected() && !c.available()) { failMsg("%s hung up before answering", host.c_str()); return -1; }
+    if (millis() - t0 > 20000) { failMsg("no answer from %s", host.c_str()); return -1; }
     String l = c.readStringUntil('\n');
     l.trim();
     if (first) { first = false; int sp = l.indexOf(' '); if (sp > 0) code = l.substring(sp + 1).toInt(); continue; }
@@ -188,27 +198,24 @@ static int httpsGet(std::string host, std::string path, const std::function<bool
     return httpsGet(rest.substr(0, sl), sl == std::string::npos ? "/" : rest.substr(sl), sink, redirects - 1);
   }
   if (code != 200) return code;
-  // borrowed only while downloading (it used to sit in RAM all the time)
-  std::unique_ptr<uint8_t[]> hold(new (std::nothrow) uint8_t[2048]);
-  uint8_t * buf = hold.get();
-  if (!buf) return -1;
+  uint8_t buf[512];                 // on the stack: needs no free block of RAM
   size_t got = 0;
   t0 = millis();
   while (len < 0 || (long)got < len) {
     int a = c.available();
     if (a <= 0) {
       if (!c.connected()) break;
-      if (millis() - t0 > 20000) return -1;
+      if (millis() - t0 > 20000) { failMsg("download stalled at %u KB", (unsigned)(got / 1024)); return -1; }
       delay(2);
       continue;
     }
-    int r = c.read(buf, std::min((size_t)a, (size_t)2048));
+    int r = c.read(buf, std::min((size_t)a, sizeof(buf)));
     if (r <= 0) continue;
     t0 = millis();
     got += r;
     if (!sink(buf, r, len < 0 ? 0 : (size_t)len)) return -2;
   }
-  if (len >= 0 && (long)got != len) return -1;
+  if (len >= 0 && (long)got != len) { failMsg("connection dropped at %u of %ld KB", (unsigned)(got / 1024), len / 1024); return -1; }
   return 200;
 }
 
@@ -276,7 +283,7 @@ void updateRun(void (*status)(const char * msg, int percent))
     return true;
   });
   if (code != 200) {
-    if (code == -1 && s_lastErr[0]) snprintf(b, sizeof(b), "Couldn't reach GitHub: %.50s", s_lastErr);
+    if (code == -1 && s_lastErr[0]) snprintf(b, sizeof(b), "GitHub: %.80s", s_lastErr);
     else snprintf(b, sizeof(b), "Couldn't reach GitHub (%d) - try later", code);
     finish(status, b, 0, 9000);
   }
@@ -319,7 +326,8 @@ void updateRun(void (*status)(const char * msg, int percent))
   mbedtls_sha256_finish_ret(&ctx, h);
   if (code != 200 || !writeOk || (long)done != size || hexOf(h) != sha) {
     remove(SD_MOUNT "/tidyos/update.bin");
-    snprintf(b, sizeof(b), code != 200 ? "Download failed (%d) - nothing changed" : !writeOk ? "SD card write failed - nothing changed" : "Download was damaged - nothing changed", code);
+    if (code == -1 && s_lastErr[0]) snprintf(b, sizeof(b), "Download failed: %.70s", s_lastErr);
+    else snprintf(b, sizeof(b), code != 200 ? "Download failed (%d) - nothing changed" : !writeOk ? "SD card write failed - nothing changed" : "Download was damaged - nothing changed", code);
     finish(status, b, 0, 7000);
   }
   f = fopen(SD_MOUNT "/tidyos/update.sha", "w");
