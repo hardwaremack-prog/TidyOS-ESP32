@@ -88,6 +88,7 @@ void openSystem();
 void openMessages();
 void openGames();
 void openPing();
+void openDoodle();
 void openSwitches();
 void openRugged();
 

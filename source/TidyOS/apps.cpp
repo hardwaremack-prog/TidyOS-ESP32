@@ -88,7 +88,12 @@ static std::string askFile(const char * title, const char * okText, const char *
   char dir[128], name[64];
   strlcpy(dir, startDir.c_str(), sizeof(dir));
   strlcpy(name, defName ? defName : "", sizeof(name));
-  if (gApp->fileDialog(title, dir, sizeof(dir), name, sizeof(name), okText, "Cancel", 300, 300) != uiMessageBoxResult::ButtonOK)
+  if (ramFree() < 26000) {
+    // the file list needs memory TidyOS doesn't have right now: just ask for a name
+    // (saves into the same folder) instead of risking a lock-up
+    if (gApp->inputBox(title, "Low memory - file name:", name, sizeof(name), okText, "Cancel") != uiMessageBoxResult::Button1)
+      return "";
+  } else if (gApp->fileDialog(title, dir, sizeof(dir), name, sizeof(name), okText, "Cancel", 300, 300) != uiMessageBoxResult::ButtonOK)
     return "";
   if (!name[0]) return "";
   return joinPath(dir, name);
@@ -2753,3 +2758,5 @@ void openSwitches()
   if (!SwitchesApp::inst) new SwitchesApp();
   SwitchesApp::inst->open();
 }
+
+#include "doodle_app.h"

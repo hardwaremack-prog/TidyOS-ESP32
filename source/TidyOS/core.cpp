@@ -271,6 +271,11 @@ static const char * ART_PING[16] = {
   "..w....##....w..", ".......##.......", "......#gg#......", ".....#gggg#.....",
   "....#gggggg#....", "...##########...", "................", "................" };
 
+static const char * ART_DOODLE[16] = {
+  "................", "..############..", ".#wwwwwwwwwww#..", ".#ww##wwwwww##..", ".#w#ww#wwww#a#..", ".#w#ww#www#a#w..",
+  ".#ww##wwww#a#w..", ".#wwwwwww#a#ww..", ".#wwwwww#a#www..", ".#wgggw##a#www..", ".#wgggw#g#wwww..", ".#wwwww##wwwww..",
+  ".#wwwwwwwwwwww..", "..############..", "................", "................" };
+
 static const char * ART_SD[16] = {
   "................", "...#########....", "...#a#a#a#a##...", "...#a#a#a#a#w#..",
   "...#wwwwwwwwww#.", "...#wwwwwwwwww#.", "...#wggggggggw#.", "...#wgwwwwwwgw#.",
@@ -314,6 +319,7 @@ static const DeskIcon ICONS[] = {
   { "Messages",   ART_MSG,   nullptr, openMessages },
   { "Games",      ART_GAMES, nullptr, openGames },
   { "Ping",       ART_PING,  nullptr, openPing },
+  { "Doodle",     ART_DOODLE, nullptr, openDoodle },
   { "Switches",   ART_SD,    nullptr, openSwitches },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
