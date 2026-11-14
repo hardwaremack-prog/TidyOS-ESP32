@@ -1144,8 +1144,7 @@ public:
     passEd->textEditProps().passwordMode = true;
     button("Connect",       cx + 72,  y + 71, 96)->onClick = [this]() {
       if (screenApOn() && !netConnected()) {
-        std::string m = std::string("This browser will drop off the TidyOS-Setup hotspot for a moment while TidyOS joins ") + ssidEd->text() +
-                        ". Then switch this device to " + ssidEd->text() + " and open http://tidyos.local (the page shows the address too).";
+        std::string m = std::string("Next: put this device on ") + ssidEd->text() + ", open tidyos.local";
         if (gApp->messageBox("Joining your Wi-Fi", m.c_str(), "Join", "Cancel", nullptr, uiMessageBoxIcon::Info) != uiMessageBoxResult::Button1) return;
       }
       netConnect(ssidEd->text(), passEd->text());
@@ -1642,7 +1641,7 @@ public:
 
   void show(int i) {
     if (!panes[i] && ESP.getFreeHeap() < 30000) {
-      gApp->messageBox("Low memory", "Not enough free memory for this tab. Close another app first.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+      gApp->messageBox("Low memory", "Not enough memory for this tab. Close an app first.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
       return;
     }
     build(i);
@@ -2610,17 +2609,17 @@ public:
   void flip(int i) {
     if (i == 0) {
       if (gSDMounted) {
-        if (gApp->messageBox("SD card", "Turn the SD card off? Close any documents from the card first. Files will be saved to internal storage.",
+        if (gApp->messageBox("SD card", "Turn the SD card off? Close documents from it first.",
                              "Turn off", "Cancel", nullptr, uiMessageBoxIcon::Question) != uiMessageBoxResult::Button1) return;
         sdTurnOff();
       } else {
         if (ESP.getFreeHeap() < 32000) {
-          gApp->messageBox("SD card", "Not enough free memory to turn the card on. Close some apps first.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+          gApp->messageBox("SD card", "Not enough memory to turn the card on. Close an app.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
           return;
         }
         sw[0]->setText("Looking..."); sw[0]->repaint();
         if (!sdTurnOn())
-          gApp->messageBox("SD card", "No card found. Check it's pushed in and formatted FAT32. It stays switched on and is tried again at the next start.",
+          gApp->messageBox("SD card", "No card found. Check it's in and formatted FAT32.",
                            "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
       }
     } else if (i == 1) {

@@ -323,7 +323,7 @@ public:
           if (hit(event->params.mouse.status.X, event->params.mouse.status.Y) == i) {
             Serial.printf("[TidyOS] open %s, free RAM %u (biggest %u)\n", ICONS[i].label, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
             if (ESP.getFreeHeap() < 28000 && ICONS[i].open != openSystem)
-              gApp->messageBox("Low memory", "TidyOS is low on memory. Close an app first (Task Manager shows what's open).", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+              gApp->messageBox("Low memory", "Low on memory. Close an app first (see Task Manager).", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
             else
               ICONS[i].open();
           }
