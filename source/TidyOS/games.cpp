@@ -893,11 +893,11 @@ public:
     repaint();
   }
   // bounding boxes (board coords)
-  static Rect heliR(Heli const & h)  { return Rect((int)h.x - 20, h.y - 9, (int)h.x + 20, h.y + 8); }
-  static Rect paraR(Para const & p)  { return Rect((int)p.x - 9, (int)p.y - 25, (int)p.x + 9, (int)p.y + 1); }
+  static Rect heliR(Heli const & h)  { return Rect((int)h.x - 22, h.y - 10, (int)h.x + 22, h.y + 9); }
+  static Rect paraR(Para const & p)  { return Rect((int)p.x - 11, (int)p.y - 27, (int)p.x + 11, (int)p.y + 2); }
   static Rect shellR(Shell const & s){ return Rect((int)s.x - 2, (int)s.y - 2, (int)s.x + 2, (int)s.y + 2); }
-  static Rect jetR(Jet const & j)    { return Rect((int)j.x - 18, j.y - 6, (int)j.x + 18, j.y + 6); }
-  static Rect bombR(Bomb const & b)  { return Rect((int)b.x - 3, (int)b.y - 3, (int)b.x + 3, (int)b.y + 4); }
+  static Rect jetR(Jet const & j)    { return Rect((int)j.x - 20, j.y - 8, (int)j.x + 20, j.y + 8); }
+  static Rect bombR(Bomb const & b)  { return Rect((int)b.x - 5, (int)b.y - 6, (int)b.x + 5, (int)b.y + 6); }
   static Rect gunR()                 { return Rect(GX - 30, PIVY - 30, GX + 30, GY); }
 
   void fire() {
@@ -1067,7 +1067,7 @@ public:
       cv->drawLine(x, y - 8, x, y - 5);
       cv->drawLine(x - 8, y + 7, x + 8, y + 7);                      // skids
       cv->setBrushColor(T.win);
-      cv->fillRectangle(x + d * 3, y - 3, x + d * 7, y);             // window
+      cv->fillRectangle(imin(x + d * 3, x + d * 7), y - 3, imax(x + d * 3, x + d * 7), y);   // window
     }
     // jets
     for (auto & j : jets) {
