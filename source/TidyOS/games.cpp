@@ -22,6 +22,7 @@ public:
     windowStyle().activeBorderColor = T.shadow;
     windowStyle().focusedBorderColor = T.accent;
     setFocusIndex(1);
+    windowProps().focusable = true;   // needed to get keyboard focus
   }
   ~Board() { stopTimer(); }
 

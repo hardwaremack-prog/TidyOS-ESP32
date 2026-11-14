@@ -16,6 +16,7 @@ TextArea::TextArea(uiWindow * parent, const Point & pos, const Size & size, bool
   windowStyle().focusedBorderColor = T.accent;
   windowStyle().defaultCursor      = editable ? CursorName::CursorTextInput : CursorName::CursorPointerSimpleReduced;
   setFocusIndex(1);
+  windowProps().focusable = true;     // FabGL only gives keyboard focus to controls marked focusable
   lines.push_back("");
 }
 
@@ -628,6 +629,7 @@ SheetGrid::SheetGrid(uiWindow * parent, const Point & pos, const Size & size, Sh
   windowStyle().activeBorderColor  = T.shadow;
   windowStyle().focusedBorderColor = T.accent;
   setFocusIndex(1);
+  windowProps().focusable = true;     // FabGL only gives keyboard focus to controls marked focusable
 }
 
 int SheetGrid::visRows() { return imax(1, (clientRect(uiOrigin::Window).height() - ROWH) / ROWH); }

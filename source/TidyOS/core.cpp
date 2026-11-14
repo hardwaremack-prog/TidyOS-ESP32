@@ -52,6 +52,8 @@ void settingsLoad()
   gSet.sdOn      = s_prefs.getBool("sdon", false);
   gSet.meshOn    = s_prefs.getBool("mesh", false);
   gSet.ledOn     = s_prefs.getBool("led", false);
+  gSet.neatFont  = s_prefs.getInt("nfont", 0);
+  gSet.neatSize  = s_prefs.getInt("nsize", 1);
 }
 
 void settingsSave()
@@ -69,6 +71,8 @@ void settingsSave()
   s_prefs.putBool("sdon", gSet.sdOn);
   s_prefs.putBool("mesh", gSet.meshOn);
   s_prefs.putBool("led", gSet.ledOn);
+  s_prefs.putInt("nfont", gSet.neatFont);
+  s_prefs.putInt("nsize", gSet.neatSize);
 }
 
 // ====================================================================== storage

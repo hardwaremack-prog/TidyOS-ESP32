@@ -47,6 +47,8 @@ struct Settings {
   bool   sdOn;        // use the microSD card (off by default: saves ~23 KB of RAM)
   bool   meshOn;      // Coms wireless mesh (ESP-NOW) on (off by default)
   bool   ledOn;       // blue status light on (off by default)
+  int    neatFont;    // Neat Lite font family (index)
+  int    neatSize;    // Neat Lite font size (index within the family)
 };
 extern Settings gSet;
 void settingsLoad();

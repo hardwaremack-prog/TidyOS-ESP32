@@ -199,8 +199,24 @@ void openCalculator()
 
 // ====================================================================== Neat Lite (text editor)
 
+// fixed-width fonts for Neat (the editor lays text out in columns)
+struct NeatFont { const char * name; const FontInfo * sizes[4]; };
+static const NeatFont NEAT_FONTS[] = {
+  { "Standard",    { &FONT_6x10, &FONT_8x14, &FONT_9x18, &FONT_10x20 } },
+  { "Sans serif",  { &FONT_SANSERIF_8x14, &FONT_SANSERIF_8x16, nullptr, nullptr } },
+  { "Serif",       { &FONT_BIGSERIF_8x14, &FONT_BIGSERIF_8x16, nullptr, nullptr } },
+  { "Courier",     { &FONT_COURIER_8x14, nullptr, nullptr, nullptr } },
+  { "Slant",       { &FONT_SLANT_8x14, nullptr, nullptr, nullptr } },
+  { "Computer",    { &FONT_COMPUTER_8x14, nullptr, nullptr, nullptr } },
+  { "LCD",         { &FONT_LCD_8x14, nullptr, nullptr, nullptr } },
+  { "Old English", { &FONT_OLDENGL_8x16, nullptr, nullptr, nullptr } },
+};
+static const int NEAT_FONT_COUNT = sizeof(NEAT_FONTS) / sizeof(NEAT_FONTS[0]);
+static int neatSizes(int f) { int n = 0; while (n < 4 && NEAT_FONTS[f].sizes[n]) ++n; return n; }
+
 class NeatApp : public AppFrame {
 public:
+  uiButton * fontBtn, * sizeBtn;
   static AppFrame * inst;
   TextArea * ta;
   uiLabel *  saved;
@@ -215,7 +231,13 @@ public:
     button("Print",    cx + 210, cy, 46)->onClick = [this]() { print(); };
     button("Spelling", cx + 260, cy, 70)->onClick = [this]() { spelling(); };
     saved = makeSavedLight(this, cx + 396, cy + 2);
-    ta = new TextArea(this, Point(cx, cy + 28), Size(466, 374), true);
+    fontBtn = button("", cx, cy + 26, 150);
+    fontBtn->onClick = [this]() { gSet.neatFont = (gSet.neatFont + 1) % NEAT_FONT_COUNT; applyFont(true); };
+    sizeBtn = button("", cx + 154, cy + 26, 104);
+    sizeBtn->onClick = [this]() { gSet.neatSize = (gSet.neatSize + 1) % neatSizes(gSet.neatFont); applyFont(true); };
+    auto tip = label("Font and size apply to the whole document", cx + 264, cy + 30, 200, 16);
+    tip->labelStyle().textFont = &FONT_std_12;
+    ta = new TextArea(this, Point(cx, cy + 54), Size(466, 348), true);
     ta->isMisspelled = [](const std::string & w) { return !spellIsWord(w); };
     ta->onModified = [this]() { if (!dirty) { dirty = true; setSavedLight(saved, false); } };
     ta->onKey = [this](uiKeyEventInfo const & k) {
@@ -224,8 +246,28 @@ public:
       if (k.VK == VK_o || k.VK == VK_O) { openDoc(); return true; }
       if (k.VK == VK_n || k.VK == VK_N) { newDoc(); return true; }
       if (k.VK == VK_p || k.VK == VK_P) { print(); return true; }
+      if (k.VK == VK_PLUS || k.VK == VK_EQUALS || k.VK == VK_KP_PLUS) { if (gSet.neatSize + 1 < neatSizes(gSet.neatFont)) { gSet.neatSize++; applyFont(true); } return true; }
+      if (k.VK == VK_MINUS || k.VK == VK_KP_MINUS) { if (gSet.neatSize > 0) { gSet.neatSize--; applyFont(true); } return true; }
       return false;
     };
+    applyFont(false);
+  }
+
+  void applyFont(bool save) {
+    if (gSet.neatFont < 0 || gSet.neatFont >= NEAT_FONT_COUNT) gSet.neatFont = 0;
+    int n = neatSizes(gSet.neatFont);
+    if (gSet.neatSize < 0 || gSet.neatSize >= n) gSet.neatSize = n > 1 ? 1 : 0;   // the medium size when the family has it
+    const FontInfo * f = NEAT_FONTS[gSet.neatFont].sizes[gSet.neatSize];
+    ta->font = f;
+    ta->scrollTo(ta->crow);
+    ta->repaint();
+    char b[40];
+    snprintf(b, sizeof(b), "Font: %s", NEAT_FONTS[gSet.neatFont].name);
+    fontBtn->setText(b); fontBtn->repaint();
+    snprintf(b, sizeof(b), n > 1 ? "Size: %d  (%d of %d)" : "Size: %d", f->height, gSet.neatSize + 1, n);
+    sizeBtn->setText(b); sizeBtn->repaint();
+    if (save) settingsSave();
+    gApp->setFocusedWindow(ta);
   }
 
   std::string docTitle() { return path.empty() ? std::string("Untitled") : baseName(path); }
