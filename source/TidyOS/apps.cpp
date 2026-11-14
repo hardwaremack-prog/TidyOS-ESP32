@@ -2096,6 +2096,41 @@ static volatile uint32_t s_idleCount[2] = { 0, 0 };
 static bool idleHook0() { s_idleCount[0]++; return false; }
 static bool idleHook1() { s_idleCount[1]++; return false; }
 
+// ---- CPU test: keeps one core busy (pausing 1 ms in every 96 so the watchdog stays happy)
+static volatile bool     s_burn[2] = { false, false };
+static volatile uint32_t s_burnOps[2] = { 0, 0 };
+static volatile bool     s_burnAlive[2] = { false, false };
+static volatile float    s_burnSink;
+static void burnTask(void * arg)
+{
+  int c = (int)(intptr_t)arg;
+  float x = 1.0001f;
+  uint32_t t0 = millis();
+  while (s_burn[c] && millis() - t0 < 60000) {
+    uint32_t until = millis() + 95;
+    while ((int32_t)(until - millis()) > 0) {
+      for (int i = 0; i < 1000; ++i) x = x * 1.0000001f + 0.0000001f;
+      s_burnOps[c] += 1000;
+    }
+    s_burnSink = x;
+    vTaskDelay(1);
+  }
+  s_burn[c] = false;
+  s_burnAlive[c] = false;
+  vTaskDelete(nullptr);
+}
+static bool burnStart(int c)
+{
+  if (s_burnAlive[c]) return true;
+  s_burn[c] = s_burnAlive[c] = true;
+  s_burnOps[c] = 0;
+  if (xTaskCreatePinnedToCore(burnTask, c ? "cputest1" : "cputest0", 2048, (void *)(intptr_t)c, 1, nullptr, c) != pdPASS) {
+    s_burn[c] = s_burnAlive[c] = false;
+    return false;
+  }
+  return true;
+}
+
 // ---- ping to the router
 static esp_ping_handle_t s_ping = nullptr;
 static volatile int s_pingMs = -1, s_pingSent = 0, s_pingLost = 0;
@@ -2175,7 +2210,7 @@ static const char * taskInfo(const char * n)
   static const char * map[][2] = {
     { "loopTask", "TidyOS desktop and apps" }, { "IDLE", "Idle (free time)" }, { "IDLE0", "Idle core 0" }, { "IDLE1", "Idle core 1" },
     { "nimble_host", "Bluetooth host" }, { "btController", "Bluetooth radio" }, { "ble", "Keyboard/mouse manager" },
-    { "keyrep", "Key repeat" }, { "serkbd", "Serial keyboard" }, { "wifi", "Wi-Fi driver" }, { "tiT", "TCP/IP network" },
+    { "cputest0", "CPU test (core 0)" }, { "cputest1", "CPU test (core 1)" }, { "keyrep", "Key repeat" }, { "serkbd", "Serial keyboard" }, { "wifi", "Wi-Fi driver" }, { "tiT", "TCP/IP network" },
     { "sys_evt", "System events" }, { "esp_timer", "System timers" }, { "Tmr Svc", "Timer service" }, { "ipc0", "Core 0 helper" },
     { "ipc1", "Core 1 helper" }, { "shelfmsg", "Shelf messaging + mesh" }, { "fileweb", "File sharing server" },
     { "fetch", "Browser download" }, { "led", "Blue status light" }, { "print", "Printing" }, { "findprn", "Printer search" }, { "mdns", "tidyos.local name" },
@@ -2192,7 +2227,9 @@ public:
   uiPanel  * panes[6];
   int        tab = 0;
   Graph    * cpuGraph, * ramGraph;
-  uiLabel  * cpuLbl[2], * ramLbl, * summary, * summary2;
+  uiLabel  * cpuLbl[2], * ramLbl, * summary, * summary2, * testLbl;
+  uiButton * testBtn[2];
+  uint32_t lastOps[2] = { 0, 0 };
   uiListBox * appList;
   std::vector<uiFrame *> appWins;
   TextArea * tasksView, * netView, * storeView, * powerView;
@@ -2222,8 +2259,18 @@ public:
     auto p = pane(0);
     add(new uiLabel(p, "CPU  (blue = core 0: radios,  black = core 1: screen + apps)", Point(0, 0), Size(612, 18)));
     cpuGraph = new Graph(p, Point(0, 20), Size(430, 130), true);
-    cpuLbl[0] = add(new uiLabel(p, "", Point(440, 30), Size(170, 26))); cpuLbl[0]->labelStyle().textFont = &FONT_std_18;
-    cpuLbl[1] = add(new uiLabel(p, "", Point(440, 64), Size(170, 26))); cpuLbl[1]->labelStyle().textFont = &FONT_std_18;
+    for (int c = 0; c < 2; ++c) {
+      cpuLbl[c] = add(new uiLabel(p, "", Point(440, 30 + c * 34), Size(112, 26))); cpuLbl[c]->labelStyle().textFont = &FONT_std_18;
+      testBtn[c] = add(new uiButton(p, "Test", Point(556, 30 + c * 34), Size(56, 26)));
+      testBtn[c]->onClick = [this, c]() {
+        if (s_burnAlive[c]) s_burn[c] = false;
+        else if (!burnStart(c)) gApp->messageBox("CPU test", "Not enough memory to start the test.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+        lastOps[c] = 0;
+        showTests();
+      };
+    }
+    testLbl = add(new uiLabel(p, "Test runs a core flat out (stops after 60 s)", Point(440, 100), Size(172, 46)));
+    testLbl->labelStyle().textFont = &FONT_std_12;
     add(new uiLabel(p, "Memory in use (RAM)", Point(0, 160), Size(300, 18)));
     ramGraph = new Graph(p, Point(0, 180), Size(430, 110), false);
     ramLbl = add(new uiLabel(p, "", Point(440, 190), Size(170, 26))); ramLbl->labelStyle().textFont = &FONT_std_18;
@@ -2263,7 +2310,27 @@ public:
     show(0);
   }
 
+  void showTests() {
+    char b[96] = "";
+    int n = 0;
+    for (int c = 0; c < 2; ++c) {
+      bool on = s_burnAlive[c];
+      testBtn[c]->setText(on ? "Stop" : "Test");
+      testBtn[c]->buttonStyle().backgroundColor = on ? T.accent : T.face;
+      testBtn[c]->buttonStyle().textColor = on ? T.accentText : T.text;
+      testBtn[c]->repaint();
+      if (on) {
+        uint32_t ops = s_burnOps[c], d = ops - lastOps[c];
+        lastOps[c] = ops;
+        n += snprintf(b + n, sizeof(b) - n, "Core %d: %.1f M sums/s\n", c, d / 1e6f);
+      }
+    }
+    testLbl->setText(n ? b : "Test runs a core flat out (stops after 60 s)");
+    testLbl->repaint();
+  }
+
   void onClosing() override {
+    s_burn[0] = s_burn[1] = false;
     if (hooks) { esp_deregister_freertos_idle_hook_for_cpu(idleHook0, 0); esp_deregister_freertos_idle_hook_for_cpu(idleHook1, 1); hooks = false; }
     stopPing();
   }
@@ -2310,6 +2377,7 @@ public:
     }
     if (++ticks < 2) { load[0] = load[1] = -1; }
     cpuGraph->push(load[0], load[1]);
+    if (s_burnAlive[0] || s_burnAlive[1] || testBtn[0]->text()[0] == 'S' || testBtn[1]->text()[0] == 'S') showTests();
     char b[64];
     for (int c = 0; c < 2; ++c) {
       if (load[c] < 0) snprintf(b, sizeof(b), "Core %d: ...", c);
