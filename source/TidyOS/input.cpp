@@ -824,8 +824,33 @@ static void serialTask(void *)
 
 static volatile uint8_t s_webMods = 0;
 
+static volatile bool    s_bootGrab = false, s_bootClicked = false;
+static volatile int     s_bootX = 0, s_bootY = 0;
+static volatile uint8_t s_bootBtn = 0, s_bootKeys[8], s_bkW = 0, s_bkR = 0;
+
+void inputBootGrab(bool on) { s_bootClicked = false; s_bkR = s_bkW; s_bootGrab = on; }
+
+bool inputBootClick(int & x, int & y)
+{
+  if (!s_bootClicked) return false;
+  x = s_bootX; y = s_bootY;
+  s_bootClicked = false;
+  return true;
+}
+
+int inputBootKey()
+{
+  if (s_bkR == s_bkW) return -1;
+  return s_bootKeys[s_bkR++ % 8];
+}
+
 void inputWebKey(uint8_t usage, uint8_t mods, bool down)
 {
+  if (s_bootGrab) {
+    s_webMods = mods;
+    if (down && usage >= 4 && usage < 0xE0 && (uint8_t)(s_bkW - s_bkR) < 8) { s_bootKeys[s_bkW % 8] = usage; s_bkW++; }
+    return;
+  }
   uint8_t changed = mods ^ s_webMods;
   for (int b = 0; b < 8; ++b)
     if (changed & (1 << b)) {
@@ -838,6 +863,12 @@ void inputWebKey(uint8_t usage, uint8_t mods, bool down)
 
 void inputWebMouse(int x, int y, int wheel, uint8_t buttons)
 {
+  if (s_bootGrab) {
+    if ((buttons & 1) && !(s_bootBtn & 1)) { s_bootX = x; s_bootY = y; s_bootClicked = true; }
+    s_bootBtn = buttons;
+    s_mouse.X = x; s_mouse.Y = y;
+    return;
+  }
   postMouse(x - s_mouse.X, y - s_mouse.Y, wheel, buttons);
 }
 

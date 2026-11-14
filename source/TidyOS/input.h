@@ -23,3 +23,7 @@ void inputForgetAll();
 int  inputKeyboards();
 int  inputMice();
 std::string inputStatus();               // short human readable status
+// start-up switches window (before the desktop exists): browser clicks and keys go here
+void inputBootGrab(bool on);
+bool inputBootClick(int & x, int & y);   // true once per click
+int  inputBootKey();                     // HID usage of a pressed key, or -1

@@ -5,6 +5,7 @@
 #include <time.h>
 #include "screen.h"
 #include "led.h"
+#include <WiFi.h>
 #include "crashlog.h"
 #include "update.h"
 #include "driver/spi_master.h"
@@ -847,6 +848,134 @@ static void memLog(const char * step)
                 (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) - ramFree()));
 }
 
+#ifdef TIDYOS_HTML5
+// ---------------------------------------------------------------- start-up switches
+// Shown in the browser before anything big starts, so memory-hungry parts can be left off
+// for this boot. Boots by itself after a countdown, so a restart with nobody watching still
+// comes up. Click anything (or press a key) to stop the countdown.
+static const int BW_X = 130, BW_Y = 95, BW_W = 380, BW_H = 290;
+
+static void bootRow(Canvas & cv, int i, const char * name, const char * note, bool on)
+{
+  int y = BW_Y + 44 + i * 52;
+  cv.setBrushColor(T.win);
+  cv.fillRectangle(BW_X + 1, y - 4, BW_X + BW_W - 2, y + 44);
+  cv.setPenColor(T.text);
+  char b[48];
+  snprintf(b, sizeof(b), "%d  %s", i + 1, name);
+  cv.drawText(&FONT_std_16, BW_X + 16, y, b);
+  cv.setPenColor(T.shadow);
+  cv.drawText(&FONT_std_12, BW_X + 34, y + 21, note);
+  int sx = BW_X + BW_W - 96;
+  cv.setBrushColor(on ? T.accent : T.face);
+  cv.fillRectangle(sx, y, sx + 76, y + 26);
+  cv.setPenColor(T.shadow);
+  cv.drawRectangle(sx, y, sx + 76, y + 26);
+  cv.setPenColor(on ? T.accentText : T.text);
+  const char * t = on ? "ON" : "OFF";
+  cv.drawText(&FONT_std_16, sx + 38 - cv.textExtent(&FONT_std_16, t) / 2, y + 5, t);
+}
+
+static void bootStatus(Canvas & cv, const char * msg)
+{
+  int y = BW_Y + BW_H - 28;
+  cv.setBrushColor(T.win);
+  cv.fillRectangle(BW_X + 1, y, BW_X + BW_W - 2, y + 18);
+  cv.setPenColor(T.text);
+  cv.drawText(&FONT_std_12, BW_X + BW_W / 2 - cv.textExtent(&FONT_std_12, msg) / 2, y + 2, msg);
+}
+
+static void bootDraw(Canvas & cv)
+{
+  cv.setBrushColor(T.desk);
+  cv.clear();
+  cv.setBrushColor(T.shadow);
+  cv.fillRectangle(BW_X + 4, BW_Y + 4, BW_X + BW_W + 3, BW_Y + BW_H + 3);
+  cv.setBrushColor(T.win);
+  cv.fillRectangle(BW_X, BW_Y, BW_X + BW_W - 1, BW_Y + BW_H - 1);
+  cv.setPenColor(T.shadow);
+  cv.drawRectangle(BW_X, BW_Y, BW_X + BW_W - 1, BW_Y + BW_H - 1);
+  cv.setBrushColor(T.accent);
+  cv.fillRectangle(BW_X + 1, BW_Y + 1, BW_X + BW_W - 2, BW_Y + 28);
+  cv.setPenColor(T.accentText);
+  cv.drawText(&FONT_std_16, BW_X + 10, BW_Y + 7, "Start-up switches - save memory");
+  bootRow(cv, 0, "SD card", "~15 KB. Off: files go to internal storage", gSet.sdOn);
+  bootRow(cv, 1, "Wireless mesh", "A few KB. Coms boards nearby", gSet.meshOn);
+  bootRow(cv, 2, "Blue light", "~2 KB. Breathes when TidyOS is ready", gSet.ledOn);
+  // Boot button
+  int bx = BW_X + BW_W / 2 - 80, by = BW_Y + BW_H - 70;
+  cv.setBrushColor(T.face);
+  cv.fillRectangle(bx, by, bx + 160, by + 32);
+  cv.setPenColor(T.shadow);
+  cv.drawRectangle(bx, by, bx + 160, by + 32);
+  cv.setPenColor(T.text);
+  const char * t = "Boot TidyOS";
+  cv.drawText(&FONT_std_16, bx + 80 - cv.textExtent(&FONT_std_16, t) / 2, by + 8, t);
+  cv.setPenColor(T.deskText);
+  cv.setBrushColor(T.desk);
+  cv.drawText(&FONT_std_12, 8, SCREEN_H - 16, "TidyOS " TIDYOS_VERSION);
+}
+
+static void bootChooser()
+{
+  inputBootGrab(true);
+  screenBegin();                         // the browser can show this window right away
+  Canvas cv(s_dc);
+  bootDraw(cv);
+  bootStatus(cv, "Waiting for Wi-Fi...");
+  cv.waitCompletion();
+  const int COUNT = 12;
+  uint32_t t0 = millis(), readyAt = 0;
+  bool timer = true, boot = false;
+  int shown = -2;
+  while (!boot) {
+    bool netUp = WiFi.status() == WL_CONNECTED || screenApOn();
+    if (!readyAt && (netUp || millis() - t0 > 35000)) readyAt = millis();
+    int left = readyAt ? COUNT - (int)((millis() - readyAt) / 1000) : COUNT;
+    if (timer && readyAt && left <= 0) break;
+    int toggled = -1;
+    int x, y;
+    if (inputBootClick(x, y)) {
+      timer = false;
+      for (int i = 0; i < 3; ++i) {
+        int ry = BW_Y + 44 + i * 52;
+        if (x >= BW_X && x < BW_X + BW_W && y >= ry - 4 && y < ry + 44) toggled = i;
+      }
+      int bx = BW_X + BW_W / 2 - 80, by = BW_Y + BW_H - 70;
+      if (x >= bx && x <= bx + 160 && y >= by && y <= by + 32) boot = true;
+    }
+    int k;
+    while ((k = inputBootKey()) >= 0) {
+      timer = false;
+      if (k >= 0x1E && k <= 0x20) toggled = k - 0x1E;        // keys 1, 2, 3
+      if (k == 0x28 || k == 0x58) boot = true;                // Enter
+    }
+    if (toggled >= 0) {
+      bool * v = toggled == 0 ? &gSet.sdOn : toggled == 1 ? &gSet.meshOn : &gSet.ledOn;
+      *v = !*v;
+      settingsSave();
+      if (toggled == 2) ledSetOn(gSet.ledOn);
+      bootRow(cv, toggled, toggled == 0 ? "SD card" : toggled == 1 ? "Wireless mesh" : "Blue light",
+              toggled == 0 ? "~15 KB. Off: files go to internal storage" : toggled == 1 ? "A few KB. Coms boards nearby" : "~2 KB. Breathes when TidyOS is ready", *v);
+      shown = -2;
+    }
+    int want = !timer ? -1 : readyAt ? left : 99;
+    if (want != shown) {
+      shown = want;
+      char b[80];
+      if (want == -1) snprintf(b, sizeof(b), "Click Boot TidyOS (or press Enter) when you're ready");
+      else if (want == 99) snprintf(b, sizeof(b), "Waiting for Wi-Fi...   click anything to stop the timer");
+      else snprintf(b, sizeof(b), "Booting in %d s   click anything to stop the timer", want);
+      bootStatus(cv, b);
+    }
+    cv.waitCompletion();
+    delay(50);
+  }
+  inputBootGrab(false);
+  Serial.printf("[TidyOS] start-up switches: SD %s, mesh %s, light %s\n", gSet.sdOn ? "on" : "off", gSet.meshOn ? "on" : "off", gSet.ledOn ? "on" : "off");
+}
+#endif
+
 void setup()
 {
 #ifdef TIDYOS_HTML5
@@ -883,6 +1012,7 @@ void setup()
 #ifdef TIDYOS_HTML5
   startDisplay();
   releaseVgaPins();     // no monitor in this edition: free GPIO 19/18/5/... (the in-line SD wiring uses them)
+  bootChooser();        // start-up switches (SD card, mesh, blue light) before they take any RAM
   if (gSet.sdOn) gSDMounted = mountAnySD();
 #else
   if (gSet.sdOn) gSDMounted = mountAnySD();
