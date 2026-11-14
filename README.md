@@ -255,3 +255,10 @@ Source map: `core.cpp` (start-up, desktop, theme), `input.cpp` (Bluetooth HID ho
 `fileserver.cpp` (Wi-Fi file sharing page), `games.cpp` (the games), `screen.cpp` (HTML5 edition: web screen, WebSocket, setup hotspot).
 
 Built on [FabGL](https://github.com/fdivitto/FabGL) (GPL v3) and [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) (Apache 2.0).
+
+## 13. Guides
+
+Two reference books for the hardware TidyOS runs on (PDF):
+
+- **[The ESP32 Classic Field Guide](docs/guides/ESP32-Classic-Field-Guide.pdf)**: the chip, CPU, memory, radios, a colour-coded pinout of the NodeMCU / DevKit V1 board, every pin and what it can do, sleep modes, and project ideas.
+- **[Heltec V3 vs Heltec V4 vs NodeMCU ESP32](docs/guides/Heltec-V3-vs-V4-vs-NodeMCU-ESP32.pdf)**: side-by-side specs, ESP32-S3 vs classic ESP32, what changed on the V4, which pins each board uses, and which board to pick for which project.
