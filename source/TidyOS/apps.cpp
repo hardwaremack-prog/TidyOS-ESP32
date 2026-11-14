@@ -4,6 +4,7 @@
 #include "crashlog.h"
 #include "update.h"
 #include <sys/stat.h>
+#include <dirent.h>
 #include <algorithm>
 #include <WiFi.h>
 #include <math.h>
@@ -82,21 +83,189 @@ static std::string joinPath(const char * dir, const char * name)
   return p + name;
 }
 
-// a file dialog wrapper. returns full path or "" when cancelled
+// ---------------------------------------------------------------- file picker
+// A light file dialog: the list reads the folder from the card each time it draws, so no
+// list of files is kept in memory (FabGL's own dialog needed ~10 KB and often wasn't usable).
+class FileList : public uiControl {
+public:
+  static const int RH = 18;
+  std::string dir;
+  int top = 0, sel = -1, count = 0;
+  std::function<void(const std::string &, bool isDir, bool twice)> onPick;
+
+  FileList(uiWindow * p, Point pos, Size sz) : uiControl(p, pos, sz, true, 0) {
+    windowStyle().borderSize = 1;
+    windowStyle().borderColor = T.shadow;
+    windowStyle().activeBorderColor = T.shadow;
+    windowStyle().focusedBorderColor = T.accent;
+    windowProps().focusable = true;
+  }
+  bool hasUp() { return dir != SD_MOUNT && dir != FLASH_MOUNT && dir.size() > 1; }
+  int rows() { return imax(1, clientRect(uiOrigin::Window).height() / RH); }
+  // entry i (".." first when there is a parent folder); streams the folder every time
+  bool entry(int i, std::string & name, bool & isDir) {
+    if (hasUp()) { if (i == 0) { name = ".."; isDir = true; return true; } --i; }
+    DIR * d = opendir(dir.c_str());
+    if (!d) return false;
+    struct dirent * e;
+    bool found = false;
+    while ((e = readdir(d)) != nullptr) {
+      if (e->d_name[0] == '.') continue;
+      if (i-- == 0) { name = e->d_name; isDir = e->d_type == DT_DIR; found = true; break; }
+    }
+    closedir(d);
+    return found;
+  }
+  int countAll() {
+    int n = hasUp() ? 1 : 0;
+    DIR * d = opendir(dir.c_str());
+    if (!d) return n;
+    struct dirent * e;
+    while ((e = readdir(d)) != nullptr) if (e->d_name[0] != '.') ++n;
+    closedir(d);
+    return n;
+  }
+  void setDir(const std::string & d) { dir = d; top = 0; sel = -1; count = countAll(); repaint(); }
+  void scroll(int by) { int t = imax(0, imin(count - rows(), top + by)); if (t != top) { top = t; repaint(); } }
+
+  void processEvent(uiEvent * e) override {
+    uiControl::processEvent(e);
+    switch (e->id) {
+      case UIEVT_PAINT: {
+        Rect cr = clientRect(uiOrigin::Window);
+        beginPaint(e, cr);
+        auto cv = canvas();
+        cv->setBrushColor(T.win);
+        cv->fillRectangle(cr);
+        // walk the folder once for the visible rows
+        int skip = top, row = 0, idx = 0;
+        auto drawRow = [&](const char * nm, bool isDir) {
+          int y = cr.Y1 + row * RH;
+          bool s = idx == sel;
+          cv->setBrushColor(s ? T.accent : T.win);
+          if (s) cv->fillRectangle(cr.X1, y, cr.X2, y + RH - 1);
+          cv->setPenColor(s ? T.accentText : T.text);
+          char b[80];
+          snprintf(b, sizeof(b), isDir ? "[%s]" : "%s", nm);
+          cv->drawText(&FONT_std_14, cr.X1 + 6, y + 2, b);
+          ++row;
+        };
+        if (hasUp()) { if (skip > 0) --skip; else drawRow("..", true); ++idx; }
+        DIR * d = opendir(dir.c_str());
+        if (d) {
+          struct dirent * en;
+          while (row < rows() && (en = readdir(d)) != nullptr) {
+            if (en->d_name[0] == '.') continue;
+            if (skip > 0) { --skip; ++idx; continue; }
+            drawRow(en->d_name, en->d_type == DT_DIR);
+            ++idx;
+          }
+          closedir(d);
+        }
+        if (count == 0 || (count == 1 && hasUp() && row <= 1)) {
+          cv->setPenColor(T.shadow); cv->setBrushColor(T.win);
+          cv->drawText(&FONT_std_12, cr.X1 + 6, cr.Y1 + row * RH + 4, "(no files here)");
+        }
+        break;
+      }
+      case UIEVT_MOUSEBUTTONDOWN:
+      case UIEVT_DBLCLICK: {
+        app()->setFocusedWindow(this);
+        Rect cr = clientRect(uiOrigin::Window);
+        int i = top + (e->params.mouse.status.Y - cr.Y1) / RH;
+        std::string nm; bool isDir = false;
+        if (i < count && entry(i, nm, isDir)) {
+          if (e->id == UIEVT_DBLCLICK && (isDir || i != sel)) break;   // folders open on the first click
+          sel = i; repaint();
+          if (onPick) onPick(nm, isDir, e->id == UIEVT_DBLCLICK);
+        }
+        break;
+      }
+      case UIEVT_MOUSEWHEEL:
+        scroll(-e->params.mouse.status.wheelDelta * 3);
+        break;
+      case UIEVT_KEYDOWN: {
+        int vk = e->params.key.VK;
+        int ns = sel;
+        if (vk == VK_DOWN) ns = imin(count - 1, sel + 1);
+        else if (vk == VK_UP) ns = imax(0, sel - 1);
+        else if (vk == VK_PAGEDOWN) ns = imin(count - 1, sel + rows());
+        else if (vk == VK_PAGEUP) ns = imax(0, sel - rows());
+        else if (vk == VK_RETURN && sel >= 0) { std::string nm; bool isDir; if (entry(sel, nm, isDir) && onPick) onPick(nm, isDir, true); break; }
+        else break;
+        if (ns != sel && ns >= 0) {
+          sel = ns;
+          if (sel < top) top = sel;
+          if (sel >= top + rows()) top = sel - rows() + 1;
+          repaint();
+          std::string nm; bool isDir;
+          if (entry(sel, nm, isDir) && !isDir && onPick) onPick(nm, false, false);
+        }
+        break;
+      }
+      default: break;
+    }
+  }
+};
+
+// returns full path or "" when cancelled
 static std::string askFile(const char * title, const char * okText, const char * defName, const std::string & startDir)
 {
-  char dir[128], name[64];
-  strlcpy(dir, startDir.c_str(), sizeof(dir));
-  strlcpy(name, defName ? defName : "", sizeof(name));
-  if (ramFree() < 26000) {
-    // the file list needs memory TidyOS doesn't have right now: just ask for a name
-    // (saves into the same folder) instead of risking a lock-up
-    if (gApp->inputBox(title, "Low memory - file name:", name, sizeof(name), okText, "Cancel") != uiMessageBoxResult::Button1)
-      return "";
-  } else if (gApp->fileDialog(title, dir, sizeof(dir), name, sizeof(name), okText, "Cancel", 300, 300) != uiMessageBoxResult::ButtonOK)
-    return "";
-  if (!name[0]) return "";
-  return joinPath(dir, name);
+  const int W = 400, H = 336;
+  auto f = new uiFrame(gApp->rootWindow(), title, Point((SCREEN_W - W) / 2, (SCREEN_H - 22 - H) / 2), Size(W, H), false);
+  applyStyle(f);
+  f->frameProps().resizeable = false;
+  f->frameProps().hasMaximizeButton = false;
+  f->frameProps().hasMinimizeButton = false;
+  Point o = clientOrigin(f);
+  int x = o.X + 8, y = o.Y + 6;
+  auto where = S(new uiLabel(f, "", Point(x, y), Size(W - 24, 16)));
+  where->labelStyle().textFont = &FONT_std_12;
+  auto list = new FileList(f, Point(x, y + 20), Size(W - 60, FileList::RH * 10 + 2));
+  auto up = S(new uiButton(f, "Up", Point(x + W - 54, y + 20), Size(36, 26)));
+  auto dn = S(new uiButton(f, "Dn", Point(x + W - 54, y + 20 + FileList::RH * 10 - 24), Size(36, 26)));
+  y += 20 + FileList::RH * 10 + 10;
+  S(new uiLabel(f, "Name:", Point(x, y + 4), Size(48, 18)));
+  auto name = S(new uiTextEdit(f, defName ? defName : "", Point(x + 52, y), Size(W - 76, 24)));
+  y += 34;
+  auto ok = S(new uiButton(f, okText, Point(x + W - 196, y), Size(84, 26)));
+  auto cancel = S(new uiButton(f, "Cancel", Point(x + W - 104, y), Size(84, 26)));
+  auto showDir = [&]() { char b[96]; snprintf(b, sizeof(b), "Folder: %s", list->dir.c_str()); where->setText(b); where->repaint(); };
+  list->onPick = [&](const std::string & nm, bool isDir, bool twice) {
+    if (isDir) {
+      std::string d = list->dir;
+      if (nm == "..") { size_t p = d.rfind('/'); d = p > 0 ? d.substr(0, p) : d; }
+      else d = joinPath(d.c_str(), nm.c_str());
+      list->setDir(d);
+      showDir();
+      return;
+    }
+    name->setText(nm.c_str()); name->repaint();
+    if (twice) f->exitModal(1);
+  };
+  up->onClick = [&]() { list->scroll(-8); };
+  dn->onClick = [&]() { list->scroll(8); };
+  ok->onClick = [&]() { f->exitModal(1); };
+  cancel->onClick = [&]() { f->exitModal(0); };
+  f->onKeyUp = [&](uiKeyEventInfo const & k) {
+    if (k.VK == VK_ESCAPE) f->exitModal(0);
+    else if ((k.VK == VK_RETURN || k.VK == VK_KP_ENTER) && gApp->focusedWindow() == name) f->exitModal(1);
+  };
+  std::string d = startDir.empty() ? documentsDir() : startDir;
+  DIR * test = opendir(d.c_str());
+  if (test) closedir(test); else d = documentsDir();
+  list->dir = d;
+  list->count = list->countAll();
+  showDir();
+  gApp->setFocusedWindow(name);
+  int r = gApp->showModalWindow(f);
+  std::string nm = name->text() ? name->text() : "";
+  std::string dir = list->dir;
+  gApp->destroyWindow(f);
+  while (!nm.empty() && nm.back() == ' ') nm.pop_back();
+  if (r != 1 || nm.empty()) return "";
+  if (nm[0] == '/') return nm;
+  return joinPath(dir.c_str(), nm.c_str());
 }
 
 static std::string dirOf(const std::string & path)
@@ -1093,12 +1262,16 @@ void openBrowser(const char * url)
 
 // ====================================================================== Files
 
+void openDoodleFile(const char * path);     // doodle_app.h
+
 class FilesApp : public AppFrame {
 public:
   static AppFrame * inst;
-  uiFileBrowser * fb;
+  FileList * fl;
   uiLabel * info;
   uiButton * shareBtn;
+  std::string selName;
+  bool selDir = false;
 
   void updateShare() {
     shareBtn->setText(fileServerOn() ? "Wi-Fi sharing: ON" : "Wi-Fi sharing: off");
@@ -1109,12 +1282,16 @@ public:
   }
 
   FilesApp() : AppFrame("Files", nextPos(470, 360), Size(470, 360), &inst) {
-    fb = S(new uiFileBrowser(this, Point(cx, cy), Size(320, 300)));
-    fb->setDirectory(gSDMounted ? SD_MOUNT : FLASH_MOUNT);
-    fb->onDblClick = [this]() { if (!fb->isDirectory()) openSel(); };
-    fb->onChange = [this]() { updateInfo(); };
+    fl = new FileList(this, Point(cx, cy), Size(320, FileList::RH * 16 + 2));
+    fl->onPick = [this](const std::string & nm, bool isDir, bool twice) {
+      if (isDir) { goInto(nm); return; }
+      selName = nm; selDir = false;
+      updateInfo();
+      if (twice) openSel();
+    };
+    fl->setDir(gSDMounted ? SD_MOUNT : FLASH_MOUNT);
     int bx = cx + 328;
-    button("Open",       bx, cy,       122)->onClick = [this]() { if (fb->isDirectory()) { fb->changeDirectory(fb->filename()); updateInfo(); } else openSel(); };
+    button("Open",       bx, cy,       122)->onClick = [this]() { openSel(); };
     button("New folder", bx, cy + 28,  122)->onClick = [this]() { newFolder(); };
     button("Rename",     bx, cy + 56,  122)->onClick = [this]() { rename(); };
     button("Delete",     bx, cy + 84,  122)->onClick = [this]() { del(); };
@@ -1122,61 +1299,78 @@ public:
     button("New sheet",  bx, cy + 152, 122)->onClick = []() { openTidy(nullptr); };
     shareBtn = button("", bx, cy + 192, 122, 40);
     shareBtn->onClick = [this]() { fileServerSet(!fileServerOn()); updateShare(); };
-    updateShare();
+    button("Scroll up",  bx, cy + 240, 122)->onClick = [this]() { fl->scroll(-10); };
+    button("Scroll down", bx, cy + 268, 122)->onClick = [this]() { fl->scroll(10); };
     info = label("", cx, cy + 306, 440, 18);
     info->labelStyle().textFont = &FONT_std_12;
+    updateShare();
+  }
+
+  void goInto(const std::string & nm) {
+    std::string d = fl->dir;
+    if (nm == "..") { size_t p = d.rfind('/'); if (p > 0) d = d.substr(0, p); }
+    else d = joinPath(d.c_str(), nm.c_str());
+    fl->setDir(d);
+    selName.clear();
     updateInfo();
   }
 
-  std::string selPath() { return joinPath(fb->directory(), fb->filename()); }
+  std::string selPath() { return joinPath(fl->dir.c_str(), selName.c_str()); }
 
   void openSel() {
-    if (!fb->filename() || !*fb->filename()) return;
+    if (selName.empty()) { info->setText("Click a file first, then Open (or double-click it)."); info->repaint(); return; }
     std::string p = selPath();
     const char * e = fileExt(p.c_str());
     if (!strcmp(e, "csv") || !strcmp(e, "tsv")) openTidy(p.c_str());
+    else if (!strcmp(e, "bmp")) openDoodleFile(p.c_str());
     else openNeat(p.c_str());
   }
 
   void newFolder() {
     char n[32] = "";
     if (gApp->inputBox("New folder", "Name", n, sizeof(n) - 1, "Create", "Cancel") == uiMessageBoxResult::Button1 && n[0]) {
-      fb->content().makeDirectory(n);
-      fb->update();
+      mkdir(joinPath(fl->dir.c_str(), n).c_str(), 0775);
+      fl->setDir(fl->dir);
     }
   }
 
   void rename() {
-    if (!fb->filename()) return;
+    if (selName.empty()) return;
     char n[48];
-    strlcpy(n, fb->filename(), sizeof(n));
+    strlcpy(n, selName.c_str(), sizeof(n));
     if (gApp->inputBox("Rename", "New name", n, sizeof(n) - 1, "Rename", "Cancel") == uiMessageBoxResult::Button1 && n[0]) {
-      fb->content().rename(fb->filename(), n);
-      fb->update();
+      ::rename(selPath().c_str(), joinPath(fl->dir.c_str(), n).c_str());
+      selName = n;
+      fl->setDir(fl->dir);
+      updateInfo();
     }
   }
 
   void del() {
-    if (!fb->filename() || !strcmp(fb->filename(), "..")) return;
-    std::string q = std::string("Delete \"") + fb->filename() + "\"?";
+    if (selName.empty()) return;
+    std::string q = std::string("Delete \"") + selName + "\"?";
     if (gApp->messageBox("Delete", q.c_str(), "Delete", "Cancel", nullptr, uiMessageBoxIcon::Warning) == uiMessageBoxResult::Button1) {
-      fb->content().remove(fb->filename());
-      fb->update();
+      if (remove(selPath().c_str()) != 0) rmdir(selPath().c_str());
+      selName.clear();
+      fl->setDir(fl->dir);
       updateInfo();
     }
   }
 
   void updateInfo() {
     int64_t total = 0, used = 0;
-    bool sd = strncmp(fb->directory(), SD_MOUNT, strlen(SD_MOUNT)) == 0;
-    char b[96];
+    bool sd = strncmp(fl->dir.c_str(), SD_MOUNT, strlen(SD_MOUNT)) == 0;
+    char b[110];
     std::string url = fileServerUrl();
-    if (!url.empty())
+    if (!selName.empty()) {
+      long sz = fileSize(selPath().c_str());
+      snprintf(b, sizeof(b), "%.50s   %ld bytes   (double-click or Open)", selName.c_str(), sz);
+    } else if (!url.empty())
       snprintf(b, sizeof(b), "Sharing on Wi-Fi: open %s in a browser", url.c_str());
     else if (FileBrowser::getFSInfo(sd ? DriveType::SDCard : DriveType::SPIFFS, 0, &total, &used))
-      snprintf(b, sizeof(b), "%s   %lld MB free of %lld MB", fb->directory(), (total - used) >> 20, total >> 20);
+      snprintf(b, sizeof(b), "%s   %lld MB free of %lld MB", fl->dir.c_str(), (total - used) >> 20, total >> 20);
     else
-      snprintf(b, sizeof(b), "%s", fb->directory());
+      snprintf(b, sizeof(b), "%s", fl->dir.c_str());
     info->setText(b);
     info->repaint();
   }

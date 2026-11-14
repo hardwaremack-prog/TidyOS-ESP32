@@ -485,11 +485,13 @@ public:
     return save();
   }
 
-  // opens 1-bit .bmp pictures (any size: cropped or padded to 480 x 320)
   void openPic() {
     if (!askSave()) return;
     std::string p = askFile("Open picture (.bmp)", "Open", "", path.empty() ? documentsDir() : dirOf(path));
-    if (p.empty()) return;
+    if (!p.empty()) loadPic(p);
+  }
+  // opens 1-bit .bmp pictures (any size: cropped or padded to 480 x 320)
+  void loadPic(const std::string & p) {
     FILE * f = fopen(p.c_str(), "rb");
     uint8_t h[BMP_HDR];
     if (!f || fread(h, 1, BMP_HDR, f) != BMP_HDR || h[0] != 'B' || h[1] != 'M' || h[28] != 1) {
@@ -546,4 +548,11 @@ void openDoodle()
     new DoodleApp();
   }
   DoodleApp::inst->open();
+}
+
+void openDoodleFile(const char * path)
+{
+  openDoodle();
+  auto d = (DoodleApp *)DoodleApp::inst;
+  if (d && d->askSave()) d->loadPic(path);
 }
