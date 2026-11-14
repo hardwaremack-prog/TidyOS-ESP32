@@ -730,20 +730,76 @@ static void splashLogo()
   cv.waitCompletion();
 }
 
-static void splash(const char * msg, int percent)
+// The progress bar keeps creeping forward on its own while a step works (joining Wi-Fi,
+// connecting to GitHub...), so it never looks stuck; each splash() sets the real value.
+static SemaphoreHandle_t s_barMux = nullptr;
+static volatile int  s_barShown = 0, s_barCeil = 0;
+static volatile bool s_barRun = false, s_barAlive = false;
+
+static void drawBar(Canvas & cv, int percent)
 {
-  Canvas cv(s_dc);
-  cv.setBrushColor(T.desk);
-  cv.fillRectangle(0, BAR_Y + 20, SCREEN_W - 1, BAR_Y + 40);
   cv.setBrushColor(T.desk);
   cv.fillRectangle(BAR_X, BAR_Y, BAR_X + BAR_W - 1, BAR_Y + BAR_H - 1);
   cv.setBrushColor(T.win);
+  if (percent < 0) percent = 0;
+  if (percent > 100) percent = 100;
   int w = BAR_W * percent / 100;
   if (w > 0) cv.fillRectangle(BAR_X, BAR_Y, BAR_X + w - 1, BAR_Y + BAR_H - 1);
+}
+
+static void barTask(void *)
+{
+  while (s_barRun) {
+    vTaskDelay(pdMS_TO_TICKS(300));
+    if (xSemaphoreTake(s_barMux, pdMS_TO_TICKS(100)) != pdTRUE) continue;
+    if (s_barRun && s_barShown < s_barCeil) {
+      s_barShown = s_barShown + 1;
+      Canvas cv(s_dc);
+      drawBar(cv, s_barShown);
+      cv.waitCompletion();
+    }
+    xSemaphoreGive(s_barMux);
+  }
+  s_barAlive = false;
+  vTaskDelete(nullptr);
+}
+
+static void barStart()
+{
+  if (!s_barMux) s_barMux = xSemaphoreCreateMutex();
+  if (s_barAlive) return;
+  s_barRun = s_barAlive = true;
+  xTaskCreatePinnedToCore(barTask, "bar", 2048, nullptr, 1, nullptr, 1);
+}
+
+static void barStop()
+{
+  s_barRun = false;
+  for (int i = 0; i < 20 && s_barAlive; ++i) delay(20);
+}
+
+// percent > 0: the bar moves up to it (never back) and then creeps on; 0 = stop creeping
+static void splash(const char * msg, int percent)
+{
+  if (s_barMux) xSemaphoreTake(s_barMux, portMAX_DELAY);
+  Canvas cv(s_dc);
+  cv.setBrushColor(T.desk);
+  cv.fillRectangle(0, BAR_Y + 20, SCREEN_W - 1, BAR_Y + 40);
+  int shown = s_barShown;
+  if (percent > 0) {
+    if (percent > 100) percent = 100;
+    if (percent > shown) shown = percent;
+    s_barShown = shown;
+    s_barCeil  = percent >= 100 ? 100 : (shown + 15 > 97 ? 97 : shown + 15);
+  } else {
+    s_barCeil = shown;
+  }
+  drawBar(cv, shown);
   int tw = cv.textExtent(&FONT_std_14, msg);
   cv.setPenColor(T.deskText);
   cv.drawText(&FONT_std_14, BAR_X + BAR_W / 2 - tw / 2, BAR_Y + 22, msg);
   cv.waitCompletion();
+  if (s_barMux) xSemaphoreGive(s_barMux);
 }
 
 RGB888 themePal(int i) { return PAL[i & 15]; }
@@ -790,6 +846,7 @@ void setup()
     screenBegin();
 #endif
     splashLogo();
+    barStart();
     updateRun(splash);
   }
   inputBegin();     // Bluetooth first: it needs a big block of RAM
@@ -809,6 +866,7 @@ void setup()
   Serial.printf("[TidyOS] SD card %s\n", gSDMounted ? "mounted" : gSet.sdOn ? "not found - using internal flash" : "off (SD Card icon turns it on) - using internal flash");
 
   splashLogo();
+  barStart();
   splash(gSDMounted ? "SD card found" : gSet.sdOn ? "No SD card - preparing internal storage..." : "Preparing internal storage...", 30);
 
   if (!gSDMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 4);
@@ -836,6 +894,7 @@ void setup()
   delay(400);
   splash("Ready", 100);
   delay(500);
+  barStop();
   ledReady();       // blue LED: breathing
 }
 

@@ -18,7 +18,11 @@
 #include "config.h"
 #include "core.h"
 #include "update.h"
-#include "update_roots.h"
+// ESP-IDF's certificate bundle (the common root certificates browsers trust), built into
+// the Arduino core's mbedTLS library.
+extern const uint8_t x509_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
+
+static char s_lastErr[100] = "";
 
 #define UPD_HOST "hardwaremack-prog.github.io"
 #define UPD_BASE "/TidyOS-ESP32/"
@@ -60,9 +64,19 @@ bool updateModeRequested()
 static int httpsGet(std::string host, std::string path, const std::function<bool(const uint8_t *, size_t, size_t)> & sink, int redirects = 3)
 {
   WiFiClientSecure c;
-  c.setCACert(UPDATE_ROOTS);
+  c.setCACertBundle(x509_crt_bundle_start);
   c.setTimeout(20);
-  if (!c.connect(host.c_str(), 443)) { Serial.printf("[update] can't connect to %s\n", host.c_str()); return -1; }
+  if (!c.connect(host.c_str(), 443)) {
+    char e[80] = "";
+    int code = c.lastError(e, sizeof(e));
+    if (!e[0]) {
+      IPAddress ip;
+      snprintf(e, sizeof(e), WiFi.hostByName(host.c_str(), ip) ? "no answer from %s" : "can't look up %s", host.c_str());
+    }
+    snprintf(s_lastErr, sizeof(s_lastErr), "%s", e);
+    Serial.printf("[update] can't connect to %s: %s (%d), free RAM %u\n", host.c_str(), e, code, (unsigned)ramFree());
+    return -1;
+  }
   std::string req = "GET " + path + " HTTP/1.0\r\nHost: " + host + "\r\nUser-Agent: TidyOS/" TIDYOS_VERSION "\r\nConnection: close\r\n\r\n";
   c.write((const uint8_t *)req.data(), req.size());
   int code = -1;
@@ -172,7 +186,11 @@ void updateRun(void (*status)(const char * msg, int percent))
     js.append((const char *)d, n);
     return true;
   });
-  if (code != 200) { snprintf(b, sizeof(b), "Couldn't reach GitHub (%d) - try later", code); finish(status, b, 0, 6000); }
+  if (code != 200) {
+    if (code == -1 && s_lastErr[0]) snprintf(b, sizeof(b), "Couldn't reach GitHub: %.50s", s_lastErr);
+    else snprintf(b, sizeof(b), "Couldn't reach GitHub (%d) - try later", code);
+    finish(status, b, 0, 9000);
+  }
   size_t sec = js.find("\"tidyos\"");
   std::string ver = field(js, "version", sec == std::string::npos ? 0 : sec);
   std::string app = field(js, "app", sec == std::string::npos ? 0 : sec);
