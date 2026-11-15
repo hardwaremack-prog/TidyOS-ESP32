@@ -819,7 +819,9 @@ public:
         cv->setBrushColor(br[rr][c] == 2 ? T.shadow : (rr % 2 ? T.accent : T.face));
         cv->fillRectangle(x + 1, y + 1, x + BW - 2, y + BH - 2);
         cv->setPenColor(T.win);
-        cv->drawLine(x + 1, y + 1, x + BW - 3, y + 1);
+        cv->drawLine(x + 2, y + 2, x + BW - 4, y + 2);
+        cv->setPenColor(T.text);                      // outline: in black and white the face colour is the same white as the board
+        cv->drawRectangle(x + 1, y + 1, x + BW - 2, y + BH - 2);
       }
     Rect p = padR();
     if (hits(clip, p.X1, p.Y1, p.X2, p.Y2)) {
