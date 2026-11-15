@@ -53,7 +53,8 @@ public:
     for (auto & f : found) { list->items().append(f.first.c_str()); paths.push_back(f.second); }
     list->repaint();
     char b[96];
-    snprintf(b, sizeof(b), found.empty() ? "Nothing here yet: copy some into SD:/%s" : "%d in SD:/%s. Pick one and press Play.", (int)found.size(), folder.c_str());
+    if (found.empty()) snprintf(b, sizeof(b), "Nothing here yet: copy some into SD:/%s", folder.c_str());
+    else snprintf(b, sizeof(b), "%d in SD:/%s. Pick one and press Play.", (int)found.size(), folder.c_str());
     say(b);
   }
   void play() {

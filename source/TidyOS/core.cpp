@@ -1320,7 +1320,8 @@ static void checkUpdateNote()
     if (l.find("installed") != std::string::npos) s_bootNote = "TidyOS was updated to " TIDYOS_VERSION ".";
     else s_bootNote = "The update wasn't installed: " + l.substr(0, 70);
   } else if (fileSize(SD_MOUNT "/tidyos/update.bin") > 0) {
-    s_bootNote = "An update was downloaded but the installer didn't run. Try again.";
+    if (s_bootNote.empty())               // (the installer's own note from flash, if any, says more - keep that)
+      s_bootNote = "An update was downloaded but the installer didn't run. Try again.";
     remove(SD_MOUNT "/tidyos/update.bin");
   }
 }
