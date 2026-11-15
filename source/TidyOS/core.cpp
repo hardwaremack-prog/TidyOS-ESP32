@@ -1095,6 +1095,24 @@ static void splash(const char * msg, int percent)
   int tw = cv.textExtent(&FONT_std_14, msg);
   cv.setPenColor(T.deskText);
   cv.drawText(&FONT_std_14, BAR_X + BAR_W / 2 - tw / 2, BAR_Y + 22, msg);
+  // the checklist: every step so far, ticked once the next one starts
+  static char steps[8][48];
+  static int nSteps = 0;
+  if (strcmp(msg, "Ready") != 0 && (nSteps == 0 || strcmp(steps[(nSteps - 1) % 8], msg) != 0) && nSteps < 8)
+    strlcpy(steps[nSteps++], msg, sizeof(steps[0]));
+  bool allDone = percent >= 100;
+  cv.setBrushColor(T.desk);
+  cv.fillRectangle(0, BAR_Y + 44, SCREEN_W - 1, SCREEN_H - 1);
+  for (int i = 0; i < nSteps; ++i) {
+    int x = i < 4 ? 90 : 340, y = BAR_Y + 46 + (i % 4) * 15;
+    bool done = allDone || i < nSteps - 1;
+    cv.setPenColor(T.deskText);
+    if (done) { cv.drawLine(x, y + 6, x + 3, y + 9); cv.drawLine(x + 3, y + 9, x + 9, y + 2); cv.drawLine(x + 1, y + 6, x + 4, y + 9); }
+    else cv.drawText(&FONT_std_12, x, y, "...");
+    char t[48]; strlcpy(t, steps[i], sizeof(t));
+    while (strlen(t) > 4 && cv.textExtent(&FONT_std_12, t) > 230) t[strlen(t) - 1] = 0;
+    cv.drawText(&FONT_std_12, x + 16, y, t);
+  }
   cv.waitCompletion();
   if (s_barMux) xSemaphoreGive(s_barMux);
 }
@@ -1324,10 +1342,17 @@ static void checkUpdateNote()
     if (l.find("installed") != std::string::npos) s_bootNote = "TidyOS was updated to " TIDYOS_VERSION ".";
     else s_bootNote = "The update wasn't installed: " + l.substr(0, 70);
   } else if (fileSize(SD_MOUNT "/tidyos/update.bin") > 0) {
-    if (s_bootNote.empty())               // (the installer's own note from flash, if any, says more - keep that)
+    std::string ver;
+    readFileStr(SD_MOUNT "/tidyos/update.ver", ver, 40);
+    while (!ver.empty() && (ver.back() == '\n' || ver.back() == ' ')) ver.pop_back();
+    auto vnum = [](const std::string & v) { int a = 0, b = 0, c = 0; sscanf(v.c_str(), "%d.%d.%d", &a, &b, &c); return a * 1000000 + b * 1000 + c; };
+    if (ver == TIDYOS_VERSION) s_bootNote = "TidyOS was updated to " TIDYOS_VERSION ".";   // it went in; the installer just couldn't tidy up
+    else if (!ver.empty() && vnum(TIDYOS_VERSION) >= vnum(ver)) { }       // already as new or newer (e.g. from the web flasher): just tidy up
+    else if (s_bootNote.empty())          // (the installer's own note from flash, if any, says more - keep that)
       s_bootNote = "An update was downloaded but the installer didn't run. Try again.";
     remove(SD_MOUNT "/tidyos/update.bin");
   }
+  remove(SD_MOUNT "/tidyos/update.ver");
 }
 
 void setup()
@@ -1397,6 +1422,7 @@ void setup()
 #endif
   memLog("Shelf + mesh");
   if (gSet.fileShare) fileServerSet(true);
+  splash("Starting the web screen", 80);
   screenBegin();    // HTML5 edition: the desktop in a web browser
   memLog("web screen");
 #ifdef TIDYOS_HTML5

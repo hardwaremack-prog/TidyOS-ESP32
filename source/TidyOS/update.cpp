@@ -368,6 +368,8 @@ void updateRun(void (*status)(const char * msg, int percent))
   }
   f = fopen(SD_MOUNT "/tidyos/update.sha", "w");
   if (f) { fputs(sha.c_str(), f); fclose(f); }
+  f = fopen(SD_MOUNT "/tidyos/update.ver", "w");      // which version this is: at the next start TidyOS can tell if it went in
+  if (f) { fputs(ver.c_str(), f); fclose(f); }
 
   // hand over to the loader
   const esp_partition_t * loader = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, nullptr);
