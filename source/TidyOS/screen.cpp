@@ -183,7 +183,7 @@ function weather(){if(!ws||ws.readyState!=1||Date.now()-wxAt<25*60000)return;wxA
   return fetch('https://api.open-meteo.com/v1/forecast?latitude='+g.lat+'&longitude='+g.lon+'&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&hourly=temperature_2m&past_days=4&temperature_unit=fahrenheit&timezone=auto&forecast_days=1')
    .then(function(r){return r.json();}).then(function(w){
     try{var h=w.hourly,now=Date.now(),pts=[];for(var i=0;i<h.time.length;i++){if(new Date(h.time[i]).getTime()>now)break;pts.push(h.temperature_2m[i]);}
-     pts=pts.slice(-96);var s=[];for(var i=0;i<pts.length;i+=3)if(pts[i]!=null)s.push(Math.round(pts[i]));
+     pts=pts.slice(-97);var s=[];for(var i=pts.length-1;i>=0;i-=3)s.unshift(pts[i]==null?0:Math.round(pts[i]));   // every 3 h, newest (this hour) last
      send([17].concat(Array.from(new TextEncoder().encode(s.join(',')))));}catch(e){}
     wxSend(Math.round(w.current.temperature_2m)+'|'+w.current.weather_code+'|'+Math.round(w.daily.temperature_2m_max[0])+'|'+Math.round(w.daily.temperature_2m_min[0])+'|'+(+g.lat).toFixed(2)+'|'+(+g.lon).toFixed(2)+'|'+(g.city||'').replace(/[^\x20-\x7e]/g,'').slice(0,24));})
    .catch(function(){wxSend('E|weather service unreachable|'+(+g.lat).toFixed(2)+'|'+(+g.lon).toFixed(2));throw 1;});})

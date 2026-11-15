@@ -226,8 +226,32 @@ static void drawTempGraph(Canvas * cv, int gx, int gy, int gw, int gh)
   cv->setPenColor(T.shadow);
   cv->drawRectangle(gx, gy, gx + gw, gy + gh);
   auto Y = [&](int v) { return gy + gh - 2 - (v - lo) * (gh - 4) / (hi - lo); };
-  // day dividers
-  for (int d = 1; d < 4; ++d) { int x = gx + d * gw / 4; for (int k = gy + 2; k < gy + gh; k += 4) cv->setPixel(x, k); }
+  // midnight lines, and each day's letter underneath (points are 3 hours apart, the last one is this hour)
+  time_t now = time(nullptr);
+  time_t tLast = now - now % 3600, t0 = tLast - (time_t)(s_tempsN - 1) * 3 * 3600;
+  auto X = [&](time_t t) { return gx + 1 + (int)((t - t0) * (gw - 2) / (tLast - t0)); };
+  struct tm m; localtime_r(&t0, &m);
+  m.tm_hour = m.tm_min = m.tm_sec = 0; m.tm_mday += 1; m.tm_isdst = -1;
+  time_t mid = mktime(&m);
+  time_t segStart = t0;
+  static const char * DL = "SMTWTFS";
+  cv->setBrushColor(T.win);
+  while (true) {
+    time_t segEnd = mid <= tLast ? mid : tLast;
+    if (mid <= tLast) { int x = X(mid); cv->setPenColor(T.shadow); for (int k = gy + 2; k < gy + gh; k += 4) cv->setPixel(x, k); }
+    int x1 = X(segStart), x2 = X(segEnd);
+    if (x2 - x1 >= 8) {
+      time_t midT = segStart + (segEnd - segStart) / 2;
+      struct tm d; localtime_r(&midT, &d);
+      char s[2] = { DL[d.tm_wday % 7], 0 };
+      cv->setPenColor(T.text);
+      cv->drawText(&FONT_std_12, (x1 + x2) / 2 - 3, gy + gh + 1, s);
+    }
+    if (mid > tLast) break;
+    segStart = mid;
+    struct tm n; localtime_r(&mid, &n); n.tm_mday += 1; n.tm_hour = 0; n.tm_isdst = -1;
+    mid = mktime(&n);
+  }
   if (32 >= lo && 32 <= hi) {
     RGB888 red = gColors >= 8 ? themePal(6) : T.text;
     cv->setPenColor(red);
@@ -240,10 +264,6 @@ static void drawTempGraph(Canvas * cv, int gx, int gy, int gw, int gh)
   for (int i = 1; i < s_tempsN; ++i)
     cv->drawLine(gx + 1 + (i - 1) * (gw - 2) / (s_tempsN - 1), Y(s_temps[i - 1]), gx + 1 + i * (gw - 2) / (s_tempsN - 1), Y(s_temps[i]));
   cv->setPenWidth(1);
-  char b[16];
-  cv->setPenColor(T.text); cv->setBrushColor(T.win);
-  snprintf(b, sizeof(b), "4 days  %d-%d\xB0", lo, hi);
-  cv->drawText(&FONT_std_12, gx + 2, gy + gh + 1, b);
 }
 
 static void drawDeskPanel(Canvas * cv)
