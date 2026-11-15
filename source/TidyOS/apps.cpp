@@ -693,6 +693,58 @@ void openNeat(const char * path)
   else gApp->setFocusedWindow(n->rt);
 }
 
+// ====================================================================== a small right-click menu
+
+class PopMenu : public uiFrame {
+public:
+  std::function<void(int)> onPick;
+  int picked = -1;
+  bool closing = false;
+
+  PopMenu(int sx, int sy, const std::vector<std::string> & items, std::function<void(int)> pick)
+    : uiFrame(gApp->rootWindow(), "", Point(sx, sy), Size(60, 60), false), onPick(pick) {
+    applyStyle(this);
+    frameProps().hasMaximizeButton = false;
+    frameProps().hasMinimizeButton = false;
+    frameProps().hasCloseButton = false;
+    frameProps().resizeable = false;
+    frameProps().moveable = false;
+    Point o = clientOrigin(this);
+    int w = 180, y = o.Y + 3;
+    for (int i = 0; i < (int)items.size(); ++i) {
+      auto b = new uiButton(this, items[i].c_str(), Point(o.X + 3, y), Size(w, 22));
+      applyStyle(b);
+      b->onClick = [this, i]() { choose(i); };
+      y += 24;
+    }
+    int W = w + 6 + o.X * 2, H = y + 3;
+    sx = imin(sx, SCREEN_W - W); sy = imin(sy, SCREEN_H - 22 - H);
+    gApp->reshapeWindow(this, Rect(sx, sy, sx + W - 1, sy + H - 1));
+    gApp->showWindow(this, true);
+    gApp->setActiveWindow(this);
+  }
+  void choose(int i) {
+    if (closing) return;
+    closing = true; picked = i;
+    uiEvent e(this, UIEVT_CLOSE);
+    gApp->postEvent(&e);
+  }
+  void processEvent(uiEvent * e) override {
+    if (e->id == UIEVT_DEACTIVATE && !closing) {            // clicked somewhere else: just go away
+      closing = true;
+      uiEvent c(this, UIEVT_CLOSE);
+      gApp->postEvent(&c);
+    }
+    if (e->id == UIEVT_CLOSE) {
+      auto f = onPick; int i = picked;
+      gApp->destroyWindow(this);
+      if (f && i >= 0) f(i);                    // after the menu is gone (it may open a message box)
+      return;
+    }
+    uiFrame::processEvent(e);
+  }
+};
+
 // ====================================================================== Tidy Lite (spreadsheet)
 
 class SheetApp : public AppFrame {
@@ -707,25 +759,31 @@ public:
   bool        dirty = false;
 
   SheetApp() : AppFrame("Tidy Lite", Point(4, 6), Size(632, 450), &inst) {
-    button("New",     cx,       cy, 50)->onClick = [this]() { newDoc(); };
-    button("Open",    cx + 54,  cy, 50)->onClick = [this]() { openDoc(); };
-    button("Save",    cx + 108, cy, 50)->onClick = [this]() { save(); };
-    button("Save as", cx + 162, cy, 64)->onClick = [this]() { saveAs(); };
-    button("Print",   cx + 230, cy, 50)->onClick = [this]() { print(); };
-    button("Check box", cx + 290, cy, 76)->onClick = [this]() { grid->toggleChecks(); gApp->setFocusedWindow(grid); };
-    bandBtn = button("", cx + 370, cy, 112);
+    button("New",     cx,       cy, 44)->onClick = [this]() { newDoc(); };
+    button("Open",    cx + 48,  cy, 46)->onClick = [this]() { openDoc(); };
+    button("Save",    cx + 98,  cy, 44)->onClick = [this]() { save(); };
+    button("Save as", cx + 146, cy, 60)->onClick = [this]() { saveAs(); };
+    button("Print",   cx + 210, cy, 46)->onClick = [this]() { print(); };
+    nameLbl = label("Untitled", cx + 264, cy + 3, 270, 18);
+    saved = makeSavedLight(this, cx + 542, cy + 2);
+    int y2 = cy + 28;
+    button("Left",     cx,       y2, 40)->onClick = [this]() { setAlign(1); };
+    button("Center",   cx + 44,  y2, 54)->onClick = [this]() { setAlign(2); };
+    button("Right",    cx + 102, y2, 44)->onClick = [this]() { setAlign(3); };
+    button("Auto sum", cx + 152, y2, 70)->onClick = [this]() { autoSum(); };
+    button("Check box", cx + 228, y2, 76)->onClick = [this]() { grid->toggleChecks(); gApp->setFocusedWindow(grid); };
+    bandBtn = button("", cx + 310, y2, 100);
     bandBtn->onClick = [this]() { gSet.tidyBands = !gSet.tidyBands; settingsSave(); applyView(); };
-    freezeBtn = button("", cx + 486, cy, 126);
+    freezeBtn = button("", cx + 416, y2, 126);
     freezeBtn->onClick = [this]() { gSet.tidyFreeze = !gSet.tidyFreeze; settingsSave(); applyView(); };
-    cellLbl = label("A1:", cx, cy + 28, 396, 18);
-    nameLbl = label("Untitled", cx + 402, cy + 28, 180, 18);
-    saved = makeSavedLight(this, cx + 586, cy + 28);
+    cellLbl = label("A1:", cx, cy + 56, 612, 18);
     cellLbl->labelStyle().backgroundColor = T.face;
-    grid = new SheetGrid(this, Point(cx, cy + 50), Size(614, 340), &sheet);
-    label("Click a letter or number to pick a column or row; drag its edge to resize.  =SUM(A1:A9) AVG MIN MAX COUNT ROUND IF",
+    grid = new SheetGrid(this, Point(cx, cy + 78), Size(614, 312), &sheet);
+    label("Click a letter or number to pick a column or row; drag its edge to resize. Right-click to insert or delete.",
           cx, cy + 394, 612, 16)->labelStyle().textFont = &FONT_std_12;
     applyView();
     grid->onSelect = [this]() { updateCell(); };
+    grid->onRightClick = [this](int sx, int sy) { rightMenu(sx, sy); };
     grid->onModified = [this]() { if (!dirty) { dirty = true; setSavedLight(saved, false); } };
     grid->onKey = [this](uiKeyEventInfo const & k) {
       if (!k.CTRL) return false;
@@ -782,6 +840,119 @@ public:
     gApp->setFocusedWindow(grid);
   }
 
+  void markDirty() { if (!dirty) { dirty = true; setSavedLight(saved, false); } }
+
+  // picked cells only (a whole row / column stops at the filled part of the sheet)
+  void pickedBounds(int & R1, int & R2, int & C1, int & C2) {
+    int lastR = 0, lastC = 0;
+    for (auto & kv : sheet.cells) { lastR = imax(lastR, kv.first / Sheet::COLS); lastC = imax(lastC, kv.first % Sheet::COLS); }
+    R1 = grid->r1(); R2 = grid->r2(); C1 = grid->c1(); C2 = grid->c2();
+    if (grid->allRows()) R2 = imax(R1, lastR);
+    if (grid->allCols()) C2 = imax(C1, lastC);
+  }
+
+  void setAlign(int a) {
+    grid->commit();
+    int R1, R2, C1, C2;
+    pickedBounds(R1, R2, C1, C2);
+    if (grid->allRows()) {                              // whole columns: one setting per column (new rows get it too)
+      for (int c = grid->c1(); c <= grid->c2(); ++c) {
+        sheet.colAlign[c] = a;
+        for (auto it = sheet.align.begin(); it != sheet.align.end(); ) { if (it->first % Sheet::COLS == c) it = sheet.align.erase(it); else ++it; }
+      }
+    } else {
+      if (grid->allCols()) C2 = Sheet::COLS - 1;
+      for (int r = R1; r <= R2; ++r)
+        for (int c = C1; c <= C2; ++c) sheet.align[Sheet::key(r, c)] = a;
+    }
+    markDirty();
+    grid->repaint();
+    gApp->setFocusedWindow(grid);
+  }
+
+  // Auto sum: a picked range gets totals under each column (or right of a single row);
+  // one cell gets the sum of the numbers right above it (or to its left)
+  void autoSum() {
+    grid->commit();
+    auto isNum = [this](int r, int c) { bool n = false; std::string v = sheet.display(r, c, n); return n && !v.empty(); };
+    int R1, R2, C1, C2;
+    pickedBounds(R1, R2, C1, C2);
+    char f[40];
+    int putR = -1, putC = -1;
+    if (!grid->isRange()) {
+      int r = grid->selR, c = grid->selC, top = r, left = c;
+      while (top > 0 && isNum(top - 1, c)) --top;
+      while (left > 0 && isNum(r, left - 1)) --left;
+      if (top < r) snprintf(f, sizeof(f), "=SUM(%s:%s)", Sheet::cellName(top, c).c_str(), Sheet::cellName(r - 1, c).c_str());
+      else if (left < c) snprintf(f, sizeof(f), "=SUM(%s:%s)", Sheet::cellName(r, left).c_str(), Sheet::cellName(r, c - 1).c_str());
+      else { cellLbl->setText("Auto sum: no numbers above or to the left of this cell."); cellLbl->repaint(); return; }
+      sheet.set(r, c, f);
+      putR = r; putC = c;
+    } else if (R2 > R1) {                                  // totals under each column
+      if (R2 + 1 >= Sheet::ROWS) return;
+      for (int c = C1; c <= C2; ++c) {
+        snprintf(f, sizeof(f), "=SUM(%s:%s)", Sheet::cellName(R1, c).c_str(), Sheet::cellName(R2, c).c_str());
+        sheet.set(R2 + 1, c, f);
+      }
+      putR = R2 + 1; putC = C1;
+    } else {                                               // one row: total on the right
+      if (C2 + 1 >= Sheet::COLS) return;
+      snprintf(f, sizeof(f), "=SUM(%s:%s)", Sheet::cellName(R1, C1).c_str(), Sheet::cellName(R1, C2).c_str());
+      sheet.set(R1, C2 + 1, f);
+      putR = R1; putC = C2 + 1;
+    }
+    grid->selR = putR; grid->selC = putC; grid->collapse();
+    markDirty();
+    grid->repaint();
+    updateCell();
+    gApp->setFocusedWindow(grid);
+  }
+
+  // right-click: insert / delete the picked rows or columns
+  void rightMenu(int sx, int sy) {
+    bool cols = grid->allRows() && !grid->allCols(), rows = grid->allCols() && !grid->allRows();
+    int nr = rows ? grid->r2() - grid->r1() + 1 : 1, nc = cols ? grid->c2() - grid->c1() + 1 : 1;
+    int r0 = rows ? grid->r1() : grid->selR, c0 = cols ? grid->c1() : grid->selC;
+    char a[40], b[40], c[40], d[40];
+    snprintf(a, sizeof(a), nr > 1 ? "Insert %d rows above" : "Insert row above", nr);
+    snprintf(b, sizeof(b), nr > 1 ? "Delete %d rows" : "Delete row", nr);
+    snprintf(c, sizeof(c), nc > 1 ? "Insert %d columns left" : "Insert column left", nc);
+    snprintf(d, sizeof(d), nc > 1 ? "Delete %d columns" : "Delete column", nc);
+    std::vector<std::string> items;
+    std::vector<int> ids;
+    if (!cols) { items.push_back(a); ids.push_back(0); items.push_back(b); ids.push_back(1); }
+    if (!rows) { items.push_back(c); ids.push_back(2); items.push_back(d); ids.push_back(3); }
+    items.push_back("Clear");     ids.push_back(4);
+    items.push_back("Check box"); ids.push_back(5);
+    new PopMenu(sx, sy, items, [this, ids, nr, nc, r0, c0](int i) { doMenu(ids[i], nr, nc, r0, c0); });
+  }
+
+  void doMenu(int id, int nr, int nc, int r0, int c0) {
+    if (id == 4) {                                   // clear the picked cells
+      bool any = false;
+      for (int r = grid->r1(); r <= grid->r2(); ++r)
+        for (int c = grid->c1(); c <= grid->c2(); ++c)
+          if (!sheet.raw(r, c).empty()) { sheet.set(r, c, ""); any = true; }
+      if (any && !dirty) { dirty = true; setSavedLight(saved, false); }
+      grid->repaint(); updateCell(); gApp->setFocusedWindow(grid);
+      return;
+    }
+    if (id == 5) { grid->toggleChecks(); gApp->setFocusedWindow(grid); return; }
+    bool rows = id < 2, ins = id == 0 || id == 2;
+    int n = rows ? nr : nc, at = rows ? r0 : c0;
+    if (ins && sheet.wouldDrop(rows, n) &&
+        gApp->messageBox("Tidy", rows ? "The bottom rows have data that would be pushed off the sheet. Insert anyway?"
+                                      : "The last columns have data that would be pushed off the sheet. Insert anyway?",
+                         "Insert", "Cancel", nullptr, uiMessageBoxIcon::Warning) != uiMessageBoxResult::Button1) return;
+    sheet.shift(rows, at, ins ? n : -n);
+    if (ins) { if (rows) grid->selectRows(at, at + n - 1); else grid->selectCols(at, at + n - 1); }
+    else { if (rows) grid->selR = at; else grid->selC = at; grid->collapse(); }
+    if (!dirty) { dirty = true; setSavedLight(saved, false); }
+    grid->repaint();
+    updateCell();
+    gApp->setFocusedWindow(grid);
+  }
+
   void updateCell() {
     if (grid->isRange() && !grid->editing) {                 // a range: name it, with its total and how many are filled
       double sum = 0; int filled = 0, ticks = 0, boxes = 0;
@@ -817,13 +988,16 @@ public:
       char b[8];
       o.put("w"); for (int c = 0; c < Sheet::COLS; ++c) { snprintf(b, sizeof(b), " %d", sheet.colW[c]); o.put(b); }
       o.put("\nh"); for (int r = 0; r < Sheet::ROWS; ++r) { snprintf(b, sizeof(b), " %d", sheet.rowH[r]); o.put(b); }
+      o.put("\nc"); for (int c = 0; c < Sheet::COLS; ++c) { snprintf(b, sizeof(b), " %d", sheet.colAlign[c]); o.put(b); }
+      o.put("\na");
+      for (auto & kv : sheet.align) { char t[24]; snprintf(t, sizeof(t), " %d %d", kv.first, kv.second); o.put(t); }
       o.put("\n");
     });
   }
   void loadSizes() {
     sheet.resetSizes();
     std::string t;
-    if (path.empty() || !readFileStr(sizesFile(path).c_str(), t, 2048)) return;
+    if (path.empty() || !readFileStr(sizesFile(path).c_str(), t, 32 * 1024)) return;
     const char * p = t.c_str();
     while (*p) {
       char kind = *p++;
@@ -834,6 +1008,12 @@ public:
         p = e;
         if (kind == 'w' && i < Sheet::COLS && v >= 16 && v <= 250) sheet.colW[i] = v;
         if (kind == 'h' && i < Sheet::ROWS && v >= 12 && v <= 64) sheet.rowH[i] = v;
+        if (kind == 'c' && i < Sheet::COLS && v >= 0 && v <= 3) sheet.colAlign[i] = v;
+        if (kind == 'a') {                              // pairs: cell key, alignment
+          static long k;
+          if (i % 2 == 0) k = v;
+          else if (k >= 0 && k < Sheet::ROWS * Sheet::COLS && v >= 1 && v <= 3) sheet.align[(int)k] = (uint8_t)v;
+        }
         ++i;
       }
       if (*p) ++p;

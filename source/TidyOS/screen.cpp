@@ -57,7 +57,7 @@ canvas{background:#00aaaa;touch-action:none;outline:none;cursor:default}
 #msg{position:absolute;top:36px;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:rgba(0,0,0,.65);font-size:18px;text-align:center;white-space:pre-line;padding:0 16px}
 @media(max-width:560px){#bt,#bf{display:none}}
 </style></head><body>
-<div id="bar"><b>TidyOS</b><button id="bk">Keyboard</button><button id="bt">Task Manager</button><button id="bf">Full screen</button><button id="bz">Size: fit</button><span id="st">Connecting...</span></div>
+<div id="bar"><b>TidyOS</b><button id="bk">Keyboard</button><button id="bt">Task Manager</button><button id="br">Restart</button><button id="bf">Full screen</button><button id="bz">Size: fit</button><span id="st">Connecting...</span></div>
 <div id="home"></div><div id="iv" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;z-index:9;background:#000d;align-items:center;justify-content:center;cursor:zoom-out"><img style="max-width:96vw;max-height:94vh"></div><div id="wrap"><canvas id="c" width="640" height="480" tabindex="0"></canvas></div>
 <input id="kb" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
 <div id="msg"><div id="mt">Connecting to TidyOS...</div><button id="mb" style="display:none">Use it here</button></div>
@@ -151,6 +151,7 @@ kb.addEventListener('input',function(e){
 kb.addEventListener('keydown',function(e){if(e.key=='Enter'&&e.keyCode==229)tap(40,0);});
 document.getElementById('bk').onclick=function(){kb.focus();};
 document.getElementById('bt').onclick=function(){send([4]);c.focus();};
+document.getElementById('br').onclick=function(){if(confirm('Restart TidyOS? Anything not saved will be lost.')){send([10]);}c.focus();};
 document.getElementById('bz').onclick=function(){mode=mode==0?2:mode==2?1:0;try{localStorage.tidySize=mode;}catch(x){}fit();};
 fit();
 document.getElementById('bf').onclick=function(){var d=document.documentElement;(d.requestFullscreen||d.webkitRequestFullscreen||function(){}).call(d);};
@@ -320,6 +321,7 @@ static bool pollInput(WiFiClient & c)
       case 1: if (keep >= 4) inputWebKey(p[1], p[2], p[3] != 0); break;
       case 2: if (keep >= 7) inputWebMouse(p[1] | (p[2] << 8), p[3] | (p[4] << 8), (int8_t)p[6], p[5]); break;
       case 4: gOpenTaskMgr = true; break;
+      case 10: gRestartReq = true; break;
       case 5: inputWebReleaseAll(); break;
       case 6: if (keep >= 5) netSetClockFrom(p[1] | (p[2] << 8) | (p[3] << 16) | ((uint32_t)p[4] << 24)); break;
       case 8: if (keep >= 6) { s_mState = p[1] == 255 ? -1 : p[1]; s_mPos = p[2] | (p[3] << 8); s_mDur = p[4] | (p[5] << 8); } break;

@@ -345,7 +345,8 @@ public:
   void play(const std::string & p) {
     if (WiFi.status() != WL_CONNECTED) { gApp->messageBox("Music", "Music plays over your home Wi-Fi - join it in Settings.", "OK", nullptr, nullptr, uiMessageBoxIcon::Info); return; }
     fileServerMedia(true);
-    playing = p; paused = false; lastState = -1;
+    playing = p; paused = false;
+    lastState = 2;           // ignore "ended" until the browser has started this song (its last report may be the old song's)
     char v[24]; snprintf(v, sizeof(v), "v %.2f", vol);
     screenMedia("a " + fileServerMediaPath(p));
     screenMedia(v);
@@ -420,6 +421,87 @@ void openMusic()
 #endif
   if (!MusicApp::inst) new MusicApp();
   MusicApp::inst->open();
+}
+
+// ---- music while you play a game (Sammy's Play music / Pause buttons). Uses the Music window when it's open.
+static std::string s_qPlaying;
+static bool s_qPaused = false;
+static int  s_qLast = 2;
+
+static std::string musicFolder()
+{
+  std::string d = gSDMounted ? SD_MOUNT "/Music" : "";
+  DIR * t = d.empty() ? nullptr : opendir(d.c_str());
+  if (t) { closedir(t); return d; }
+  return documentsDir();
+}
+
+static std::string songAfter(const std::string & dir, const std::string & cur)   // next song (wraps), "" if none
+{
+  std::string first, next;
+  bool seen = cur.empty();
+  DIR * dd = opendir(dir.c_str());
+  if (!dd) return "";
+  struct dirent * e;
+  while ((e = readdir(dd)) != nullptr) {
+    if (e->d_name[0] == '.' || !isMusicFile(e->d_name)) continue;
+    std::string n = e->d_name;
+    if (first.empty()) first = n;
+    if (seen && next.empty() && n != cur) next = n;
+    if (n == cur) seen = true;
+  }
+  closedir(dd);
+  std::string to = next.empty() ? first : next;
+  return to.empty() ? "" : joinPath(dir.c_str(), to.c_str());
+}
+
+static void quickPlayFile(const std::string & p)
+{
+  fileServerMedia(true);
+  s_qPlaying = p; s_qPaused = false; s_qLast = 2;
+  screenMedia("a " + fileServerMediaPath(p));
+  screenMedia("v 0.80");
+}
+
+// returns a line for the game's info bar
+std::string musicQuickPlay()
+{
+  if (MusicApp::inst) {
+    auto m = (MusicApp *)MusicApp::inst;
+    if (m->playing.empty() || m->paused) m->playPause();
+    return m->playing.empty() ? "No music files found." : "Music: " + baseName(m->playing);
+  }
+  if (WiFi.status() != WL_CONNECTED) return "Music needs your home Wi-Fi (see Settings).";
+  if (!screenViewer()) return "Music plays in the web browser.";
+  if (!s_qPlaying.empty() && s_qPaused) { screenMedia("r"); s_qPaused = false; return "Music: " + baseName(s_qPlaying); }
+  if (!s_qPlaying.empty()) return "Music: " + baseName(s_qPlaying);
+  std::string p = songAfter(musicFolder(), "");
+  if (p.empty()) return "No .mp3 files in the Music folder on the card.";
+  quickPlayFile(p);
+  return "Music: " + baseName(p);
+}
+
+void musicQuickPause()
+{
+  if (MusicApp::inst) { auto m = (MusicApp *)MusicApp::inst; if (!m->playing.empty() && !m->paused) m->playPause(); return; }
+  if (!s_qPlaying.empty() && !s_qPaused) { screenMedia("p"); s_qPaused = true; }
+}
+
+void musicQuickTick()             // once a second: on to the next song when one ends
+{
+  if (MusicApp::inst || s_qPlaying.empty() || s_qPaused) return;
+  int st, pos, dur;
+  screenMediaState(st, pos, dur);
+  if (st == 2 && s_qLast != 2) { std::string n = songAfter(dirOf(s_qPlaying), baseName(s_qPlaying)); if (!n.empty()) quickPlayFile(n); return; }
+  s_qLast = st;
+}
+
+void musicQuickStop()
+{
+  if (MusicApp::inst || s_qPlaying.empty()) return;
+  screenMedia("s");
+  s_qPlaying.clear(); s_qPaused = false;
+  fileServerMedia(false);
 }
 
 void openMusicFile(const char * file)

@@ -370,6 +370,81 @@ void Sheet::set(int r, int c, const std::string & v)
   else cells[key(r, c)] = v;
 }
 
+// formulas: move cell references after an insert / delete. A reference inside deleted rows points at the first row after them.
+static std::string shiftRefs(const std::string & f, bool rows, int at, int d)
+{
+  std::string o;
+  size_t i = 0, n = f.size();
+  while (i < n) {
+    char up = toupper((unsigned char)f[i]);
+    bool prevAlpha = i > 0 && isalpha((unsigned char)f[i - 1]);
+    if (!prevAlpha && up >= 'A' && up <= 'Z' && i + 1 < n && isdigit((unsigned char)f[i + 1])) {
+      size_t j = i + 1; int r = 0;
+      while (j < n && isdigit((unsigned char)f[j])) r = r * 10 + (f[j++] - '0');
+      if (j < n && isalpha((unsigned char)f[j])) { o.append(f, i, j - i); i = j; continue; }
+      int c = up - 'A'; r -= 1;
+      int & v = rows ? r : c;
+      int lim = rows ? Sheet::ROWS : Sheet::COLS;
+      if (v >= at) { if (d < 0 && v < at - d) v = at; else v += d; }
+      if (v < 0) v = 0;
+      if (v >= lim) v = lim - 1;
+      o += Sheet::cellName(r, c);
+      i = j;
+      continue;
+    }
+    o += f[i++];
+  }
+  return o;
+}
+
+void Sheet::shift(bool rows, int at, int d)
+{
+  std::map<int, std::string> out;
+  int lim = rows ? ROWS : COLS;
+  for (auto & kv : cells) {
+    int r = kv.first / COLS, c = kv.first % COLS;
+    int & v = rows ? r : c;
+    if (v >= at) {
+      if (d < 0 && v < at - d) continue;     // deleted
+      v += d;
+      if (v >= lim) continue;                // pushed off the end
+    }
+    std::string s = kv.second;
+    if (!s.empty() && s[0] == '=') s = shiftRefs(s, rows, at, d);
+    out[key(r, c)] = s;
+  }
+  cells.swap(out);
+  std::map<int, uint8_t> al;                 // alignment moves with its cell
+  for (auto & kv : align) {
+    int r = kv.first / COLS, c = kv.first % COLS;
+    int & v = rows ? r : c;
+    if (v >= at) { if (d < 0 && v < at - d) continue; v += d; if (v >= lim) continue; }
+    al[key(r, c)] = kv.second;
+  }
+  align.swap(al);
+  if (!rows) {                               // whole-column alignment moves with its column
+    if (d > 0) { for (int i = COLS - 1; i >= at + d; --i) colAlign[i] = colAlign[i - d]; for (int i = at; i < at + d && i < COLS; ++i) colAlign[i] = 0; }
+    else { int k = -d; for (int i = at; i + k < COLS; ++i) colAlign[i] = colAlign[i + k]; for (int i = COLS - k; i < COLS; ++i) if (i >= 0) colAlign[i] = 0; }
+  }
+  uint8_t * a = rows ? rowH : colW;
+  uint8_t def = rows ? 16 : 74;
+  if (d > 0) {
+    for (int i = lim - 1; i >= at + d; --i) a[i] = a[i - d];
+    for (int i = at; i < at + d && i < lim; ++i) a[i] = def;
+  } else {
+    int k = -d;
+    for (int i = at; i + k < lim; ++i) a[i] = a[i + k];
+    for (int i = lim - k; i < lim; ++i) if (i >= 0) a[i] = def;
+  }
+}
+
+bool Sheet::wouldDrop(bool rows, int d)
+{
+  int lim = rows ? ROWS : COLS;
+  for (auto & kv : cells) { int v = rows ? kv.first / COLS : kv.first % COLS; if (v >= lim - d) return true; }
+  return false;
+}
+
 std::string Sheet::cellName(int r, int c)
 {
   char b[16];
@@ -875,7 +950,12 @@ void SheetGrid::paint(Rect const & clip)
         int maxCh = imax(1, (w - 6) / font->width);
         if ((int)s.size() > maxCh) s = (sel && editing) ? s.substr(s.size() - maxCh) : s.substr(0, maxCh);
         int tx = x0 + 3;
-        if (isNum && !editing) tx = x0 + w - 4 - s.size() * font->width;
+        if (!(sel && editing)) {
+          int al = sheet->alignOf(r, c);
+          int tw = s.size() * font->width;
+          if (al == 3 || (al == 0 && isNum)) tx = x0 + w - 4 - tw;
+          else if (al == 2) tx = x0 + (w - 1 - tw) / 2;
+        }
         bool hi = (sel && !editing) || inRange;
         cv->setPenColor(hi ? T.accentText : (s == "#ERR" ? T.warn : T.text));
         cv->setBrushColor(hi ? T.accent : (sel ? T.win : bg));
@@ -971,6 +1051,23 @@ void SheetGrid::processEvent(uiEvent * event)
       keyDown(event->params.key);
       break;
     case UIEVT_MOUSEBUTTONDOWN:
+      if (event->params.mouse.changedButton == 3) {          // right button: pick what's under it, then the menu
+        app()->setFocusedWindow(this);
+        int px = event->params.mouse.status.X, py = event->params.mouse.status.Y;
+        int r, c, what = hitTest(px, py, r, c);
+        commit();
+        drag = 0;
+        if (what == 1 || what == 4 || what == 5) {
+          if (r < 0) r = selR;
+          if (c < 0) c = selC;
+          if (r < r1() || r > r2() || c < c1() || c > c2()) { selR = r; selC = c; collapse(); }
+        } else if (what == 2) { if (!allRows() || c < c1() || c > c2()) selectCols(c, c); }
+        else if (what == 3) { if (!allCols() || r < r1() || r > r2()) selectRows(r, r); }
+        repaint();
+        if (onSelect) onSelect();
+        if (onRightClick) { Rect sr = rect(uiOrigin::Screen); onRightClick(sr.X1 + px, sr.Y1 + py); }
+        break;
+      }
       if (event->params.mouse.changedButton == 1) {
         app()->setFocusedWindow(this);
         int px = event->params.mouse.status.X, py = event->params.mouse.status.Y;

@@ -60,9 +60,12 @@ public:
   uint8_t colW[COLS];                  // column widths, pixels
   uint8_t rowH[ROWS];                  // row heights, pixels
   bool    sizesChanged = false;
+  std::map<int, uint8_t> align;        // per cell: 1 left, 2 centre, 3 right (missing = numbers right, text left)
+  uint8_t colAlign[COLS];              // whole-column alignment (0 = none)
   Sheet() { resetSizes(); }
-  void resetSizes() { memset(colW, 74, sizeof(colW)); memset(rowH, 16, sizeof(rowH)); sizesChanged = false; }
-  bool sizesDefault() const { for (auto w : colW) if (w != 74) return false; for (auto x : rowH) if (x != 16) return false; return true; }
+  void resetSizes() { memset(colW, 74, sizeof(colW)); memset(rowH, 16, sizeof(rowH)); memset(colAlign, 0, sizeof(colAlign)); align.clear(); sizesChanged = false; }
+  bool sizesDefault() const { if (!align.empty()) return false; for (auto a : colAlign) if (a) return false; for (auto w : colW) if (w != 74) return false; for (auto x : rowH) if (x != 16) return false; return true; }
+  int  alignOf(int r, int c) const { auto it = align.find(key(r, c)); return it == align.end() ? colAlign[c] : it->second; }
 
   static int key(int r, int c) { return r * COLS + c; }
   const std::string & raw(int r, int c);
@@ -74,6 +77,8 @@ public:
   void writeCSV(RSink & o);
   void readCSV(RSource & in);
   static std::string cellName(int r, int c);
+  void shift(bool rows, int at, int d);          // insert (d > 0) or delete (d < 0) rows / columns at `at`
+  bool wouldDrop(bool rows, int d);               // inserting d would push filled cells off the end
   static int  checkState(const std::string & s) { return s == "[x]" || s == "[X]" ? 1 : s == "[ ]" ? 0 : -1; }   // -1 = not a check box
 
 private:
@@ -102,6 +107,9 @@ public:
   std::function<void()> onSelect;      // selection / edit buffer changed
   std::function<void()> onModified;
   std::function<bool(uiKeyEventInfo const &)> onKey;
+  std::function<void(int sx, int sy)> onRightClick;   // screen position
+  bool allRows() const { return r1() == 0 && r2() == Sheet::ROWS - 1; }   // whole columns picked
+  bool allCols() const { return c1() == 0 && c2() == Sheet::COLS - 1; }   // whole rows picked
 
   int visRows();
   int visCols();

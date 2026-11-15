@@ -1134,12 +1134,18 @@ public:
 
 // ====================================================================== game windows
 
+std::string musicQuickPlay();     // media_apps.h: music while you play
+void musicQuickPause();
+void musicQuickTick();
+void musicQuickStop();
+
 class GameFrame : public uiFrame {
 public:
   static GameFrame * open[6];
   int idx;
   Board * board;
   uiLabel * info;
+  uiTimerHandle m_musicTimer = nullptr;
 
   GameFrame(int i) : uiFrame(gApp->rootWindow(), "", Point(0, 0), Size(100, 100), false), idx(i) {
     applyStyle(this);
@@ -1152,7 +1158,17 @@ public:
     int x = o.X + 6, y = o.Y + 6;
     auto nb = S(new uiButton(this, "New game", Point(x, y), Size(90, 22)));
     nb->setFocusIndex(-1);
-    info = S(new uiLabel(this, "", Point(x + 98, y + 3), Size(400, 18)));
+    int infoX = x + 98;
+    if (i == 0) {                                   // Sammy: music while you play
+      auto pb = S(new uiButton(this, "Play music", Point(x + 98, y), Size(84, 22)));
+      auto ps = S(new uiButton(this, "Pause", Point(x + 186, y), Size(56, 22)));
+      pb->setFocusIndex(-1); ps->setFocusIndex(-1);
+      pb->onClick = [this]() { std::string m = musicQuickPlay(); info->setText(m.c_str()); info->repaint(); gApp->setFocusedWindow(board); };
+      ps->onClick = [this]() { musicQuickPause(); info->setText("Music paused."); info->repaint(); gApp->setFocusedWindow(board); };
+      m_musicTimer = gApp->setTimer(this, 1000);
+      infoX = x + 250;
+    }
+    info = S(new uiLabel(this, "", Point(infoX, y + 3), Size(400, 18)));
     info->labelStyle().textFont = &FONT_std_12;
     y += 30;
     switch (i) {
@@ -1167,7 +1183,7 @@ public:
     int w = imax(bs.width + 12 + o.X * 2, 300), h = bs.height + y + 8;
     if (i == 0 || i == 1 || i >= 4) w = imax(w, 520);
     info->labelStyle().textAlign = uiHAlign::Left;
-    gApp->resizeWindow(info, Size(w - 120, 18));
+    gApp->resizeWindow(info, Size(w - 120 - (infoX - x - 98), 18));
     gApp->reshapeWindow(this, Rect((SCREEN_W - w) / 2, imax(0, (SCREEN_H - 22 - h) / 2), (SCREEN_W - w) / 2 + w - 1, imax(0, (SCREEN_H - 22 - h) / 2) + h - 1));
     board->onScore = [this](int, const char * m) {
       if (m && *m) { info->setText(m); info->repaint(); }
@@ -1185,9 +1201,11 @@ public:
   }
 
   void processEvent(uiEvent * e) override {
+    if (e->id == UIEVT_TIMER && e->params.timerHandle == m_musicTimer) { musicQuickTick(); return; }
     if (e->id == UIEVT_CLOSE) {
       if (open[idx] != this) return;         // already closing
       board->stopTimer();
+      if (m_musicTimer) { gApp->killTimer(m_musicTimer); m_musicTimer = nullptr; musicQuickStop(); }
       open[idx] = nullptr;
       gApp->destroyWindow(this);
       return;

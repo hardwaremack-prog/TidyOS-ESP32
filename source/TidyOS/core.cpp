@@ -32,6 +32,7 @@ Settings gSet;
 uiApp *  gApp = nullptr;
 volatile uint64_t gNetRx = 0, gNetTx = 0;
 volatile bool gOpenTaskMgr = false;
+volatile bool gRestartReq = false;   // the page's Restart button
 
 static Preferences s_prefs;
 static BitmappedDisplayController * s_dc = nullptr;
@@ -422,6 +423,12 @@ public:
         break;
       case UIEVT_TIMER:
         if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
+        if (gRestartReq) {
+          gRestartReq = false;
+          Serial.println("[TidyOS] restart asked for from the browser");
+          delay(300);
+          ESP.restart();
+        }
         if (!s_bootNote.empty() && (m_tick > 8 || screenViewer())) {     // show it once, when someone can see it
           std::string n = s_bootNote; s_bootNote.clear();
           gApp->messageBox("Update", n.c_str(), "OK", nullptr, nullptr, uiMessageBoxIcon::Info);

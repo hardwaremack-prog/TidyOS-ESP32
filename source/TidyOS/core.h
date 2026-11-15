@@ -102,6 +102,7 @@ void openRugged();
 extern fabgl::uiApp * gApp;
 extern volatile uint64_t gNetRx, gNetTx;     // TidyOS network traffic since start (bytes)
 extern volatile bool gOpenTaskMgr;
+extern volatile bool gRestartReq;
 extern const char * gSDWiring;              // which microSD wiring was found           // Ctrl+Shift+Esc pressed
 
 // Helpers used by every app window
