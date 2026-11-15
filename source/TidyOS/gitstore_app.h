@@ -25,12 +25,34 @@ std::string boardId()
   return b;
 }
 
+// the dashed "drop files to cloud" box
+class CloudDrop : public uiControl {
+public:
+  CloudDrop(uiWindow * parent, Point pos, Size size) : uiControl(parent, pos, size, true, 0) { windowStyle().borderSize = 0; }
+  void processEvent(uiEvent * e) override {
+    uiControl::processEvent(e);
+    if (e->id != UIEVT_PAINT) return;
+    beginPaint(e, clientRect(uiOrigin::Window));
+    Rect r = clientRect(uiOrigin::Window);
+    auto cv = canvas();
+    cv->setBrushColor(T.win);
+    cv->fillRectangle(r.X1, r.Y1, r.X2, r.Y2);
+    cv->setPenColor(T.accent);
+    for (int k = r.X1; k < r.X2; k += 7) { cv->drawLine(k, r.Y1, imin(k + 4, r.X2), r.Y1); cv->drawLine(k, r.Y2, imin(k + 4, r.X2), r.Y2); }
+    for (int k = r.Y1; k < r.Y2; k += 7) { cv->drawLine(r.X1, k, r.X1, imin(k + 4, r.Y2)); cv->drawLine(r.X2, k, r.X2, imin(k + 4, r.Y2)); }
+    const char * t = "Drop files to cloud  (1 GB max - Cloudflare)";
+    cv->setPenColor(T.text);
+    cv->drawText(&FONT_std_14, r.X1 + (r.width() - cv->textExtent(&FONT_std_14, t)) / 2, r.Y1 + (r.height() - 14) / 2, t);
+  }
+};
+
 class GitStoreApp : public AppFrame {
 public:
   static AppFrame * inst;
   uiListBox * list;
   uiLabel * status, * usage, * idLbl;
   uiProgressBar * bar;
+  CloudDrop * drop;
   uiTextEdit * relay;
   std::vector<std::pair<std::string, long>> files;
   int seenVer = 0;
@@ -45,7 +67,8 @@ public:
     bar->progressBarProps().showPercentage = false;
     bar->progressBarStyle().backgroundColor = T.win;
     bar->progressBarStyle().foregroundColor = T.accent;
-    list = S(new uiListBox(this, Point(cx, cy + 42), Size(340, 250)));
+    list = S(new uiListBox(this, Point(cx, cy + 42), Size(340, 202)));
+    drop = new CloudDrop(this, Point(cx, cy + 252), Size(500, 38));
     list->items().takeStrings();
     int bx = cx + 350;
     button("Refresh", bx, cy + 42, 150, 28)->onClick = [this]() { refresh(); };
@@ -168,6 +191,19 @@ public:
   }
 };
 AppFrame * GitStoreApp::inst = nullptr;
+
+// files dropped on the page at (x, y): true (and the page told what to do) if they landed on Git-Store's box
+bool gitStoreDropAt(int x, int y)
+{
+  auto g = (GitStoreApp *)GitStoreApp::inst;
+  if (!g || !g->drop) return false;
+  Rect r = g->drop->rect(uiOrigin::Screen);
+  if (x < r.X1 || x > r.X2 || y < r.Y1 || y > r.Y2) return false;
+  std::string u = g->url();
+  if (u.compare(0, 8, "https://") != 0) { screenMedia("u nourl"); return true; }
+  screenMedia("u cloud\t" + u + "\t" + boardId());
+  return true;
+}
 
 void openGitStore()
 {

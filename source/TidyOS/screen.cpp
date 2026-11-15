@@ -29,7 +29,7 @@ void deskWeatherFromPage(const char * t);
 void storeFromPage(const char * t);
 void deskNewsFromPage(const char * t);
 void deskTempsFromPage(const char * t);
-void deskDropStart();
+void deskDropStart(int x, int y);
 void deskDropped(const char * name);
 void inputWebReleaseAll();
 RGB888 themePal(int i);
@@ -211,7 +211,16 @@ function note(t,ms){var e=document.getElementById('dn');if(!e){e=document.create
  e.textContent=t;e.style.display='block';clearTimeout(e.t);if(ms)e.t=setTimeout(function(){e.style.display='none';},ms);}
 addEventListener('dragover',function(e){e.preventDefault();e.dataTransfer.dropEffect='copy';},false);
 addEventListener('drop',function(e){e.preventDefault();var fs=[].slice.call(e.dataTransfer.files||[]);if(!fs.length)return;
- if(!ws||ws.readyState!=1){note('TidyOS is not connected.',4000);return;}dropQ=dropQ.concat(fs);note('Getting TidyOS ready for '+fs.length+' file'+(fs.length>1?'s':'')+'...');send([15]);},false);
+ if(!ws||ws.readyState!=1){note('TidyOS is not connected.',4000);return;}dropQ=dropQ.concat(fs);note('Getting TidyOS ready for '+fs.length+' file'+(fs.length>1?'s':'')+'...');
+ var r=c.getBoundingClientRect(),x=(e.clientX-r.left)*640/r.width|0,y=(e.clientY-r.top)*480/r.height|0;if(x<0||y<0||x>639||y>479){x=65535;y=65535;}
+ send([15,x&255,x>>8&255,y&255,y>>8&255]);},false);
+function cloudNext(R,B){var f=dropQ.shift();if(!f)return;var nm=f.name.replace(/[^A-Za-z0-9 ._()-]/g,'_').slice(-80).replace(/^\./,'_');
+ if(f.size>25*1048576){note(nm+' is over 25 MB - skipped.',6000);cloudNext(R,B);return;}
+ note('Uploading '+nm+' to the cloud ('+Math.ceil(f.size/1024)+' KB)...');
+ fetch(R.replace(/\/+$/,'')+'/file?board='+B+'&name='+encodeURIComponent(nm),{method:'PUT',body:f}).then(function(r){return r.json().then(function(j){if(!r.ok||j.error)throw j.error||('error '+r.status);});})
+  .then(function(){rep13('U\tok\t'+nm);note('Uploaded '+nm+' to Git-Store.',dropQ.length?0:5000);})
+  .catch(function(e){var m=typeof e=='string'?e:'could not reach the relay';rep13('U\t'+m);note('Couldn\'t upload '+nm+': '+m,8000);})
+  .then(function(){cloudNext(R,B);});}
 function dropNext(){var f=dropQ.shift();if(!f){return;}var nm=f.name.replace(/[\/\\:*?"<>|]/g,'_').replace(/[^\x20-\x7e]/g,'_').slice(0,90),tries=0;
  note('Sending '+nm+' ('+Math.ceil(f.size/1024)+' KB)...');
  (function put(){fetch(mUrl('/api/file?path='+encodeURIComponent('/SD/Incoming/'+nm)),{method:'PUT',body:f}).then(function(r){if(!r.ok)throw r.status;
@@ -224,7 +233,9 @@ function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv
  if(k=='o'){var t=v.split('\t');openBanner(mUrl(t[0]),t[1]||'');return;}
  if(k=='g'){store(v);return;}
  if(k=='w'){wxAt=0;weather();nwAt=0;news();return;}
- if(k=='u'){if(v=='go')setTimeout(dropNext,300);else{dropQ=[];note('Dropped files need an SD card in TidyOS (turn it on in Switches).',6000);}return;}
+ if(k=='u'){if(v=='go')setTimeout(dropNext,300);else if(v.indexOf('cloud\t')==0){var a=v.split('\t');cloudNext(a[1],a[2]);}
+  else if(v=='nourl'){dropQ=[];note('Set the Git-Store relay address first.',6000);}
+  else{dropQ=[];note('Dropped files need an SD card in TidyOS (turn it on in Switches).',6000);}return;}
  if(k=='a'){midiStop();if(!au){au=new Audio();au.onended=auReport;setInterval(auReport,1000);
    au.onerror=function(){if(au.tries++<4&&au.getAttribute('src'))setTimeout(function(){au.load();au.play().catch(function(){auBlocked=true;});},1500);};}
   au.tries=0;au.src=mUrl(v);au.play().catch(function(e){if(e&&e.name=='NotAllowedError')auBlocked=true;});}
@@ -440,7 +451,7 @@ static bool pollInput(WiFiClient & c)
       case 11: gSleepReq = true; break;
       case 12: { char t[65]; size_t n = std::min(keep - 1, sizeof(t) - 1); memcpy(t, p + 1, n); t[n] = 0; deskWeatherFromPage(t); break; }   // weather, looked up by the page
       case 13: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; storeFromPage((const char *)p + 1); break; }   // Git-Store reply
-      case 15: deskDropStart(); break;                                                                  // files dropped on the page
+      case 15: deskDropStart(keep >= 5 ? p[1] | (p[2] << 8) : -1, keep >= 5 ? p[3] | (p[4] << 8) : -1); break;                                                                  // files dropped on the page
       case 16: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskDropped((const char *)p + 1); break; }
       case 17: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskTempsFromPage((const char *)p + 1); break; } // temperatures, last 4 days
       case 14: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskNewsFromPage((const char *)p + 1); break; } // news headlines

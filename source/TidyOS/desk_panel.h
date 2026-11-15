@@ -64,8 +64,10 @@ void deskNewsFromPage(const char * t)
 static portMUX_TYPE s_dropMux = portMUX_INITIALIZER_UNLOCKED;
 static char s_dropQ[8][100];
 static volatile int s_dropW = 0, s_dropR = 0;
-void deskDropStart()                        // the page has files to send (screen server task)
+bool gitStoreDropAt(int x, int y);          // gitstore_app.h
+void deskDropStart(int x, int y)            // the page has files to send (screen server task); x, y = where they were dropped
 {
+  if (gitStoreDropAt(x, y)) return;         // onto Git-Store's box: straight to the cloud
   if (!gSDMounted) { screenMedia("u nosd"); return; }
   mkdir(SD_MOUNT "/Incoming", 0777);
   fileServerMedia(true);
