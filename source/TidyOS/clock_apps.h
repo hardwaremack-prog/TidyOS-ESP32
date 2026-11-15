@@ -102,6 +102,7 @@ static time_t s_snoozeAt = 0;
 static void ringAlarm()
 {
   s_ringing = true;
+  Serial.printf("[TidyOS] alarm ringing (browser %s)\n", screenViewer() ? "connected" : "not connected");
   screenMedia("b 1");
   time_t now = time(nullptr); struct tm t; localtime_r(&now, &t);
   std::string msg = "Alarm - it's " + hhmm(t.tm_hour * 60 + t.tm_min) + ".";
