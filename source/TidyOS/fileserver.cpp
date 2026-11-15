@@ -127,7 +127,7 @@ static std::string jsonEsc(const std::string & s)
 static void send(WiFiClient & c, int code, const char * type, const std::string & body, const char * extra = "")
 {
   char h[256];
-  snprintf(h, sizeof(h), "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %u\r\nCache-Control: no-store\r\n%sConnection: close\r\n\r\n",
+  snprintf(h, sizeof(h), "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %u\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n%sConnection: close\r\n\r\n",
            code, code == 200 ? "OK" : "Error", type, (unsigned)body.size(), extra);
   c.write((const uint8_t *)h, strlen(h));
   for (size_t i = 0; i < body.size(); i += 1400) c.write((const uint8_t *)body.data() + i, std::min((size_t)1400, body.size() - i));
@@ -299,7 +299,12 @@ static void handle(WiFiClient & c)
   std::string query = q == std::string::npos ? "" : target.substr(q + 1);
   std::string p = param(query, "path");
 
-  if (path == "/" || path == "/index.html") send(c, 200, "text/html; charset=utf-8", PAGE);
+  if (method == "OPTIONS") {        // the TidyOS page (another port) asks before saving a file here (Git-Store downloads)
+    static const char * R = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, PUT, POST, OPTIONS\r\n"
+                            "Access-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 600\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    c.write((const uint8_t *)R, strlen(R));
+  }
+  else if (path == "/" || path == "/index.html") send(c, 200, "text/html; charset=utf-8", PAGE);
   else if (path == "/api/list") listDir(c, p.empty() ? "/" : p);
   else if (path.compare(0, 5, "/run/") == 0 && method == "GET") {     // a web page and its files, by path (HTML games / programs)
     std::string f = urlDecode(path.substr(4));

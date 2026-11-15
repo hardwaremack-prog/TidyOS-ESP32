@@ -129,14 +129,33 @@ bool updateLoaderPresent()
   return esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, nullptr) != nullptr;
 }
 
+// Updating runs in black & white (more free RAM for the HTTPS download); the colour setting
+// is kept here and put back at the next normal start (updateRestoreColors).
 void updateRequest()
 {
   Preferences p;
   p.begin("tidyupd", false);
   p.putBool("go", true);
+  if (gSet.colors != 2 && !p.isKey("col")) p.putInt("col", gSet.colors);
   p.end();
+  if (gSet.colors != 2) { gSet.colors = 2; settingsSave(); }
   delay(200);
   ESP.restart();
+}
+
+bool updateRestoreColors()
+{
+  Preferences p;
+  p.begin("tidyupd", false);
+  bool had = p.isKey("col");
+  if (had) {
+    gSet.colors = p.getInt("col", 0);
+    p.remove("col");
+    settingsSave();
+    Serial.printf("[TidyOS] colours back to %d after the update\n", gSet.colors);
+  }
+  p.end();
+  return had;
 }
 
 bool updateModeRequested()

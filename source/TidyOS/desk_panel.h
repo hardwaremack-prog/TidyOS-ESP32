@@ -28,6 +28,68 @@ void deskWeatherFromPage(const char * t)
   s_wxVer++;
 }
 
+// news headlines, also from the page (NPR, or BBC News as a fallback)
+static char s_news[3][120];
+static int s_newsCount = 0;
+void deskNewsFromPage(const char * t)
+{
+  s_newsCount = 0;
+  while (*t && s_newsCount < 3) {
+    const char * e = strchr(t, '\n');
+    size_t n = e ? (size_t)(e - t) : strlen(t);
+    snprintf(s_news[s_newsCount++], sizeof(s_news[0]), "%.*s", (int)n, t);
+    t = e ? e + 1 : t + n;
+  }
+  s_wxVer++;
+}
+
+// files dropped on the page: the page saves them in SD:/Incoming, then the desktop asks where each one goes
+static portMUX_TYPE s_dropMux = portMUX_INITIALIZER_UNLOCKED;
+static char s_dropQ[8][100];
+static volatile int s_dropW = 0, s_dropR = 0;
+void deskDropStart()                        // the page has files to send (screen server task)
+{
+  if (!gSDMounted) { screenMedia("u nosd"); return; }
+  mkdir(SD_MOUNT "/Incoming", 0777);
+  fileServerMedia(true);
+  screenMedia("u go");
+}
+void deskDropped(const char * name)         // one has arrived in SD:/Incoming
+{
+  portENTER_CRITICAL(&s_dropMux);
+  if (s_dropW - s_dropR < 8) { strlcpy(s_dropQ[s_dropW % 8], name, sizeof(s_dropQ[0])); s_dropW++; }
+  portEXIT_CRITICAL(&s_dropMux);
+}
+static void deskDropTick()                  // on the desktop's timer: ask where each dropped file goes
+{
+  static bool asking = false;
+  if (asking || s_dropR == s_dropW) return;
+  char name[100];
+  portENTER_CRITICAL(&s_dropMux);
+  strlcpy(name, s_dropQ[s_dropR % 8], sizeof(name));
+  s_dropR++;
+  portEXIT_CRITICAL(&s_dropMux);
+  asking = true;
+  std::string from = std::string(SD_MOUNT "/Incoming/") + name;
+  std::string to = askFile((std::string("Where should ") + name + " go?").c_str(), "Put it here", name, SD_MOUNT);
+  if (!to.empty() && to != from) {
+    if (fileSize(to.c_str()) >= 0 &&
+        gApp->messageBox("Dropped file", "A file with that name is already there. Replace it?", "Replace", "Keep both", nullptr, uiMessageBoxIcon::Question) == uiMessageBoxResult::Button1)
+      remove(to.c_str());
+    if (fileSize(to.c_str()) >= 0) {                      // keep both: add a number
+      std::string base = to, ext;
+      size_t dot = to.rfind('.'), sl = to.rfind('/');
+      if (dot != std::string::npos && dot > sl) { base = to.substr(0, dot); ext = to.substr(dot); }
+      for (int n = 2; n < 100 && fileSize(to.c_str()) >= 0; ++n) to = base + " (" + std::to_string(n) + ")" + ext;
+    }
+    if (rename(from.c_str(), to.c_str()) != 0)
+      gApp->messageBox("Dropped file", "Couldn't move it - it's still in the Incoming folder.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+  } else if (to.empty()) {
+    gApp->messageBox("Dropped file", (std::string(name) + " stays in the Incoming folder on the SD card.").c_str(), "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
+  }
+  asking = false;
+}
+
 static const char * wxText(int c)
 {
   if (c == 0) return "Clear";
@@ -98,8 +160,9 @@ static void drawWorldMap(Canvas * cv, int x0, int y0, time_t now)
   float decl = -23.44f * cosf(2 * PI / 365.0f * (doy + 10)) * PI / 180;
   float sunLon = -15.0f * (u.tm_hour + u.tm_min / 60.0f - 12) * PI / 180;
   float sd = sinf(decl), cd = cosf(decl);
-  const int W = 144, H = 72, S = 2;
-  for (int y = 0; y < H; ++y) {
+  const int W = 144, H = 72, S = 2, Y0 = 4, Y1 = 64;     // rows 4..63: 80N to 70S (the poles have little land)
+  y0 -= Y0 * S;
+  for (int y = Y0; y < Y1; ++y) {
     float lat = (90 - (y + 0.5f) * 180 / H) * PI / 180;
     float sl = sinf(lat), cl = cosf(lat);
     int runX = 0; RGB888 runC = T.win;
@@ -121,7 +184,7 @@ static void drawWorldMap(Canvas * cv, int x0, int y0, time_t now)
     }
   }
   cv->setPenColor(T.text);
-  cv->drawRectangle(x0 - 1, y0 - 1, x0 + W * S, y0 + H * S);
+  cv->drawRectangle(x0 - 1, y0 + Y0 * S - 1, x0 + W * S, y0 + Y1 * S);
   // you are here (from the same lookup as the weather)
   if (s_wx.haveLoc) {
     int px = x0 + (int)((s_wx.lon + 180) / 360 * W * S), py = y0 + (int)((90 - s_wx.lat) / 180 * H * S);
@@ -159,6 +222,16 @@ static void drawDeskPanel(Canvas * cv)
   y += 30;
   snprintf(b, sizeof(b), "%s, %s %d, %d", DAY[t.tm_wday % 7], MON[t.tm_mon % 12], t.tm_mday, t.tm_year + 1900);
   cv->drawText(&FONT_std_14, x, y, b);
+#ifdef TIDYOS_HTML5
+  {                                                          // the drop box, right of the time
+    int bx1 = r.X2 - 92, by1 = r.Y1 + 6, bx2 = r.X2 - 8, by2 = r.Y1 + 34;
+    cv->setPenColor(T.text);
+    for (int k = bx1; k < bx2; k += 6) { cv->drawLine(k, by1, imin(k + 3, bx2), by1); cv->drawLine(k, by2, imin(k + 3, bx2), by2); }
+    for (int k = by1; k < by2; k += 6) { cv->drawLine(bx1, k, bx1, imin(k + 3, by2)); cv->drawLine(bx2, k, bx2, imin(k + 3, by2)); }
+    cv->drawText(&FONT_std_12, bx1 + 6, by1 + 1, gSDMounted ? "Drop files" : "Drop files:");
+    cv->drawText(&FONT_std_12, bx1 + 6, by1 + 14, gSDMounted ? "here" : "needs SD card");
+  }
+#endif
   y += 24;
   // weather
   cv->drawLine(x, y - 4, r.X2 - 10, y - 4);
@@ -208,16 +281,33 @@ static void drawDeskPanel(Canvas * cv)
   int base = (t.tm_yday + t.tm_year) % NAFFIRM;
   for (int k = 0; k < s_affShown; ++k) {
     std::string a = AFFIRM[(base + k) % NAFFIRM];
+    const fabgl::FontInfo * af = s_affShown == 1 ? &FONT_std_14 : &FONT_std_12;
+    int lh = s_affShown == 1 ? 18 : 14;
     int maxW = PANEL_W - 22 - (k == 0 ? 36 : 0), lines = 0, maxLines = s_affShown == 1 ? 3 : 2;
     while (!a.empty() && lines < maxLines) {
       size_t cut = a.size();
-      while (cv->textExtent(&FONT_std_14, a.substr(0, cut).c_str()) > maxW) { size_t sp = a.rfind(' ', cut - 1); if (sp == std::string::npos || sp == 0) break; cut = sp; }
-      cv->drawText(&FONT_std_14, x, y, a.substr(0, cut).c_str());
+      while (cv->textExtent(af, a.substr(0, cut).c_str()) > maxW) { size_t sp = a.rfind(' ', cut - 1); if (sp == std::string::npos || sp == 0) break; cut = sp; }
+      cv->drawText(af, x, y, a.substr(0, cut).c_str());
       a = cut < a.size() ? a.substr(cut + 1) : "";
-      y += 18; ++lines; maxW = PANEL_W - 22;
+      y += lh; ++lines; maxW = PANEL_W - 22;
     }
-    y += 4;
+    y += 3;
+  }
+  // news: one line each
+  if (s_newsCount) {
+    cv->drawLine(x, y - 2, r.X2 - 10, y - 2);
+    y += 2;
+    for (int i = 0; i < s_newsCount; ++i) {
+      std::string h = s_news[i];
+      int maxW = PANEL_W - 22;
+      if (cv->textExtent(&FONT_std_12, h.c_str()) > maxW) {
+        while (h.size() > 4 && cv->textExtent(&FONT_std_12, (h + "...").c_str()) > maxW) h.pop_back();
+        h += "...";
+      }
+      cv->drawText(&FONT_std_12, x, y, h.c_str());
+      y += 15;
+    }
   }
   // the map sits at the bottom
-  drawWorldMap(cv, r.X1 + (PANEL_W - 288) / 2, r.Y2 - 150, now);
+  drawWorldMap(cv, r.X1 + (PANEL_W - 288) / 2, r.Y2 - 124, now);
 }

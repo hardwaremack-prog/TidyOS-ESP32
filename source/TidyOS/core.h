@@ -60,6 +60,7 @@ struct Settings {
   int  alarmMin = 420;    // Clock: alarm time, minutes after midnight
   int  alarmPresets[4] = { 360, 390, 420, 480 };   // Clock: saved alarm times
   int  worldCity = 0;     // Clock: world time city
+  String storeUrl;        // Git-Store relay address
   int    neatFont;    // Neat Lite font family (index)
   int    neatSize;    // Neat Lite font size (index within the family)
 };
@@ -105,6 +106,8 @@ void openClock();
 void openLatch();
 void openHtmlGames();
 void openHtmlPrograms();
+void openGitStore();
+std::string askFile(const char * title, const char * okText, const char * defName, const std::string & startDir);   // file picker dialog
 void openFilesAt(const char * dir);
 void alarmTick();
 extern volatile bool gShotReq;          // Print Screen key

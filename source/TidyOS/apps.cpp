@@ -212,7 +212,7 @@ public:
 };
 
 // returns full path or "" when cancelled
-static std::string askFile(const char * title, const char * okText, const char * defName, const std::string & startDir)
+std::string askFile(const char * title, const char * okText, const char * defName, const std::string & startDir)
 {
   const int W = 400, H = 336;
   auto f = new uiFrame(gApp->rootWindow(), title, Point((SCREEN_W - W) / 2, (SCREEN_H - 22 - H) / 2), Size(W, H), false);
@@ -3315,3 +3315,4 @@ void openSwitches()
 #include "clock_apps.h"
 #include "latch_app.h"
 #include "web_apps.h"
+#include "gitstore_app.h"

@@ -64,6 +64,7 @@ void settingsLoad()
   gSet.alarmOn   = s_prefs.getBool("alarm", false);
   gSet.alarmMin  = s_prefs.getInt("alarmm", 420);
   gSet.worldCity = s_prefs.getInt("wcity", 0);
+  gSet.storeUrl  = s_prefs.getString("surl", "");
   if (s_prefs.getBytesLength("apre") == sizeof(gSet.alarmPresets)) s_prefs.getBytes("apre", gSet.alarmPresets, sizeof(gSet.alarmPresets));
   gSet.neatFont  = s_prefs.getInt("nfont", 0);
   gSet.neatSize  = s_prefs.getInt("nsize", 1);
@@ -90,6 +91,7 @@ void settingsSave()
   s_prefs.putBool("alarm", gSet.alarmOn);
   s_prefs.putInt("alarmm", gSet.alarmMin);
   s_prefs.putInt("wcity", gSet.worldCity);
+  s_prefs.putString("surl", gSet.storeUrl);
   s_prefs.putBytes("apre", gSet.alarmPresets, sizeof(gSet.alarmPresets));
   s_prefs.putInt("nfont", gSet.neatFont);
   s_prefs.putInt("nsize", gSet.neatSize);
@@ -403,6 +405,25 @@ static const char * ART_HTMLP[16] = {
   "................",
 };
 
+static const char * ART_CLOUD[16] = {
+  "................",
+  "................",
+  "......####......",
+  "....##wwww##....",
+  "...#wwwwwwww#...",
+  "..#wwwwwwwwww##.",
+  ".##wwwwwwwwwwww#",
+  "#wwwwwwaawwwwww#",
+  "#wwwwwaaaawwwww#",
+  "#wwwwaaaaaawwww#",
+  "#wwwwwwaawwwwww#",
+  ".##wwwwaawwwww#.",
+  "...####aa#####..",
+  ".......aa.......",
+  "....aaaaaaaa....",
+  "................",
+};
+
 static const char * ART_NIC[16] = {
   "................", ".##############.", ".#gggggggggggg#.", ".#g####ggwwwwg#.", ".#g#aa#ggw##wg#.", ".#g#aa#ggw##wg#.",
   ".#g####ggwwwwg#.", ".#gggggggggggg#.", ".#gg#g#g#g#ggg#.", ".##############.", "..a.a.a.a.a.a...", "..a.a.a.a.a.a...",
@@ -448,7 +469,7 @@ static int appNeedKB(const char * label)
 {
   static const struct { const char * n; int kb; } T_[] = {
     { "Task Manager", 18 }, { "Files", 14 }, { "Neat", 22 }, { "Tidy", 20 }, { "Doodle", 18 }, { "Browser", 30 },
-    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Screenshot", 6 }, { "Clock", 10 }, { "Latch", 24 }, { "HTML Games", 8 }, { "HTML Programs", 8 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
+    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Screenshot", 6 }, { "Clock", 10 }, { "Latch", 24 }, { "HTML Games", 8 }, { "HTML Programs", 8 }, { "Git-Store", 12 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
   };
   for (auto & e : T_) if (!strcmp(e.n, label)) return e.kb;
   return 10;
@@ -483,6 +504,7 @@ static const DeskIcon ICONS[] = {
   { "Latch",      ART_LOCK,  nullptr, openLatch },
   { "HTML Games", ART_HTMLG, nullptr, openHtmlGames },
   { "HTML Programs", ART_HTMLP, nullptr, openHtmlPrograms },
+  { "Git-Store",  ART_CLOUD, nullptr, openGitStore },
   { "Switches",   ART_SD,    nullptr, openSwitches },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
@@ -542,6 +564,7 @@ public:
       case UIEVT_TIMER:
         if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
         alarmTick();                                // Clock alarm + Print Screen
+        deskDropTick();                             // files dropped on the page: where do they go?
 #ifdef TIDYOS_HTML5                                 // (the monitor edition has no IRAM to spare for sleep code)
         if (gSleepReq) {
           gSleepReq = false;
@@ -1142,7 +1165,7 @@ static void bootDraw(Canvas & cv)
   bootRow(cv, 2, "Blue light", "~2 KB. Breathes when TidyOS is ready", gSet.ledOn);
   bootScreenRow(cv);
   bootRow(cv, 4, "Shelf messages", "~9 KB. Chat with your Shelves on Wi-Fi", gSet.shelfOn);
-  // Boot button
+  // Boot button, and Update next to it
   int bx = BW_X + BW_W / 2 - 80, by = BW_Y + BW_H - 70;
   cv.setBrushColor(T.face);
   cv.fillRectangle(bx, by, bx + 160, by + 32);
@@ -1151,6 +1174,13 @@ static void bootDraw(Canvas & cv)
   cv.setPenColor(T.text);
   const char * t = "Boot TidyOS";
   cv.drawText(&FONT_std_16, bx + 80 - cv.textExtent(&FONT_std_16, t) / 2, by + 8, t);
+  int ux = BW_X + BW_W - 102;
+  cv.setBrushColor(T.face);
+  cv.fillRectangle(ux, by + 4, ux + 96, by + 28);
+  cv.setPenColor(T.shadow);
+  cv.drawRectangle(ux, by + 4, ux + 96, by + 28);
+  cv.setPenColor(T.text);
+  cv.drawText(&FONT_std_14, ux + 48 - cv.textExtent(&FONT_std_14, "Update") / 2, by + 9, "Update");
   cv.setPenColor(T.deskText);
   cv.setBrushColor(T.desk);
   cv.drawText(&FONT_std_12, 8, SCREEN_H - 16, "TidyOS " TIDYOS_VERSION);
@@ -1187,6 +1217,15 @@ static void bootChooser()
       }
       int bx = BW_X + BW_W / 2 - 80, by = BW_Y + BW_H - 70;
       if (x >= bx && x <= bx + 160 && y >= by && y <= by + 32) boot = true;
+      int ux = BW_X + BW_W - 102;
+      if (x >= ux && x <= ux + 96 && y >= by + 4 && y <= by + 28) {     // Update: restart into update mode (black & white)
+        if (updateLoaderPresent()) {
+          bootStatus(cv, "Restarting to update (in black & white, for memory)...");
+          cv.waitCompletion();
+          delay(400);
+          updateRequest();
+        } else bootStatus(cv, "Install once from the web flasher to enable updates.");
+      }
     }
     int k;
     while ((k = inputBootKey()) >= 0) {
@@ -1285,7 +1324,9 @@ void setup()
   settingsLoad();
   ledSetOn(gSet.ledOn);   // ledBegin ran before the settings were read, so the switch looked "off" to it
 
-  if (updateModeRequested()) {
+  bool updMode = updateModeRequested();
+  if (!updMode) updateRestoreColors();    // back from an update: the screen mode it ran in was only for the update
+  if (updMode) {
     // update mode: screen + Wi-Fi only, so there's room for HTTPS
     Serial.println("[TidyOS] update mode");
     esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);

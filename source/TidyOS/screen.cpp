@@ -26,6 +26,10 @@
 void inputWebKey(uint8_t usage, uint8_t mods, bool down);
 void inputWebMouse(int x, int y, int wheel, uint8_t buttons);
 void deskWeatherFromPage(const char * t);
+void storeFromPage(const char * t);
+void deskNewsFromPage(const char * t);
+void deskDropStart();
+void deskDropped(const char * name);
 void inputWebReleaseAll();
 RGB888 themePal(int i);
 
@@ -85,7 +89,7 @@ function send(a){if(ws&&ws.readyState==1)ws.send(new Uint8Array(a));}
 function connect(){
  kicked=false;show('Connecting to TidyOS...');
  ws=new WebSocket('ws://'+location.host+'/ws');ws.binaryType='arraybuffer';
- ws.onopen=function(){show('');st.textContent='Connected';c.focus();var t=Math.floor(Date.now()/1000);send([6,t&255,t>>8&255,t>>16&255,t>>>24]);wxAt=0;setTimeout(weather,1500);};
+ ws.onopen=function(){show('');st.textContent='Connected';c.focus();var t=Math.floor(Date.now()/1000);send([6,t&255,t>>8&255,t>>16&255,t>>>24]);wxAt=0;setTimeout(weather,1500);nwAt=0;setTimeout(news,3000);};
  ws.onmessage=function(e){var d=new Uint8Array(e.data);rx+=d.length;
   if(d[0]==1){bpp=d[1];for(var i=0;i<d[2];i++)pal[i]=0xff000000|d[5+i*3]<<16|d[4+i*3]<<8|d[3+i*3];}
   else if(d[0]==2){var y=d[1]|d[2]<<8,n=d[3],o=4,rb=bpp==1?80:bpp==2?160:240;
@@ -181,10 +185,40 @@ function weather(){if(!ws||ws.readyState!=1||Date.now()-wxAt<25*60000)return;wxA
    .catch(function(){wxSend('E|weather service unreachable|'+(+g.lat).toFixed(2)+'|'+(+g.lon).toFixed(2));throw 1;});})
  .catch(function(e){if(e!==1)wxSend('E|'+(typeof e=='string'?e:'no internet from this browser'));wxAt=Date.now()-22*60000;});}
 setInterval(weather,30000);
+function rep13(s){send([13].concat(Array.from(new TextEncoder().encode(s.slice(0,1000)))));}
+function store(v){var a=v.split('\t'),op=a[0],R=(a[1]||'').replace(/\/+$/,''),B=a[2];
+ var chk=function(r){return r.json().then(function(j){if(!r.ok||j.error)throw j.error||('error '+r.status);return j;},function(){throw 'the relay gave an odd answer ('+r.status+')';});};
+ var err=function(e){rep13(op+'\t'+(typeof e=='string'?e:'could not reach the relay'));};
+ var F=function(n){return R+'/file?board='+B+'&name='+encodeURIComponent(n);};
+ if(op=='L')fetch(R+'/list?board='+B).then(chk).then(function(j){var s='L\tok\t'+j.used+'\t'+j.max;j.files.forEach(function(f){s+='\n'+f.name.replace(/[^\x20-\x7e]/g,'_')+'\t'+f.size;});rep13(s);}).catch(err);
+ else if(op=='U')fetch(mUrl(a[3])).then(function(r){if(!r.ok)throw 'could not read the file on the board';return r.blob();}).then(function(b){return fetch(F(a[4]),{method:'PUT',body:b});}).then(chk).then(function(){rep13('U\tok\t'+a[4]);}).catch(err);
+ else if(op=='D')fetch(F(a[3])).then(function(r){if(!r.ok)throw 'not in the store';return r.blob();}).then(function(b){return fetch(mUrl(a[4]),{method:'PUT',body:b});}).then(function(r){if(!r.ok)throw 'could not save it on the board';rep13('D\tok\t'+a[3]);}).catch(err);
+ else if(op=='X')fetch(F(a[3]),{method:'DELETE'}).then(chk).then(function(){rep13('X\tok\t'+a[3]);}).catch(err);}
+var nwAt=0;function plain(t){return t.replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/[–—]/g,'-').replace(/…/g,'...').replace(/&amp;/g,'&').replace(/[^\x20-\x7e]/g,'').trim();}
+function news(){if(!ws||ws.readyState!=1||Date.now()-nwAt<30*60000)return;nwAt=Date.now();
+ var feeds=['https://feeds.npr.org/1001/rss.xml','https://feeds.bbci.co.uk/news/rss.xml'],i=0;
+ (function next(){if(i>=feeds.length){nwAt=Date.now()-25*60000;return;}var f=feeds[i++];
+  fetch('https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent(f)).then(function(r){return r.json();}).then(function(j){
+   if(j.status!='ok'||!j.items||!j.items.length)throw 0;var t=j.items.slice(0,3).map(function(x){return plain(x.title||'').slice(0,120);});
+   send([14].concat(Array.from(new TextEncoder().encode(t.join('\n')))));}).catch(next);})();}
+setInterval(news,60000);
+var dropQ=[];
+function note(t,ms){var e=document.getElementById('dn');if(!e){e=document.createElement('div');e.id='dn';e.style.cssText='position:fixed;bottom:18px;right:18px;z-index:22;background:#222;color:#fff;font:15px sans-serif;padding:10px 14px;border-radius:8px;box-shadow:0 4px 16px #0008';document.body.appendChild(e);}
+ e.textContent=t;e.style.display='block';clearTimeout(e.t);if(ms)e.t=setTimeout(function(){e.style.display='none';},ms);}
+addEventListener('dragover',function(e){e.preventDefault();e.dataTransfer.dropEffect='copy';},false);
+addEventListener('drop',function(e){e.preventDefault();var fs=[].slice.call(e.dataTransfer.files||[]);if(!fs.length)return;
+ if(!ws||ws.readyState!=1){note('TidyOS is not connected.',4000);return;}dropQ=dropQ.concat(fs);note('Getting TidyOS ready for '+fs.length+' file'+(fs.length>1?'s':'')+'...');send([15]);},false);
+function dropNext(){var f=dropQ.shift();if(!f){return;}var nm=f.name.replace(/[\/\\:*?"<>|]/g,'_').replace(/[^\x20-\x7e]/g,'_').slice(0,90);
+ note('Sending '+nm+' ('+Math.ceil(f.size/1024)+' KB)...');
+ fetch(mUrl('/api/file?path='+encodeURIComponent('/SD/Incoming/'+nm)),{method:'PUT',body:f}).then(function(r){if(!r.ok)throw 0;
+  send([16].concat(Array.from(new TextEncoder().encode(nm))));note('Sent '+nm+' - pick a folder on TidyOS.',dropQ.length?0:5000);})
+ .catch(function(){note('Couldn\'t send '+nm+'.',6000);}).then(dropNext);}
 function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv');
  if(mx&&(k=='p'||k=='r'||k=='s'||k=='v')){if(k=='p'){mx.paused=true;mx.ctx.suspend();midiReport();}else if(k=='r'){mx.paused=false;mx.ctx.resume();}else if(k=='s'){midiStop();send([8,255,0,0,0,0]);}else mx.out.gain.value=Math.max(0,Math.min(1,+v));return;}
  if(k=='m'){midiPlay(mUrl(v),au?au.volume:0.8);return;}
  if(k=='o'){var t=v.split('\t');openBanner(mUrl(t[0]),t[1]||'');return;}
+ if(k=='g'){store(v);return;}
+ if(k=='u'){if(v=='go')setTimeout(dropNext,300);else{dropQ=[];note('Dropped files need an SD card in TidyOS (turn it on in Switches).',6000);}return;}
  if(k=='a'){midiStop();if(!au){au=new Audio();au.onended=auReport;setInterval(auReport,1000);
    au.onerror=function(){if(au.tries++<4&&au.getAttribute('src'))setTimeout(function(){au.load();au.play().catch(function(){auBlocked=true;});},1500);};}
   au.tries=0;au.src=mUrl(v);au.play().catch(function(e){if(e&&e.name=='NotAllowedError')auBlocked=true;});}
@@ -383,7 +417,7 @@ static bool pollInput(WiFiClient & c)
     else if (len == 127) return false;
     uint8_t mask[4] = { 0, 0, 0, 0 };
     if ((h[1] & 128) && !readExact(c, mask, 4)) return false;
-    uint8_t p[64];
+    static uint8_t p[1100];                        // replies from the page (Git-Store lists) can be long
     size_t keep = std::min(len, sizeof(p));
     if (!readExact(c, p, keep)) return false;
     for (size_t i = keep; i < len; ++i) { uint8_t junk; if (!readExact(c, &junk, 1)) return false; }
@@ -398,7 +432,11 @@ static bool pollInput(WiFiClient & c)
       case 4: gOpenTaskMgr = true; break;
       case 10: gRestartReq = true; break;
       case 11: gSleepReq = true; break;
-      case 12: { char t[65]; memcpy(t, p + 1, keep - 1); t[keep - 1] = 0; deskWeatherFromPage(t); break; }   // weather, looked up by the page
+      case 12: { char t[65]; size_t n = std::min(keep - 1, sizeof(t) - 1); memcpy(t, p + 1, n); t[n] = 0; deskWeatherFromPage(t); break; }   // weather, looked up by the page
+      case 13: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; storeFromPage((const char *)p + 1); break; }   // Git-Store reply
+      case 15: deskDropStart(); break;                                                                  // files dropped on the page
+      case 16: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskDropped((const char *)p + 1); break; }
+      case 14: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskNewsFromPage((const char *)p + 1); break; } // news headlines
       case 5: inputWebReleaseAll(); break;
       case 6: if (keep >= 5) netSetClockFrom(p[1] | (p[2] << 8) | (p[3] << 16) | ((uint32_t)p[4] << 24)); break;
       case 8: if (keep >= 6) { s_mState = p[1] == 255 ? -1 : p[1]; s_mPos = p[2] | (p[3] << 8); s_mDur = p[4] | (p[5] << 8); } break;
