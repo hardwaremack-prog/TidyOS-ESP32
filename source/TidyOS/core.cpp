@@ -34,6 +34,7 @@ uiApp *  gApp = nullptr;
 volatile uint64_t gNetRx = 0, gNetTx = 0;
 volatile bool gOpenTaskMgr = false;
 volatile bool gRestartReq = false;
+static RTC_NOINIT_ATTR uint32_t s_waitViewer;   // set by Restart: the start-up screen waits for the browser to come back
 volatile bool gSleepReq = false;     // the page's Sleep button   // the page's Restart button
 
 static Preferences s_prefs;
@@ -588,6 +589,7 @@ public:
         if (gRestartReq) {
           gRestartReq = false;
           Serial.println("[TidyOS] restart asked for from the browser");
+          s_waitViewer = 0xB0B0;
           delay(300);
           ESP.restart();
         }
@@ -1215,11 +1217,13 @@ static void bootChooser()
   cv.waitCompletion();
   const int COUNT = 12;
   uint32_t t0 = millis(), readyAt = 0;
+  bool waitView = s_waitViewer == 0xB0B0;          // after the page's Restart: count down only once the browser is back
+  s_waitViewer = 0;
   bool timer = true, boot = false;
   int shown = -2;
   while (!boot) {
     bool netUp = WiFi.status() == WL_CONNECTED || screenApOn();
-    if (!readyAt && (netUp || millis() - t0 > 35000)) readyAt = millis();
+    if (!readyAt && ((netUp && (!waitView || screenViewer())) || millis() - t0 > (waitView ? 60000 : 35000))) readyAt = millis();
     int left = readyAt ? COUNT - (int)((millis() - readyAt) / 1000) : COUNT;
     if (timer && readyAt && left <= 0) break;
     int toggled = -1;

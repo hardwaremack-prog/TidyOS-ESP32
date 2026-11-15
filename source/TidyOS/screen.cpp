@@ -90,6 +90,7 @@ function send(a){if(ws&&ws.readyState==1)ws.send(new Uint8Array(a));}
 function connect(){
  kicked=false;show('Connecting to TidyOS...');
  ws=new WebSocket('ws://'+location.host+'/ws');ws.binaryType='arraybuffer';
+ var w0=ws;setTimeout(function(){if(w0.readyState==0)w0.close();},3000);   // a board that's restarting can leave this hanging: give up and try again
  ws.onopen=function(){show('');st.textContent='Connected';c.focus();var t=Math.floor(Date.now()/1000);send([6,t&255,t>>8&255,t>>16&255,t>>>24]);wxAt=0;setTimeout(weather,1500);nwAt=0;setTimeout(news,3000);};
  ws.onmessage=function(e){var d=new Uint8Array(e.data);rx+=d.length;
   if(d[0]==1){bpp=d[1];for(var i=0;i<d[2];i++)pal[i]=0xff000000|d[5+i*3]<<16|d[4+i*3]<<8|d[3+i*3];}
