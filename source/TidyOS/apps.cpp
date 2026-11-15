@@ -10,6 +10,8 @@
 #include <math.h>
 #include "core.h"
 #include "style.h"
+#include "xlsx.h"
+#include "officeread.h"
 #include "widgets.h"
 #include "input.h"
 #include "net.h"
@@ -612,6 +614,21 @@ public:
   static bool isRtf(const std::string & p) { return strcasecmp(fileExt(p.c_str()), "rtf") == 0; }
 
   void loadFile(const char * p) {
+    const char * ext = fileExt(p);
+    if (!strcasecmp(ext, "docx") || !strcasecmp(ext, "doc")) {      // Word: bring in the text
+      std::string text, err;
+      bool ok = !strcasecmp(ext, "docx") ? office::readDocx(p, text, err) : office::readDoc(p, text, err);
+      if (!ok) { gApp->messageBox("Neat", ("Couldn't open that Word file: " + err).c_str(), "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
+      { StrSource in(text); rt->load(in); }
+      std::string asRtf = std::string(p).substr(0, std::string(p).rfind('.')) + ".rtf";
+      if (fileSize(asRtf.c_str()) >= 0) asRtf = std::string(p).substr(0, std::string(p).rfind('.')) + " (from Word).rtf";
+      setPath(asRtf);                                    // saving makes an .rtf next to it; the Word file is left alone
+      dirty = true;
+      setSavedLight(saved, false);
+      focusText();
+      gApp->messageBox("Neat", "Opened the text of the Word file (formatting isn't kept). Save writes it as .rtf next to the original.", "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
+      return;
+    }
     // Read straight from the file in small pieces: only the document itself takes RAM.
     long sz = fileSize(p);
     if (sz > 200 * 1024 || (sz > 0 && (size_t)sz * 2 + 24000 > ramBiggest())) {
@@ -761,10 +778,10 @@ public:
   SheetApp() : AppFrame("Tidy Lite", Point(4, 6), Size(632, 450), &inst) {
     button("New",     cx,       cy, 44)->onClick = [this]() { newDoc(); };
     button("Open",    cx + 48,  cy, 46)->onClick = [this]() { openDoc(); };
-    button("Save",    cx + 98,  cy, 44)->onClick = [this]() { save(); };
-    button("Save as", cx + 146, cy, 60)->onClick = [this]() { saveAs(); };
-    button("Print",   cx + 210, cy, 46)->onClick = [this]() { print(); };
-    nameLbl = label("Untitled", cx + 264, cy + 3, 270, 18);
+    nameLbl = label("Untitled", cx + 102, cy + 3, 220, 18);
+    button("Save",    cx + 326, cy, 44)->onClick = [this]() { save(); };       // kept apart from New/Open
+    button("Save as", cx + 374, cy, 60)->onClick = [this]() { saveAs(); };
+    button("Print",   cx + 438, cy, 46)->onClick = [this]() { print(); };
     saved = makeSavedLight(this, cx + 542, cy + 2);
     int y2 = cy + 28;
     button("Left",     cx,       y2, 40)->onClick = [this]() { setAlign(1); };
@@ -1041,10 +1058,17 @@ public:
       gApp->messageBox("Tidy", "That file is too big for the free memory.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error);
       return;
     }
-    FILE * f = fopen(p, "rb");
-    if (!f) { gApp->messageBox("Tidy", "Could not open that file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
-    { FileSource in(f); sheet.readCSV(in); }
-    fclose(f);
+    if (!strcasecmp(fileExt(p), "xlsx")) {                 // Excel: the first worksheet, as values
+      std::string err;
+      sheet.cells.clear();
+      bool ok = office::readXlsx(p, [&](int r, int c, const std::string & v) { if (r < Sheet::ROWS && c < Sheet::COLS) sheet.set(r, c, v); }, err);
+      if (!ok) { gApp->messageBox("Tidy", ("Couldn't open that Excel file: " + err).c_str(), "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
+    } else {
+      FILE * f = fopen(p, "rb");
+      if (!f) { gApp->messageBox("Tidy", "Could not open that file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
+      { FileSource in(f); sheet.readCSV(in); }
+      fclose(f);
+    }
     path = p;
     loadSizes();
     grid->selR = grid->selC = grid->topR = grid->leftC = 0; grid->collapse();
@@ -1070,14 +1094,23 @@ public:
 
   void openDoc() {
     if (!askSave()) return;
-    std::string p = askFile("Open sheet (.csv)", "Open", "", path.empty() ? documentsDir() : dirOf(path));
+    std::string p = askFile("Open sheet (.csv or .xlsx)", "Open", "", path.empty() ? documentsDir() : dirOf(path));
     if (!p.empty()) loadFile(p.c_str());
   }
 
   bool save() {
     grid->commit();
     if (path.empty()) return saveAs();
-    if (!writeFileWith(path.c_str(), [&](RSink & o) { sheet.writeCSV(o); })) {
+    bool ok;
+    if (!strcasecmp(fileExt(path.c_str()), "xlsx")) {      // Excel: the values (formulas are saved as their results)
+      int maxR = 0, maxC = 0;
+      for (auto & kv : sheet.cells) { maxR = imax(maxR, kv.first / Sheet::COLS + 1); maxC = imax(maxC, kv.first % Sheet::COLS + 1); }
+      std::vector<int> widths(imax(1, maxC));
+      for (int c = 0; c < maxC; ++c) widths[c] = imax(8, sheet.colW[c] / 7);
+      ok = xlsx::write(path.c_str(), "Sheet1", imax(1, maxR), imax(1, maxC), widths.data(), [&](int r, int c, bool & num) {
+        bool n = false; std::string v = sheet.display(r, c, n); num = n && !v.empty() && v != "#ERR"; return v; });
+    } else ok = writeFileWith(path.c_str(), [&](RSink & o) { sheet.writeCSV(o); });
+    if (!ok) {
       gApp->messageBox("Tidy", "Could not save. Is the SD card in?", "OK", nullptr, nullptr, uiMessageBoxIcon::Error);
       return false;
     }
@@ -1090,7 +1123,7 @@ public:
   bool saveAs() {
     std::string p = askFile("Save sheet", "Save", path.empty() ? "sheet.csv" : baseName(path).c_str(), path.empty() ? documentsDir() : dirOf(path));
     if (p.empty()) return false;
-    if (strcmp(fileExt(p.c_str()), "csv")) p += ".csv";
+    if (strcasecmp(fileExt(p.c_str()), "csv") && strcasecmp(fileExt(p.c_str()), "xlsx")) p += ".csv";
     setPath(p);
     return save();
   }
@@ -1595,7 +1628,7 @@ public:
     if (selName.empty()) { info->setText("Click a file first, then Open (or double-click it)."); info->repaint(); return; }
     std::string p = selPath();
     const char * e = fileExt(p.c_str());
-    if (!strcmp(e, "csv") || !strcmp(e, "tsv")) openTidy(p.c_str());
+    if (!strcasecmp(e, "csv") || !strcasecmp(e, "tsv") || !strcasecmp(e, "xlsx")) openTidy(p.c_str());
     else if (!strcmp(e, "bmp") || !strcmp(e, "jpg") || !strcmp(e, "jpeg")) openPictures(p.c_str());
     else if (isMusicFileName(p.c_str())) openMusicFile(p.c_str());
     else openNeat(p.c_str());

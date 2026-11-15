@@ -549,6 +549,17 @@ public:
           m_pressed = -1;
           repaintIcon(i);
           if (hit(event->params.mouse.status.X, event->params.mouse.status.Y) == i) {
+            // open a moment later: the second click of a double-click then lands on the icon,
+            // not on a button (like Save) in the window that just opened
+            if (m_pendingOpen < 0) { m_pendingOpen = i; m_pendingAt = millis(); }
+          }
+        }
+        break;
+      case UIEVT_TIMER:
+        if (m_pendingOpen >= 0 && millis() - m_pendingAt >= 350) {
+          int i = m_pendingOpen;
+          m_pendingOpen = -1;
+          {
             Serial.printf("[TidyOS] open %s, free RAM %u (biggest %u)\n", ICONS[i].label, (unsigned)ramFree(), (unsigned)ramBiggest());
             int need = appNeedKB(ICONS[i].label);
             if (!appIsOpen(ICONS[i].label) && (int)(ramFree() / 1024) < need + 10) {
@@ -560,8 +571,6 @@ public:
               ICONS[i].open();
           }
         }
-        break;
-      case UIEVT_TIMER:
         if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
         alarmTick();                                // Clock alarm + Print Screen
         deskDropTick();                             // files dropped on the page: where do they go?
@@ -582,14 +591,14 @@ public:
           delay(300);
           ESP.restart();
         }
-        if (!s_bootNote.empty() && (m_tick > 8 || screenViewer())) {     // show it once, when someone can see it
+        if (!s_bootNote.empty() && (m_tick > 20 || screenViewer())) {     // show it once, when someone can see it
           std::string n = s_bootNote; s_bootNote.clear();
           gApp->messageBox("Update", n.c_str(), "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
         }
-        if (++m_tick % 4) break;
+        if (++m_tick % 10) break;                   // the rest once a second (timer: 100 ms)
         netTick();
         gHeapSnap = ramFree(); gMinHeapSnap = ramLowest();
-        if (m_tick % 120 == 0) Serial.printf("[TidyOS] still running: up %us, free RAM %uK\n", (unsigned)(millis() / 1000), (unsigned)(gHeapSnap / 1024));
+        if (m_tick % 300 == 0) Serial.printf("[TidyOS] still running: up %us, free RAM %uK\n", (unsigned)(millis() / 1000), (unsigned)(gHeapSnap / 1024));
         repaint(Rect(0, SCREEN_H - BAR_H, SCREEN_W - 1, SCREEN_H - 1));
         {
           // refresh the welcome / pairing hint only when something changed
@@ -687,6 +696,8 @@ private:
 #endif
   }
   int m_panelSig = -1;
+  int m_pendingOpen = -1;          // icon clicked, opening shortly
+  uint32_t m_pendingAt = 0;
 
   void paint(Rect const & clip) {
     auto cv = canvas();
@@ -794,7 +805,7 @@ class TidyApp : public uiApp {
     gApp = this;
     rootWindow()->frameStyle().backgroundColor = T.desk;
     auto desk = new Desktop(rootWindow());
-    setTimer(desk, 250);
+    setTimer(desk, 100);
     displayController()->setMouseCursor(CursorName::CursorPointerSimpleReduced);
     inputAttach(this, &s_keyboard, s_dc);
   }
