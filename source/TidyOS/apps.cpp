@@ -722,7 +722,7 @@ public:
     saved = makeSavedLight(this, cx + 586, cy + 28);
     cellLbl->labelStyle().backgroundColor = T.face;
     grid = new SheetGrid(this, Point(cx, cy + 50), Size(614, 340), &sheet);
-    label("Drag or Shift+arrows to select. Type to fill, F2 or double-click to edit.  =SUM(A1:A9) AVG MIN MAX COUNT ROUND IF",
+    label("Click a letter or number to pick a column or row; drag its edge to resize.  =SUM(A1:A9) AVG MIN MAX COUNT ROUND IF",
           cx, cy + 394, 612, 16)->labelStyle().textFont = &FONT_std_12;
     applyView();
     grid->onSelect = [this]() { updateCell(); };
@@ -807,6 +807,40 @@ public:
     cellLbl->repaint();
   }
 
+  // column widths and row heights live beside the sheet (a .csv has no room for them)
+  static std::string sizesFile(const std::string & p) { return dataPath(("tidy-" + baseName(p) + ".sizes").c_str()); }
+  void saveSizes() {
+    if (path.empty()) return;
+    std::string f = sizesFile(path);
+    if (sheet.sizesDefault()) { remove(f.c_str()); return; }
+    writeFileWith(f.c_str(), [&](RSink & o) {
+      char b[8];
+      o.put("w"); for (int c = 0; c < Sheet::COLS; ++c) { snprintf(b, sizeof(b), " %d", sheet.colW[c]); o.put(b); }
+      o.put("\nh"); for (int r = 0; r < Sheet::ROWS; ++r) { snprintf(b, sizeof(b), " %d", sheet.rowH[r]); o.put(b); }
+      o.put("\n");
+    });
+  }
+  void loadSizes() {
+    sheet.resetSizes();
+    std::string t;
+    if (path.empty() || !readFileStr(sizesFile(path).c_str(), t, 2048)) return;
+    const char * p = t.c_str();
+    while (*p) {
+      char kind = *p++;
+      int i = 0;
+      while (*p && *p != '\n') {
+        char * e; long v = strtol(p, &e, 10);
+        if (e == p) { ++p; continue; }
+        p = e;
+        if (kind == 'w' && i < Sheet::COLS && v >= 16 && v <= 250) sheet.colW[i] = v;
+        if (kind == 'h' && i < Sheet::ROWS && v >= 12 && v <= 64) sheet.rowH[i] = v;
+        ++i;
+      }
+      if (*p) ++p;
+    }
+    sheet.sizesChanged = false;
+  }
+
   void setPath(const std::string & p) {
     path = p;
     nameLbl->setText(p.empty() ? "Untitled" : baseName(p).c_str());
@@ -831,6 +865,8 @@ public:
     if (!f) { gApp->messageBox("Tidy", "Could not open that file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
     { FileSource in(f); sheet.readCSV(in); }
     fclose(f);
+    path = p;
+    loadSizes();
     grid->selR = grid->selC = grid->topR = grid->leftC = 0; grid->collapse();
     grid->repaint();
     setPath(p);
@@ -843,6 +879,7 @@ public:
   void newDoc() {
     if (!askSave()) return;
     sheet.cells.clear();
+    sheet.resetSizes();
     grid->selR = grid->selC = grid->topR = grid->leftC = 0; grid->collapse();
     grid->repaint();
     setPath("");
@@ -864,6 +901,7 @@ public:
       gApp->messageBox("Tidy", "Could not save. Is the SD card in?", "OK", nullptr, nullptr, uiMessageBoxIcon::Error);
       return false;
     }
+    saveSizes();
     dirty = false;
     setSavedLight(saved, true);
     return true;

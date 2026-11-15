@@ -634,6 +634,7 @@ void Sheet::readCSV(RSource & in)
 
 // ====================================================================== SheetGrid
 
+
 SheetGrid::SheetGrid(uiWindow * parent, const Point & pos, const Size & size, Sheet * s)
   : uiControl(parent, pos, size, true, 0), sheet(s)
 {
@@ -646,50 +647,129 @@ SheetGrid::SheetGrid(uiWindow * parent, const Point & pos, const Size & size, Sh
   windowProps().focusable = true;     // FabGL only gives keyboard focus to controls marked focusable
 }
 
-int SheetGrid::visRows() { return imax(1, (clientRect(uiOrigin::Window).height() - ROWH) / ROWH); }
-int SheetGrid::visCols() { return imax(1, (clientRect(uiOrigin::Window).width() - HDRW) / COLW); }
+// how many whole rows / columns fit from the current scroll position
+int SheetGrid::visRows()
+{
+  int h = clientRect(uiOrigin::Window).height() - HDRH, n = 0;
+  for (int i = 0; ; ++i) {
+    int r = rowAt(i);
+    if (r >= Sheet::ROWS) break;
+    h -= sheet->rowH[r];
+    if (h < 0) break;
+    ++n;
+  }
+  return imax(1, n);
+}
+
+int SheetGrid::visCols()
+{
+  int w = clientRect(uiOrigin::Window).width() - HDRW, n = 0;
+  for (int c = leftC; c < Sheet::COLS; ++c) { w -= sheet->colW[c]; if (w < 0) break; ++n; }
+  return imax(1, n);
+}
 
 void SheetGrid::ensureVisible()
 {
-  int vr = visRows(), vc = visCols();
   if (freezeTop) {
-    if (selR > 0) {
-      if (selR < topR + 1) topR = selR - 1;
-      if (selR > topR + vr - 1) topR = selR - vr + 1;
-    }
-  } else {
-    if (selR < topR) topR = selR;
-    if (selR >= topR + vr) topR = selR - vr + 1;
+    if (selR > 0 && selR < topR + 1) topR = selR - 1;
+  } else if (selR < topR) topR = selR;
+  while (topR < Sheet::ROWS - 1) {                 // scroll down until the row is wholly on screen
+    int vr = visRows();
+    bool shown = (freezeTop && selR == 0);
+    for (int i = 0; i < vr && !shown; ++i) if (rowAt(i) == selR) shown = true;
+    if (shown) break;
+    ++topR;
   }
-  topR = imax(0, topR);
   if (selC < leftC) leftC = selC;
-  if (selC >= leftC + vc) leftC = selC - vc + 1;
+  while (leftC < selC && selC >= leftC + visCols()) ++leftC;
+  topR = imax(0, topR);
 }
 
-bool SheetGrid::cellAt(int px, int py, int & r, int & c)
+// what's under a point: 0 nothing, 1 cell, 2 column letter, 3 row number, 4 column edge, 5 row edge, 6 corner
+int SheetGrid::hitTest(int px, int py, int & r, int & c)
 {
   Rect cr = clientRect(uiOrigin::Window);
-  int mx = px - cr.X1 - HDRW, my = py - cr.Y1 - ROWH;
-  if (mx < 0 || my < 0) return false;
-  c = imin(Sheet::COLS - 1, leftC + mx / COLW);
-  r = imin(Sheet::ROWS - 1, rowAt(imin(my / ROWH, visRows() - 1)));
-  return true;
+  int mx = px - cr.X1, my = py - cr.Y1;
+  r = c = -1;
+  if (mx < 0 || my < 0) return 0;
+  // column
+  int x = HDRW;
+  if (mx >= HDRW) {
+    for (int cc = leftC; cc < Sheet::COLS; ++cc) {
+      int w = sheet->colW[cc];
+      if (mx < x + w) { c = cc; if (my < HDRH && mx >= x + w - 4) return 4; break; }
+      x += w;
+      if (x > cr.width()) break;
+    }
+    if (c < 0) c = imin(Sheet::COLS - 1, leftC + visCols());
+    if (my < HDRH) return 2;
+  }
+  // row
+  int y = HDRH;
+  if (my >= HDRH) {
+    for (int i = 0; ; ++i) {
+      int rr = rowAt(i);
+      if (rr >= Sheet::ROWS) { r = Sheet::ROWS - 1; break; }
+      int h = sheet->rowH[rr];
+      if (my < y + h) { r = rr; if (mx < HDRW && my >= y + h - 3) return 5; break; }
+      y += h;
+      if (y > cr.height()) { r = rr; break; }
+    }
+    if (mx < HDRW) return 3;
+    return 1;
+  }
+  return 6;
+}
+
+// screen x of a column's left edge (or -1 when it's scrolled off), y of a row's top
+int SheetGrid::colX(int c)
+{
+  if (c < leftC) return -1;
+  int x = clientRect(uiOrigin::Window).X1 + HDRW;
+  for (int cc = leftC; cc < c; ++cc) x += sheet->colW[cc];
+  return x;
+}
+
+int SheetGrid::rowY(int r)
+{
+  int y = clientRect(uiOrigin::Window).Y1 + HDRH;
+  int vr = visRows() + 1;
+  for (int i = 0; i < vr; ++i) { int rr = rowAt(i); if (rr == r) return y; if (rr >= Sheet::ROWS) break; y += sheet->rowH[rr]; }
+  return -1;
+}
+
+void SheetGrid::selectRows(int a, int b)
+{
+  commit();
+  ancR = a; selR = b; ancC = Sheet::COLS - 1; selC = 0;
+}
+
+void SheetGrid::selectCols(int a, int b)
+{
+  commit();
+  ancC = a; selC = b; ancR = Sheet::ROWS - 1; selR = 0;
 }
 
 void SheetGrid::toggleChecks()
 {
   commit();
+  // a whole row / column picked: only go as far as the filled part of the sheet
+  int lastR = 0, lastC = 0;
+  for (auto & kv : sheet->cells) { lastR = imax(lastR, kv.first / Sheet::COLS); lastC = imax(lastC, kv.first % Sheet::COLS); }
+  int R1 = r1(), R2 = r2(), C1 = c1(), C2 = c2();
+  if (R1 == 0 && R2 == Sheet::ROWS - 1) R2 = imax(lastR, selR);
+  if (C1 == 0 && C2 == Sheet::COLS - 1) C2 = imax(lastC, selC);
   bool anyBox = false, allTicked = true;
-  for (int r = r1(); r <= r2(); ++r)
-    for (int c = c1(); c <= c2(); ++c) {
+  for (int r = R1; r <= R2; ++r)
+    for (int c = C1; c <= C2; ++c) {
       int st = Sheet::checkState(sheet->raw(r, c));
       if (st >= 0) anyBox = true;
       if (st != 1) allTicked = false;
     }
   // no boxes yet: put empty boxes in; otherwise tick them all, or untick if all are ticked
   const char * v = !anyBox ? "[ ]" : allTicked ? "[ ]" : "[x]";
-  for (int r = r1(); r <= r2(); ++r)
-    for (int c = c1(); c <= c2(); ++c) {
+  for (int r = R1; r <= R2; ++r)
+    for (int c = C1; c <= C2; ++c) {
       const std::string & cur = sheet->raw(r, c);
       if (anyBox && Sheet::checkState(cur) < 0) continue;     // leave other cells alone
       if (!anyBox && !cur.empty()) continue;
@@ -718,104 +798,109 @@ void SheetGrid::paint(Rect const & clip)
   auto font = &FONT_6x10;
   cv->setBrushColor(T.win);
   cv->fillRectangle(cr.X1, cr.Y1, cr.X2, cr.Y2);
-  int vr = visRows(), vc = visCols();
-  // headers
+  bool wholeCols = r1() == 0 && r2() == Sheet::ROWS - 1, wholeRows = c1() == 0 && c2() == Sheet::COLS - 1;
+  char b[16];
+  // column letters
   cv->setBrushColor(T.face);
-  cv->fillRectangle(cr.X1, cr.Y1, cr.X2, cr.Y1 + ROWH - 1);
+  cv->fillRectangle(cr.X1, cr.Y1, cr.X2, cr.Y1 + HDRH - 1);
   cv->fillRectangle(cr.X1, cr.Y1, cr.X1 + HDRW - 1, cr.Y2);
-  cv->setPenColor(T.shadow);
-  char b[64];
-  for (int i = 0; i <= vc; ++i) {
-    int x = cr.X1 + HDRW + i * COLW;
+  int x = cr.X1 + HDRW;
+  for (int c = leftC; c < Sheet::COLS && x <= cr.X2; ++c) {
+    int w = sheet->colW[c];
+    bool hi = wholeCols && c >= c1() && c <= c2();
+    if (hi) { cv->setBrushColor(T.accent); cv->fillRectangle(x, cr.Y1, x + w - 2, cr.Y1 + HDRH - 2); }
+    b[0] = 'A' + c; b[1] = 0;
+    cv->setPenColor(hi ? T.accentText : T.text);
+    cv->setBrushColor(hi ? T.accent : T.face);
+    cv->drawText(font, x + w / 2 - 3, cr.Y1 + 3, b);
+    x += w;
+    cv->setPenColor(T.shadow);
     cv->drawLine(x - 1, cr.Y1, x - 1, cr.Y2);
-    if (i < vc && leftC + i < Sheet::COLS) {
-      b[0] = 'A' + leftC + i; b[1] = 0;
-      cv->setPenColor(T.text);
-      cv->setBrushColor(T.face);
-      cv->drawText(font, x + COLW / 2 - 3, cr.Y1 + 3, b);
-      cv->setPenColor(T.shadow);
-    }
   }
-  for (int i = 0; i <= vr; ++i) {
-    int y = cr.Y1 + ROWH + i * ROWH;
-    cv->drawLine(cr.X1, y - 1, cr.X2, y - 1);
-    if (i < vr && rowAt(i) < Sheet::ROWS) {
-      snprintf(b, sizeof(b), "%3d", rowAt(i) + 1);
-      cv->setPenColor(T.text);
-      cv->setBrushColor(T.face);
-      cv->drawText(font, cr.X1 + 6, y + 3, b);
-      cv->setPenColor(T.shadow);
-    }
-  }
-  // cells
-  int maxCh = (COLW - 6) / font->width;
-  for (int i = 0; i < vr; ++i) {
+  cv->setPenColor(T.shadow);
+  cv->drawLine(cr.X1 + HDRW - 1, cr.Y1, cr.X1 + HDRW - 1, cr.Y2);
+  cv->drawLine(cr.X1, cr.Y1 + HDRH - 1, cr.X2, cr.Y1 + HDRH - 1);
+  // rows
+  int maxRight = x;
+  int y = cr.Y1 + HDRH;
+  for (int i = 0; y <= cr.Y2; ++i) {
     int r = rowAt(i);
     if (r >= Sheet::ROWS) break;
-    int y = cr.Y1 + ROWH + i * ROWH;
-    if (y + ROWH < clip.Y1 || y > clip.Y2) continue;
-    bool band = bands && (r % 2 == 1);
-    if (band) {
-      cv->setBrushColor(T.face);
-      cv->fillRectangle(cr.X1 + HDRW, y, cr.X2, y + ROWH - 2);
-    }
-    for (int j = 0; j < vc; ++j) {
-      int c = leftC + j;
-      if (c >= Sheet::COLS) break;
-      int x = cr.X1 + HDRW + j * COLW;
-      bool sel = (r == selR && c == selC);
-      bool inRange = !sel && isRange() && r >= r1() && r <= r2() && c >= c1() && c <= c2();
-      bool isNum = false;
-      std::string s = (sel && editing) ? edit : sheet->display(r, c, isNum);
-      RGB888 bg = band ? T.face : T.win;
-      if (inRange) {
-        bg = T.accent;
-        cv->setBrushColor(bg);
-        cv->fillRectangle(x, y, x + COLW - 2, y + ROWH - 2);
-      }
-      int box = (sel && editing) ? -1 : Sheet::checkState(s);
-      if (box >= 0) {                                        // draw a check box instead of the text
-        if (sel) { cv->setBrushColor(T.accent); cv->fillRectangle(x, y, x + COLW - 2, y + ROWH - 2); }
-        RGB888 ink = (sel || inRange) ? T.accentText : T.text;
-        int bx = x + 4, by = y + 2;
-        cv->setBrushColor((sel || inRange) ? T.accent : bg);
-        cv->setPenColor(ink);
-        cv->drawRectangle(bx, by, bx + 10, by + 10);
-        if (box) {
-          cv->drawLine(bx + 2, by + 5, bx + 4, by + 8); cv->drawLine(bx + 3, by + 5, bx + 5, by + 8);
-          cv->drawLine(bx + 4, by + 8, bx + 8, by + 2); cv->drawLine(bx + 5, by + 8, bx + 9, by + 2);
+    int h = sheet->rowH[r];
+    int ty = y + (h - 10) / 2;
+    bool rowHi = wholeRows && r >= r1() && r <= r2();
+    if (y + h >= clip.Y1 && y <= clip.Y2) {
+      // row number
+      if (rowHi) { cv->setBrushColor(T.accent); cv->fillRectangle(cr.X1, y, cr.X1 + HDRW - 2, y + h - 2); }
+      snprintf(b, sizeof(b), "%3d", r + 1);
+      cv->setPenColor(rowHi ? T.accentText : T.text);
+      cv->setBrushColor(rowHi ? T.accent : T.face);
+      cv->drawText(font, cr.X1 + 6, ty, b);
+      bool band = bands && (r % 2 == 1);
+      if (band) { cv->setBrushColor(T.face); cv->fillRectangle(cr.X1 + HDRW, y, cr.X2, y + h - 2); }
+      int cx0 = cr.X1 + HDRW;
+      for (int c = leftC; c < Sheet::COLS && cx0 <= cr.X2; ++c) {
+        int w = sheet->colW[c];
+        int x0 = cx0;
+        cx0 += w;
+        bool sel = (r == selR && c == selC);
+        bool inRange = !sel && isRange() && r >= r1() && r <= r2() && c >= c1() && c <= c2();
+        bool isNum = false;
+        std::string s = (sel && editing) ? edit : sheet->display(r, c, isNum);
+        RGB888 bg = band ? T.face : T.win;
+        if (inRange) {
+          bg = T.accent;
+          cv->setBrushColor(bg);
+          cv->fillRectangle(x0, y, x0 + w - 2, y + h - 2);
         }
-        continue;
-      }
-      if (sel) {
-        cv->setBrushColor(editing ? T.win : T.accent);
-        cv->fillRectangle(x, y, x + COLW - 2, y + ROWH - 2);
-        if (editing) {
-          cv->setPenColor(T.accent);
-          cv->drawRectangle(x, y, x + COLW - 2, y + ROWH - 2);
+        int box = (sel && editing) ? -1 : Sheet::checkState(s);
+        if (box >= 0) {                                        // a check box instead of the text
+          if (sel) { cv->setBrushColor(T.accent); cv->fillRectangle(x0, y, x0 + w - 2, y + h - 2); }
+          RGB888 ink = (sel || inRange) ? T.accentText : T.text;
+          int bx = x0 + 4, by = y + (h - 11) / 2;
+          cv->setPenColor(ink);
+          cv->drawRectangle(bx, by, bx + 10, by + 10);
+          if (box) {
+            cv->drawLine(bx + 2, by + 5, bx + 4, by + 8); cv->drawLine(bx + 3, by + 5, bx + 5, by + 8);
+            cv->drawLine(bx + 4, by + 8, bx + 8, by + 2); cv->drawLine(bx + 5, by + 8, bx + 9, by + 2);
+          }
+          continue;
+        }
+        if (sel) {
+          cv->setBrushColor(editing ? T.win : T.accent);
+          cv->fillRectangle(x0, y, x0 + w - 2, y + h - 2);
+          if (editing) { cv->setPenColor(T.accent); cv->drawRectangle(x0, y, x0 + w - 2, y + h - 2); }
+        }
+        if (s.empty() && !(sel && editing)) continue;
+        int maxCh = imax(1, (w - 6) / font->width);
+        if ((int)s.size() > maxCh) s = (sel && editing) ? s.substr(s.size() - maxCh) : s.substr(0, maxCh);
+        int tx = x0 + 3;
+        if (isNum && !editing) tx = x0 + w - 4 - s.size() * font->width;
+        bool hi = (sel && !editing) || inRange;
+        cv->setPenColor(hi ? T.accentText : (s == "#ERR" ? T.warn : T.text));
+        cv->setBrushColor(hi ? T.accent : (sel ? T.win : bg));
+        cv->drawText(font, tx, ty, s.c_str());
+        if (sel && editing) {
+          int cx = x0 + 3 + s.size() * font->width;
+          cv->setPenColor(T.text);
+          cv->drawLine(cx, y + 2, cx, y + h - 4);
         }
       }
-      if (s.empty() && !(sel && editing)) continue;
-      if ((int)s.size() > maxCh) s = (sel && editing) ? s.substr(s.size() - maxCh) : s.substr(0, maxCh);
-      int tx = x + 3;
-      if (isNum && !editing) tx = x + COLW - 4 - s.size() * font->width;
-      bool hi = (sel && !editing) || inRange;
-      cv->setPenColor(hi ? T.accentText : (s == "#ERR" ? T.warn : T.text));
-      cv->setBrushColor(hi ? T.accent : (sel ? T.win : bg));
-      cv->drawText(font, tx, y + 3, s.c_str());
-      if (sel && editing) {
-        int cx = x + 3 + s.size() * font->width;
-        cv->setPenColor(T.text);
-        cv->drawLine(cx, y + 2, cx, y + ROWH - 4);
-      }
     }
-  }
-  if (freezeTop) {                                           // heavy line under the frozen row
-    int y = cr.Y1 + 2 * ROWH - 1;
-    cv->setPenColor(T.text);
-    cv->drawLine(cr.X1, y, cr.X2, y);
+    y += h;
+    cv->setPenColor(T.shadow);
     cv->drawLine(cr.X1, y - 1, cr.X2, y - 1);
+    if (freezeTop && i == 0) {                                // heavy line under the frozen row
+      cv->setPenColor(T.text);
+      cv->drawLine(cr.X1, y - 1, cr.X2, y - 1);
+      cv->drawLine(cr.X1, y - 2, cr.X2, y - 2);
+    }
   }
+  // column lines over the cells
+  cv->setPenColor(T.shadow);
+  x = cr.X1 + HDRW;
+  for (int c = leftC; c < Sheet::COLS && x <= cr.X2; ++c) { x += sheet->colW[c]; cv->drawLine(x - 1, cr.Y1 + HDRH, x - 1, cr.Y2); }
+  (void)maxRight;
 }
 
 void SheetGrid::keyDown(uiKeyEventInfo const & k)
@@ -888,41 +973,68 @@ void SheetGrid::processEvent(uiEvent * event)
     case UIEVT_MOUSEBUTTONDOWN:
       if (event->params.mouse.changedButton == 1) {
         app()->setFocusedWindow(this);
-        int r, c;
-        if (cellAt(event->params.mouse.status.X, event->params.mouse.status.Y, r, c)) {
-          commit();
+        int px = event->params.mouse.status.X, py = event->params.mouse.status.Y;
+        int r, c, what = hitTest(px, py, r, c);
+        drag = 0;
+        if (what == 0) break;
+        commit();
+        if (what == 4) { drag = 4; dragIdx = c; dragFrom = colX(c); break; }            // resize a column
+        if (what == 5) { drag = 5; dragIdx = r; dragFrom = rowY(r); break; }            // resize a row
+        if (what == 6) { ancR = Sheet::ROWS - 1; ancC = Sheet::COLS - 1; selR = selC = 0; }   // corner: everything
+        else if (what == 2) { selectCols(c, c); drag = 2; dragIdx = c; }
+        else if (what == 3) { selectRows(r, r); drag = 3; dragIdx = r; }
+        else {
           // clicking the box of a check-box cell ticks it
-          Rect cr = clientRect(uiOrigin::Window);
-          int inX = (event->params.mouse.status.X - cr.X1 - HDRW) % COLW;
-          bool onBox = inX < 16 && Sheet::checkState(sheet->raw(r, c)) >= 0;
+          int inX = px - colX(c);
+          bool onBox = inX >= 0 && inX < 16 && Sheet::checkState(sheet->raw(r, c)) >= 0;
           selR = r; selC = c;
           collapse();
-          dragging = true;
-          if (onBox) { toggleChecks(); dragging = false; break; }
-          repaint();
-          if (onSelect) onSelect();
+          if (onBox) { toggleChecks(); break; }
+          drag = 1;
         }
+        repaint();
+        if (onSelect) onSelect();
       }
       break;
-    case UIEVT_MOUSEMOVE:
-      if (dragging && event->params.mouse.status.buttons.left) {
-        int r, c;
-        if (cellAt(event->params.mouse.status.X, event->params.mouse.status.Y, r, c) && (r != selR || c != selC)) {
-          selR = r; selC = c;          // anchor stays where the drag started
-          repaint();
-          if (onSelect) onSelect();
-        }
-      } else dragging = false;
+    case UIEVT_MOUSEMOVE: {
+      int px = event->params.mouse.status.X, py = event->params.mouse.status.Y;
+      if (!drag || !event->params.mouse.status.buttons.left) { drag = 0; break; }
+      if (drag == 4 && dragFrom >= 0) {
+        int w = fabgl::iclamp(px - dragFrom + 2, 16, 250);
+        if (w != sheet->colW[dragIdx]) { sheet->colW[dragIdx] = w; sheet->sizesChanged = true; repaint(); if (onModified) onModified(); }
+        break;
+      }
+      if (drag == 5 && dragFrom >= 0) {
+        int h = fabgl::iclamp(py - dragFrom + 2, 12, 64);
+        if (h != sheet->rowH[dragIdx]) { sheet->rowH[dragIdx] = h; sheet->sizesChanged = true; repaint(); if (onModified) onModified(); }
+        break;
+      }
+      int r, c;
+      hitTest(px, py, r, c);
+      bool changed = false;
+      if (drag == 1 && r >= 0 && c >= 0 && (r != selR || c != selC)) { selR = r; selC = c; changed = true; }    // anchor stays put
+      if (drag == 2 && c >= 0 && c != selC) { selectCols(dragIdx, c); changed = true; }
+      if (drag == 3 && r >= 0 && r != selR) { selectRows(dragIdx, r); changed = true; }
+      if (changed) { repaint(); if (onSelect) onSelect(); }
       break;
+    }
     case UIEVT_MOUSEBUTTONUP:
-      dragging = false;
+      drag = 0;
       break;
-    case UIEVT_DBLCLICK:
-      if (!editing) { editing = true; edit = sheet->raw(selR, selC); repaint(); if (onSelect) onSelect(); }
+    case UIEVT_DBLCLICK: {
+      int r, c, what = hitTest(event->params.mouse.status.X, event->params.mouse.status.Y, r, c);
+      if (what == 4) {                       // double-click a column edge: fit the widest text
+        int w = 30;
+        for (int rr = 0; rr < Sheet::ROWS; ++rr) { bool n; w = imax(w, (int)sheet->display(rr, c, n).size() * 6 + 10); }
+        sheet->colW[c] = imin(250, w); sheet->sizesChanged = true;
+        repaint(); if (onModified) onModified();
+        break;
+      }
+      if (what == 1 && !editing) { editing = true; edit = sheet->raw(selR, selC); repaint(); if (onSelect) onSelect(); }
       break;
+    }
     case UIEVT_MOUSEWHEEL:
-      topR = imax(0, imin(Sheet::ROWS - visRows(), topR + event->params.mouse.status.wheelDelta * 2));
-      if (freezeTop) topR = imin(topR, Sheet::ROWS - visRows());
+      topR = imax(0, imin(Sheet::ROWS - 2, topR + event->params.mouse.status.wheelDelta * 2));
       repaint();
       break;
     case UIEVT_SETFOCUS:

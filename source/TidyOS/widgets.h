@@ -57,6 +57,12 @@ public:
   static const int COLS = 26;
   static const int ROWS = 200;
   std::map<int, std::string> cells;
+  uint8_t colW[COLS];                  // column widths, pixels
+  uint8_t rowH[ROWS];                  // row heights, pixels
+  bool    sizesChanged = false;
+  Sheet() { resetSizes(); }
+  void resetSizes() { memset(colW, 74, sizeof(colW)); memset(rowH, 16, sizeof(rowH)); sizesChanged = false; }
+  bool sizesDefault() const { for (auto w : colW) if (w != 74) return false; for (auto x : rowH) if (x != 16) return false; return true; }
 
   static int key(int r, int c) { return r * COLS + c; }
   const std::string & raw(int r, int c);
@@ -107,13 +113,17 @@ public:
   bool isRange() const { return selR != ancR || selC != ancC; }
   void collapse() { ancR = selR; ancC = selC; }
   void toggleChecks();                 // selected cells: add check boxes, or tick / untick them
+  void selectRows(int a, int b);       // whole rows a..b
+  void selectCols(int a, int b);       // whole columns a..b
 
 private:
   void paint(Rect const & r);
   void ensureVisible();
   void keyDown(uiKeyEventInfo const & k);
   int  rowAt(int i) const { return freezeTop ? (i == 0 ? 0 : topR + i) : topR + i; }   // screen row -> sheet row
-  bool cellAt(int mx, int my, int & r, int & c);
-  bool dragging = false;
-  static const int HDRW = 34, COLW = 74, ROWH = 16;
+  int  hitTest(int px, int py, int & r, int & c);
+  int  colX(int c);
+  int  rowY(int r);
+  int  drag = 0, dragIdx = 0, dragFrom = 0;   // 1 cells, 2 columns, 3 rows, 4 column edge, 5 row edge
+  static const int HDRW = 34, HDRH = 16;
 };
