@@ -10,14 +10,16 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Bluetooth keyboard and mouse** (Bluetooth LE, VGA edition)
 - **microSD card** for your files (falls back to internal flash with no card)
 - **Wi-Fi** with a clock that sets itself from the internet
-- Apps: **Calculator, Neat Lite** (writing, with spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Messages, Browser, Files, Settings, Task Manager, Ping, Switches**
+- Apps: **Calculator, Neat Lite** (writing with fonts, sizes, colours and spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Doodle** (MacPaint-style drawing), **Pictures** (JPEG/BMP viewer), **Music** (plays in your browser), **Who's On** (who's on your network), **Messages, Browser, Files, Settings, Task Manager, Ping, Switches**
 - **Printing** to network printers (found automatically), through a Pi with CUPS, or Save as PDF
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
 - **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
-- **Games:** Sammy the Snake, Minesweeper, Blocks and 2048
-- **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores, RAM, open apps, every FreeRTOS task, network, storage and power
+- **Games:** Sammy the Snake, Minesweeper, Blocks, 2048, **Bricks** (Arkanoid-style) and **Paradrop** (Airborne!-style). Arrow keys or WASD
+- **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores (with a Test button that runs a core flat out), RAM, open apps, every FreeRTOS task, network, storage and power
+- **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
+- **Updates itself from GitHub:** Settings → Check for updates
 
-> Status: version 2.2.3. It compiles cleanly against the pinned library versions, but it has **not been tested on real hardware yet**.
+> Status: version 2.2.4. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -32,11 +34,18 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 
 | | |
 |---|---|
-| ![Neat Lite word processor](docs/previews/03-neat-word-processor.png) | **Neat Lite word processor** – fonts, a size slider for any word, bold, underline, alignment, paragraph spacing, spell check; saves .rtf. *The text area is drawn by Neat's real layout code with FabGL's fonts.* |
+| ![Desktop](docs/previews/02-desktop.png) | **Desktop** – 18 apps in four columns. The bottom bar shows your Wi-Fi, address and free memory. |
+| ![Start-up switches](docs/previews/17-startup-switches.png) | **Start-up switches** – pick what runs before TidyOS starts: SD card, mesh, blue light, Shelf messages, and 4 colours / 8 colours / black & white. It boots by itself after a few seconds. |
+| ![Doodle](docs/previews/18-doodle.png) | **Doodle** – a little MacPaint: pencil, brush, eraser, spray, lines, boxes, ovals, paint fill and text, with undo. Saves black-and-white .bmp pictures. The picture lives on the SD card, not in RAM. |
+| ![Pictures](docs/previews/19-pictures.png) | **Pictures** – JPEG and BMP photos, dithered to the screen's colours like a classic Mac. **Full colour** opens the original in your browser (HTML5 edition). |
+| ![Music](docs/previews/20-music.png) | **Music** – MP3, M4A, WAV and OGG from the SD card, played through your computer's speakers by the browser (HTML5 edition). |
+| ![Who's On](docs/previews/21-whos-on.png) | **Who's On** – sweeps your network and lists every device, even ones that ignore ping, with its maker when it can tell. **Add all to Ping** keeps watching them. |
+| ![Neat Lite word processor](docs/previews/03-neat-word-processor.png) | **Neat Lite word processor** – fonts, a size slider for any word, bold, underline, **text colours**, alignment, paragraph spacing, spell check; saves .rtf that Word and WordPad open. *The text area is drawn by Neat's real layout code with FabGL's fonts.* |
+| ![Task Manager](docs/previews/12-task-manager.png) | **Task Manager** – live CPU and memory graphs. **Test** runs a core flat out to see what it can do. |
+| ![Bricks](docs/previews/22-games-bricks.png) | **Bricks** – Arkanoid-style: break every brick, catch capsules for a wide paddle, a slower ball or an extra life. |
+| ![Paradrop](docs/previews/23-games-paradrop.png) | **Paradrop** – Airborne!-style: guard the gun from helicopters, paratroopers and (from level 2) jets dropping bombs. |
 | ![Ping](docs/previews/14-ping.png) | **Ping** – keep pinging a saved list of addresses until you press Stop, with up/down, times and loss for each. |
-| ![Switches](docs/previews/15-switches.png) | **Switches** – SD card, wireless mesh and blue light on/off to save memory. |
 | ![Updating](docs/previews/16-update.png) | **Updating from GitHub** – Settings → Check for updates downloads and installs a new version by itself. |
-| ![HTML5 edition](docs/previews/13-html5-in-browser.png) | **HTML5 edition** – the whole desktop in a web browser on any phone or PC. |
 
 ## HTML5 edition (desktop in your web browser)
 
@@ -54,7 +63,8 @@ No luck with the hotspot? With the board plugged into a computer, open a serial 
 How it works: TidyOS still draws into its normal 640 × 480 screen memory. A small web server on port 80 sends only the rows that changed to the browser over a WebSocket (about 20 updates a second), and the browser sends keys, clicks, wheel and touches back. A phone's on-screen keyboard works through the **Keyboard** button in the top bar.
 
 - One browser at a time. Opening TidyOS somewhere else takes over and the first tab says so.
-- Bluetooth is switched off in this edition. That frees roughly 60 KB of RAM, so it normally gets 8 colours.
+- Bluetooth is switched off in this edition, and no VGA signal is generated (the picture is only kept in memory for the browser). With 4 colours that leaves about 85 KB free; pick 8 colours or black & white in the start-up switches.
+- In the top bar, **Size** cycles fit → sharp (crisp whole pixels) → 1:1.
 - If it can't join your Wi-Fi within 25 seconds, the TidyOS-Setup hotspot comes back. It turns itself off 2 minutes after TidyOS is on your home Wi-Fi.
 - Wi-Fi file sharing moves to port **8081** (`http://tidyos.local:8081`), because port 80 shows the desktop.
 - No VGA pins are driven in this edition, so the microSD module can use the **in-line wiring** from The Shelf: plugged straight onto GND · 19 · 18 · 5 · 17 (MISO 19, CLK 18, MOSI 5, CS 17), with its 3v3 pin bent up and one jumper to 3V3. The classic wiring (16/17/14/13) works too; TidyOS tries both. Task Manager → Storage shows which one it found.
