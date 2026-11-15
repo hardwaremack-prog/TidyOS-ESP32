@@ -93,6 +93,7 @@ void openPing();
 void openDoodle();
 void openPictures(const char * file);
 void openMusic();
+void openScan();
 void openSwitches();
 void openRugged();
 

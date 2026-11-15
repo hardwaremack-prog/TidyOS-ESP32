@@ -3049,3 +3049,4 @@ void openSwitches()
 
 #include "doodle_app.h"
 #include "media_apps.h"
+#include "netscan_app.h"

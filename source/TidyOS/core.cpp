@@ -293,6 +293,11 @@ static const char * ART_MUSIC[16] = {
   "......#.....#...", "......#.....#...", "....###...###...", "...####..####...", "...####..####...", "....##....##....",
   "................", "................", "................", "................" };
 
+static const char * ART_SCAN[16] = {
+  "................", "......#####.....", "....##wwwww##...", "...#wwwww#www#..", "..#wwwww#wwwww#.", "..#wwww#wwwwww#.",
+  ".#wwwww#waawww#.", ".#wwwwwwwaawww#.", ".#wwwwwwwwwwww#.", "..#wawwwwwwww#..", "..#wwwwwwwaw#...", "...#wwwwwwww#...",
+  "....##wwwww##...", "......#####.....", "................", "................" };
+
 static const char * ART_SD[16] = {
   "................", "...#########....", "...#a#a#a#a##...", "...#a#a#a#a#w#..",
   "...#wwwwwwwwww#.", "...#wwwwwwwwww#.", "...#wggggggggw#.", "...#wgwwwwwwgw#.",
@@ -328,7 +333,7 @@ static int appNeedKB(const char * label)
 {
   static const struct { const char * n; int kb; } T_[] = {
     { "Task Manager", 18 }, { "Files", 14 }, { "Neat", 22 }, { "Tidy", 20 }, { "Doodle", 18 }, { "Browser", 30 },
-    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
+    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Who's On", 12 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
   };
   for (auto & e : T_) if (!strcmp(e.n, label)) return e.kb;
   return 10;
@@ -357,6 +362,7 @@ static const DeskIcon ICONS[] = {
   { "Doodle",     ART_DOODLE, nullptr, openDoodle },
   { "Pictures",   ART_PICS,  nullptr, openPictures0 },
   { "Music",      ART_MUSIC, nullptr, openMusic },
+  { "Who's On",   ART_SCAN,  nullptr, openScan },
   { "Switches",   ART_SD,    nullptr, openSwitches },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
