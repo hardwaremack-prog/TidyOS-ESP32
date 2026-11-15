@@ -1076,7 +1076,7 @@ static void logoBlock(Canvas & cv, int x, int y, int s, RGB888 fill)
   cv.fillRectangle(x + 3, y + 3, x + 6, y + s - 4);
 }
 
-static const int BAR_X = 170, BAR_Y = 360, BAR_W = 300, BAR_H = 14;
+static const int BAR_X = 170, BAR_Y = 300, BAR_W = 300, BAR_H = 14;
 
 static void splashLogo()
 {
@@ -1084,7 +1084,7 @@ static void splashLogo()
   cv.setBrushColor(T.desk);
   cv.clear();
   // the logo: a "T" made of five tidy blocks
-  int bs = 40, lx = 140, ly = 150;
+  int bs = 40, lx = 140, ly = 110;
   logoBlock(cv, lx,          ly,      bs, T.face);
   logoBlock(cv, lx + bs,     ly,      bs, T.face);
   logoBlock(cv, lx + bs * 2, ly,      bs, T.face);
@@ -1101,7 +1101,7 @@ static void splashLogo()
   cv.setPenColor(T.win);
   cv.drawRectangle(BAR_X - 2, BAR_Y - 2, BAR_X + BAR_W + 1, BAR_Y + BAR_H + 1);
   cv.setPenColor(T.deskText);
-  cv.drawText(&FONT_std_12, 8, SCREEN_H - 16, "TidyOS " TIDYOS_VERSION);
+  cv.drawText(&FONT_std_12, 8, 6, "TidyOS " TIDYOS_VERSION);
   cv.waitCompletion();
 }
 
@@ -1154,12 +1154,50 @@ static void barStop()
 }
 
 // percent > 0: the bar moves up to it (never back) and then creeps on; 0 = stop creeping
+// Like a classic Mac starting up: the icons of what's loading march in one by one along the
+// bottom of the screen (wrapping to a second row), while the bar fills.
+static int s_parade = 0;
+static void paradeIcon(Canvas & cv, int i)
+{
+  const int PITCH = 36, PER_ROW = (SCREEN_W - 16) / PITCH;
+  int ix = 10 + (i % PER_ROW) * PITCH, iy = SCREEN_H - 40 - (i / PER_ROW) * 36;
+  const DeskIcon & ic = ICONS[i];
+  if (ic.art) {
+    for (int y = 0; y < 16; ++y)
+      for (int x = 0; x < 16; ++x) {
+        char ch = ic.art[y][x];
+        if (ch == '.') continue;
+        cv.setBrushColor(ch == '#' ? T.text : ch == 'a' ? T.accent : ch == 'g' ? T.face : T.win);
+        cv.fillRectangle(ix + x * 2, iy + y * 2, ix + 1 + x * 2, iy + 1 + y * 2);
+      }
+  } else {
+    cv.setBrushColor(T.text);
+    cv.fillRectangle(ix, iy, ix + 31, iy + 31);
+    cv.setPenColor(T.win);
+    cv.setBrushColor(T.text);
+    if (ic.glyph) cv.drawText(&FONT_std_14, ix + 16 - cv.textExtent(&FONT_std_14, ic.glyph) / 2, iy + 8, ic.glyph);
+  }
+}
+
 static void splash(const char * msg, int percent)
 {
   if (s_barMux) xSemaphoreTake(s_barMux, portMAX_DELAY);
   Canvas cv(s_dc);
   cv.setBrushColor(T.desk);
   cv.fillRectangle(0, BAR_Y + 20, SCREEN_W - 1, BAR_Y + 40);
+  // icons up to this step's share march in, and the bar slides up with them
+  {
+    int target = NICONS * (percent > 100 ? 100 : percent) / 100;
+    if (target <= s_parade) target = imin(NICONS, s_parade + 1);      // at least one new icon per step
+    int from = s_barShown, to = percent > from ? percent : from, n = target - s_parade;
+    for (int k = 0; s_parade < target; ++k) {
+      paradeIcon(cv, s_parade++);
+      drawBar(cv, from + (to - from) * (k + 1) / imax(1, n));
+      cv.waitCompletion();
+      delay(percent >= 100 ? 60 : 110);
+    }
+    if (to > s_barShown) s_barShown = to;
+  }
   int shown = s_barShown;
   if (percent > 0) {
     if (percent > 100) percent = 100;
@@ -1180,9 +1218,9 @@ static void splash(const char * msg, int percent)
     strlcpy(steps[nSteps++], msg, sizeof(steps[0]));
   bool allDone = percent >= 100;
   cv.setBrushColor(T.desk);
-  cv.fillRectangle(0, BAR_Y + 44, SCREEN_W - 1, SCREEN_H - 1);
+  cv.fillRectangle(0, BAR_Y + 44, SCREEN_W - 1, BAR_Y + 103);   // (the icons below stay)
   for (int i = 0; i < nSteps; ++i) {
-    int x = i < 4 ? 90 : 340, y = BAR_Y + 46 + (i % 4) * 15;
+    int x = i < 4 ? 120 : 360, y = BAR_Y + 46 + (i % 4) * 15;
     bool done = allDone || i < nSteps - 1;
     cv.setPenColor(T.deskText);
     if (done) { cv.drawLine(x, y + 6, x + 3, y + 9); cv.drawLine(x + 3, y + 9, x + 9, y + 2); cv.drawLine(x + 1, y + 6, x + 4, y + 9); }
@@ -1424,11 +1462,16 @@ static void checkUpdateNote()
     readFileStr(SD_MOUNT "/tidyos/update.ver", ver, 40);
     while (!ver.empty() && (ver.back() == '\n' || ver.back() == ' ')) ver.pop_back();
     auto vnum = [](const std::string & v) { int a = 0, b = 0, c = 0; sscanf(v.c_str(), "%d.%d.%d", &a, &b, &c); return a * 1000000 + b * 1000 + c; };
-    if (ver == TIDYOS_VERSION) s_bootNote = "TidyOS was updated to " TIDYOS_VERSION ".";   // it went in; the installer just couldn't tidy up
-    else if (!ver.empty() && vnum(TIDYOS_VERSION) >= vnum(ver)) { }       // already as new or newer (e.g. from the web flasher): just tidy up
+    if (ver.empty()) { }                  // a leftover from an earlier update (its note already shown): just tidy up
+    else if (ver == TIDYOS_VERSION) s_bootNote = "TidyOS was updated to " TIDYOS_VERSION ".";   // it went in; the installer just couldn't tidy up
+    else if (vnum(TIDYOS_VERSION) >= vnum(ver)) { }                         // already as new or newer (e.g. from the web flasher)
     else if (s_bootNote.empty())          // (the installer's own note from flash, if any, says more - keep that)
       s_bootNote = "An update was downloaded but the installer didn't run. Try again.";
-    remove(SD_MOUNT "/tidyos/update.bin");
+    if (remove(SD_MOUNT "/tidyos/update.bin") != 0) {       // can't delete it? empty it, so it's never seen as waiting again
+      FILE * z = fopen(SD_MOUNT "/tidyos/update.bin", "wb");
+      if (z) fclose(z);
+      Serial.println("[TidyOS] couldn't delete update.bin - emptied it");
+    }
   }
   remove(SD_MOUNT "/tidyos/update.ver");
 }
@@ -1519,7 +1562,7 @@ void setup()
   }
 #endif
   splash("Ready", 100);
-  delay(300);
+  delay(700);           // a moment to see it all come up
   barStop();
   ledReady();       // blue LED: breathing
 }

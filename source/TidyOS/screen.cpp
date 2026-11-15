@@ -195,7 +195,9 @@ var ctAt=0;function cityTemps(){if(!ws||ws.readyState!=1||Date.now()-ctAt<30*600
  fetch('https://api.open-meteo.com/v1/forecast?latitude=55.76,34.05,35.68&longitude=37.62,-118.24,139.69&current=temperature_2m&temperature_unit=fahrenheit')
   .then(function(r){return r.json();}).then(function(a){if(!Array.isArray(a))a=[a];
    send([18].concat(Array.from(new TextEncoder().encode(a.map(function(c){return Math.round(c.current.temperature_2m);}).join(',')))));})
-  .catch(function(){ctAt=Date.now()-28*60000;});}
+  .catch(function(){var L=[[55.76,37.62],[34.05,-118.24],[35.68,139.69]];        // one at a time instead
+   Promise.all(L.map(function(c){return fetch('https://api.open-meteo.com/v1/forecast?latitude='+c[0]+'&longitude='+c[1]+'&current=temperature_2m&temperature_unit=fahrenheit').then(function(r){return r.json();}).then(function(j){return Math.round(j.current.temperature_2m);});}))
+    .then(function(t){send([18].concat(Array.from(new TextEncoder().encode(t.join(',')))));}).catch(function(){ctAt=Date.now()-28*60000;});});}
 setInterval(cityTemps,30000);
 function rep13(s){send([13].concat(Array.from(new TextEncoder().encode(s.slice(0,1000)))));}
 function store(v){var a=v.split('\t'),op=a[0],R=(a[1]||'').replace(/\/+$/,''),B=a[2];
