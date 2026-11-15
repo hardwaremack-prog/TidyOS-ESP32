@@ -107,6 +107,7 @@ void openLatch();
 void openHtmlGames();
 void openHtmlPrograms();
 void openGitStore();
+std::string boardId();      // "TidyOS-A1B2C3": this board's own name (from its MAC address)
 std::string askFile(const char * title, const char * okText, const char * defName, const std::string & startDir);   // file picker dialog
 void openFilesAt(const char * dir);
 void alarmTick();

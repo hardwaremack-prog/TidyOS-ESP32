@@ -769,11 +769,15 @@ private:
       cv->setPenColor(T.text);
       cv->setBrushColor(T.face);
       cv->drawText(&FONT_std_14, 6, by + 3, "TidyOS");
+      int vx = 6 + cv->textExtent(&FONT_std_14, "TidyOS") + 6;
+      std::string vid = std::string(TIDYOS_VERSION "  ") + boardId().substr(7);     // version and this board's number
+      cv->drawText(&FONT_std_12, vx, by + 4, vid.c_str());
+      int nx = vx + cv->textExtent(&FONT_std_12, vid.c_str()) + 14;
       char b[96];
       std::string ns = netStatus();
       if (fileServerOn()) ns += "  - sharing files";
       snprintf(b, sizeof(b), "%s", ns.c_str());
-      cv->drawText(&FONT_std_12, 70, by + 4, b);
+      cv->drawText(&FONT_std_12, nx, by + 4, b);
       std::string notice = msgLastNotice();
       if (!notice.empty()) snprintf(b, sizeof(b), "%s", notice.substr(0, 40).c_str());
 #ifdef TIDYOS_HTML5
@@ -1396,8 +1400,17 @@ void setup()
   splash(gSet.ssid.length() ? "Joining Wi-Fi and Bluetooth" : "Starting Bluetooth", 90);
 #endif
   delay(400);
+#ifdef TIDYOS_HTML5
+  // keep the bar going until the page has looked up the weather and headlines, so the desktop opens filled in
+  if (screenViewer() && WiFi.status() == WL_CONNECTED) {
+    splash("Getting the weather and headlines", 94);
+    screenMedia("w");
+    uint32_t t0 = millis();
+    while (millis() - t0 < 10000 && screenViewer() && !((s_wx.code >= 0 || s_wx.err[0]) && s_newsCount > 0)) delay(100);
+  }
+#endif
   splash("Ready", 100);
-  delay(500);
+  delay(300);
   barStop();
   ledReady();       // blue LED: breathing
 }

@@ -4,8 +4,8 @@
 //   1. Cloudflare KV (easiest - nothing to make on GitHub): bind a KV namespace to the worker as  STORE
 //   2. a GitHub repo: GITHUB_TOKEN (Secret, fine-grained, "Contents: Read and write" on ONE repo)
 //                     and REPO (Text, "owner/name")
-//   MAX_BOARD_MB  (Text, optional)  per-board limit, default 5
-//   MAX_FILE_MB   (Text, optional)  per-file limit, default 2
+//   MAX_BOARD_MB  (Text, optional)  per-board limit, default 1024 (1 GB)
+//   MAX_FILE_MB   (Text, optional)  per-file limit, default 25 (the most Cloudflare KV holds in one file)
 //   MAX_REPO_MB   (Text, optional)  stop all uploads once the repo is this big, default 900
 
 const ID = /^TidyOS-[0-9A-F]{6}$/;
@@ -67,7 +67,7 @@ export default {
     if (req.method === 'OPTIONS') return cors(new Response(null, { status: 204 }));
     const u = new URL(req.url);
     const board = u.searchParams.get('board') || '', name = u.searchParams.get('name') || '';
-    const maxBoard = (+env.MAX_BOARD_MB || 5) * MB, maxFile = (+env.MAX_FILE_MB || 2) * MB, maxRepo = (+env.MAX_REPO_MB || 900) * MB;
+    const maxBoard = (+env.MAX_BOARD_MB || 1024) * MB, maxFile = (+env.MAX_FILE_MB || 25) * MB, maxRepo = (+env.MAX_REPO_MB || 900) * MB;
     try {
       if (u.pathname === '/' || u.pathname === '/ping') return json({ ok: true, service: 'tidyos-store' });
       if (!env.STORE && (!env.GITHUB_TOKEN || !env.REPO)) return json({ error: 'relay not set up (bind a KV namespace as STORE)' }, 500);

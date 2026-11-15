@@ -29,12 +29,29 @@ void deskWeatherFromPage(const char * t)
 }
 
 // news headlines, also from the page (NPR, or BBC News as a fallback)
-static char s_news[3][120];
+static char s_news[6][120];
 static int s_newsCount = 0;
+
+// temperatures every 3 hours over the last 4 days, for the little graph
+static int8_t s_temps[40];
+static int s_tempsN = 0;
+void deskTempsFromPage(const char * t)
+{
+  int n = 0;
+  while (*t && n < 40) {
+    char * e; long v = strtol(t, &e, 10);
+    if (e == t) break;
+    s_temps[n++] = (int8_t)(v < -99 ? -99 : v > 127 ? 127 : v);
+    t = *e == ',' ? e + 1 : e;
+  }
+  s_tempsN = n;
+  s_wxVer++;
+}
+
 void deskNewsFromPage(const char * t)
 {
   s_newsCount = 0;
-  while (*t && s_newsCount < 3) {
+  while (*t && s_newsCount < 6) {
     const char * e = strchr(t, '\n');
     size_t n = e ? (size_t)(e - t) : strlen(t);
     snprintf(s_news[s_newsCount++], sizeof(s_news[0]), "%.*s", (int)n, t);
@@ -199,6 +216,36 @@ static void drawWorldMap(Canvas * cv, int x0, int y0, time_t now)
   }
 }
 
+// the last 4 days of temperatures, with the freezing line at 32 F (red where the screen has red)
+static void drawTempGraph(Canvas * cv, int gx, int gy, int gw, int gh)
+{
+  int lo = 999, hi = -999;
+  for (int i = 0; i < s_tempsN; ++i) { lo = imin(lo, s_temps[i]); hi = imax(hi, s_temps[i]); }
+  if (lo < 45 && hi > 20) { lo = imin(lo, 30); hi = imax(hi, 34); }     // keep the freezing line in view when it matters
+  if (hi - lo < 6) { hi += 3; lo -= 3; }
+  cv->setPenColor(T.shadow);
+  cv->drawRectangle(gx, gy, gx + gw, gy + gh);
+  auto Y = [&](int v) { return gy + gh - 2 - (v - lo) * (gh - 4) / (hi - lo); };
+  // day dividers
+  for (int d = 1; d < 4; ++d) { int x = gx + d * gw / 4; for (int k = gy + 2; k < gy + gh; k += 4) cv->setPixel(x, k); }
+  if (32 >= lo && 32 <= hi) {
+    RGB888 red = gColors >= 8 ? themePal(6) : T.text;
+    cv->setPenColor(red);
+    int y = Y(32);
+    for (int k = gx + 1; k < gx + gw; k += (gColors >= 8 ? 1 : 3)) cv->setPixel(k, y);
+    if (gColors >= 8) for (int k = gx + 1; k < gx + gw; ++k) cv->setPixel(k, y + 1);
+  }
+  cv->setPenColor(T.accent);
+  cv->setPenWidth(2);
+  for (int i = 1; i < s_tempsN; ++i)
+    cv->drawLine(gx + 1 + (i - 1) * (gw - 2) / (s_tempsN - 1), Y(s_temps[i - 1]), gx + 1 + i * (gw - 2) / (s_tempsN - 1), Y(s_temps[i]));
+  cv->setPenWidth(1);
+  char b[16];
+  cv->setPenColor(T.text); cv->setBrushColor(T.win);
+  snprintf(b, sizeof(b), "4 days  %d-%d\xB0", lo, hi);
+  cv->drawText(&FONT_std_12, gx + 2, gy + gh + 1, b);
+}
+
 static void drawDeskPanel(Canvas * cv)
 {
   Rect r = deskPanelRect();
@@ -224,12 +271,12 @@ static void drawDeskPanel(Canvas * cv)
   cv->drawText(&FONT_std_14, x, y, b);
 #ifdef TIDYOS_HTML5
   {                                                          // the drop box, right of the time
-    int bx1 = r.X2 - 92, by1 = r.Y1 + 6, bx2 = r.X2 - 8, by2 = r.Y1 + 34;
+    int bx1 = r.X2 - 106, by1 = r.Y1 + 6, bx2 = r.X2 - 8, by2 = r.Y1 + 34;
     cv->setPenColor(T.text);
     for (int k = bx1; k < bx2; k += 6) { cv->drawLine(k, by1, imin(k + 3, bx2), by1); cv->drawLine(k, by2, imin(k + 3, bx2), by2); }
     for (int k = by1; k < by2; k += 6) { cv->drawLine(bx1, k, bx1, imin(k + 3, by2)); cv->drawLine(bx2, k, bx2, imin(k + 3, by2)); }
-    cv->drawText(&FONT_std_12, bx1 + 6, by1 + 1, gSDMounted ? "Drop files" : "Drop files:");
-    cv->drawText(&FONT_std_12, bx1 + 6, by1 + 14, gSDMounted ? "here" : "needs SD card");
+    cv->drawText(&FONT_std_12, bx1 + 6, by1 + 1, "Drop files here");
+    cv->drawText(&FONT_std_12, bx1 + 6, by1 + 14, gSDMounted ? "for (SD) card" : "(needs SD card)");
   }
 #endif
   y += 24;
@@ -237,10 +284,13 @@ static void drawDeskPanel(Canvas * cv)
   cv->drawLine(x, y - 4, r.X2 - 10, y - 4);
   if (s_wx.code >= 0) {
     snprintf(b, sizeof(b), "%d\xB0" "F  %s", s_wx.temp, wxText(s_wx.code));
-    cv->drawText(&FONT_std_18, x, y, b);
+    const fabgl::FontInfo * tf = (s_tempsN > 1 && cv->textExtent(&FONT_std_18, b) > 150) ? &FONT_std_14 : &FONT_std_18;
+    cv->drawText(tf, x, y, b);
     y += 24;
     snprintf(b, sizeof(b), "High %d\xB0  Low %d\xB0   %s", s_wx.hi, s_wx.lo, s_wx.city);
+    while (strlen(b) > 10 && cv->textExtent(&FONT_std_12, b) > (s_tempsN > 1 ? 150 : PANEL_W - 22)) b[strlen(b) - 1] = 0;
     cv->drawText(&FONT_std_12, x, y, b);
+    if (s_tempsN > 1) drawTempGraph(cv, r.X2 - 120, y - 23, 110, 26);
     y += 18;
   } else if (s_wx.err[0]) {
     cv->drawText(&FONT_std_14, x, y, "Weather unavailable");
@@ -248,7 +298,7 @@ static void drawDeskPanel(Canvas * cv)
     y += 42;
   } else {
 #ifdef TIDYOS_HTML5
-    cv->drawText(&FONT_std_14, x, y, "Weather: looking it up...");
+    cv->drawText(&FONT_std_14, x, y, screenViewer() ? "Weather: looking it up..." : "Weather: shows with the browser open");
 #else
     cv->drawText(&FONT_std_14, x, y, "Weather shows in the browser edition.");
 #endif
@@ -297,7 +347,7 @@ static void drawDeskPanel(Canvas * cv)
   if (s_newsCount) {
     cv->drawLine(x, y - 2, r.X2 - 10, y - 2);
     y += 2;
-    for (int i = 0; i < s_newsCount; ++i) {
+    for (int i = 0; i < s_newsCount && y + 14 < r.Y2 - 128; ++i) {       // as many as fit above the map
       std::string h = s_news[i];
       int maxW = PANEL_W - 22;
       if (cv->textExtent(&FONT_std_12, h.c_str()) > maxW) {

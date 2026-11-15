@@ -2,7 +2,7 @@
 
 Git-Store gives every TidyOS board a small cloud folder - handy when a board has no SD card.
 A free Cloudflare Worker keeps the files, gives each board its own folder (named after the board's
-number, like `TidyOS-A1B2C3`) and enforces the limits: 2 MB a file, 5 MB a board.
+number, like `TidyOS-A1B2C3`) and enforces the limits: 25 MB a file, 1 GB a board.
 The TidyOS web page does the transfers, so the ESP32 itself never needs an HTTPS connection.
 
 **Only one person sets this up.** Its address is built into TidyOS, so everyone else just opens Git-Store.
@@ -24,9 +24,9 @@ Free Cloudflare limits: 1 GB stored and 1,000 saves a day in total - plenty for 
 
 ## Limits
 
-Optional worker variables (Settings > Variables): `MAX_BOARD_MB` (default 5), `MAX_FILE_MB` (default 2).
+Optional worker variables (Settings > Variables): `MAX_BOARD_MB` (default 1024), `MAX_FILE_MB` (default 25).
 Someone who knows the address could make up board numbers, so keep the rate limit on; each made-up number
-still only gets its own 5 MB, and nothing can touch any other board's folder.
+can only fill its own folder, and nothing can touch any other board's folder.
 
 ## Keeping files on GitHub instead (optional)
 

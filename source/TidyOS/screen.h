@@ -17,6 +17,7 @@ std::string screenUrl();         // where to open the desktop, e.g. http://192.1
 //   "o <path>\t<name>" open a web page from the card in a new browser tab (HTML games / programs)
 //   "g <op>\t<relay>\t<board>..." Git-Store: the page talks to the relay and moves files (reply: message 13)
 //   "u go" / "u nosd" answer to files dropped on the page (message 15); each saved file is reported with message 16
+//   "w" look up the weather and headlines now (messages 12 and 14)
 //   "b 1" ring the alarm (beeps for up to 2 minutes), "b 0" stop it, "b 2" one beep.
 void        screenMedia(const std::string & cmd);
 void        screenMediaState(int & state, int & pos, int & dur);   // state 0 paused 1 playing 2 ended -1 none

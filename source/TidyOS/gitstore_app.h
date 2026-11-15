@@ -53,7 +53,7 @@ public:
     button("Download", bx, cy + 110, 150, 28)->onClick = [this]() { download(); };
     button("Delete", bx, cy + 144, 150, 28)->onClick = [this]() { del(); };
     label("Downloads go to Documents.", bx, cy + 180, 150, 14)->labelStyle().textFont = &FONT_std_12;
-    label("Up to 2 MB a file, 5 MB in all.", bx, cy + 196, 150, 14)->labelStyle().textFont = &FONT_std_12;
+    label("Up to 25 MB a file.", bx, cy + 196, 150, 14)->labelStyle().textFont = &FONT_std_12;
     label("Relay", cx, cy + 302, 44, 18);
     relay = edit(url().c_str(), cx + 46, cy + 298, 340);
     button("Save", cx + 392, cy + 298, 54, 24)->onClick = [this]() {
@@ -103,7 +103,7 @@ public:
     if (p.empty()) return;
     long sz = fileSize(p.c_str());
     if (sz < 0) { say("Couldn't read that file."); return; }
-    if (sz > 2L * 1024 * 1024) { say("That file is over 2 MB."); return; }
+    if (sz > 25L * 1024 * 1024) { say("That file is over 25 MB."); return; }
     go('U', "\t" + fileServerMediaPath(p) + "\t" + cleanName(baseName(p)), ("Uploading " + baseName(p) + "...").c_str());
   }
   int picked() { int i = list->firstSelectedItem(); return i >= 0 && i < (int)files.size() ? i : -1; }
@@ -141,7 +141,7 @@ public:
     bool ok = strncmp(t, "ok", 2) == 0;
     if (!ok) { std::string e = t; size_t nl = e.find('\n'); say("Didn't work: " + e.substr(0, nl)); return; }
     if (op == 'L') {
-      long used = 0, mx = 5L * 1024 * 1024;
+      long used = 0, mx = 1024L * 1024 * 1024;
       sscanf(t, "ok\t%ld\t%ld", &used, &mx);
       files.clear();
       list->items().clear();
