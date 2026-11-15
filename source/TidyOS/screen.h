@@ -10,9 +10,16 @@ void        screenBegin();       // start the web screen server (+ setup hotspot
 bool        screenViewer();      // a browser is connected
 bool        screenApOn();        // the TidyOS-Setup hotspot is running
 std::string screenUrl();         // where to open the desktop, e.g. http://192.168.1.40
+// sound and full-colour pictures play in the browser:
+//   "a <path>" play audio, "p" pause, "r" resume, "s" stop, "v 0.5" volume, "k 63" seek (s),
+//   "i <path>" show a picture full size, "x" close it.  <path> is on the file server's port.
+void        screenMedia(const std::string & cmd);
+void        screenMediaState(int & state, int & pos, int & dur);   // state 0 paused 1 playing 2 ended -1 none
 #else
 inline void        screenBegin()  {}
 inline bool        screenViewer() { return false; }
 inline bool        screenApOn()   { return false; }
 inline std::string screenUrl()    { return ""; }
+inline void        screenMedia(const std::string &) {}
+inline void        screenMediaState(int & s, int & p, int & d) { s = -1; p = d = 0; }
 #endif

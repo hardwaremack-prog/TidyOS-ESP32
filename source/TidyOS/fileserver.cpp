@@ -15,6 +15,7 @@ static bool s_taskStarted = false;
 #define FILES_PORT 80
 #endif
 static WiFiServer s_srv(FILES_PORT);
+static volatile bool s_media = false;     // on for the music player / full-colour pictures
 static bool s_listening = false;
 
 void netMdnsBegin()
@@ -144,6 +145,11 @@ static const char * mimeOf(const std::string & p)
   if (!strcmp(e, "png")) return "image/png";
   if (!strcmp(e, "pdf")) return "application/pdf";
   if (!strcmp(e, "mp3")) return "audio/mpeg";
+  if (!strcmp(e, "m4a")) return "audio/mp4";
+  if (!strcmp(e, "wav")) return "audio/wav";
+  if (!strcmp(e, "ogg")) return "audio/ogg";
+  if (!strcmp(e, "bmp")) return "image/bmp";
+  if (!strcmp(e, "gif")) return "image/gif";
   return "application/octet-stream";
 }
 
@@ -180,6 +186,8 @@ static void listDir(WiFiClient & c, const std::string & path)
   send(c, 200, "application/json", out);
 }
 
+static long s_rangeStart = -1;     // from a "Range: bytes=N-" request (music seeking)
+
 static void sendFile(WiFiClient & c, const std::string & path, bool download)
 {
   if (!safePath(path)) { sendErr(c, 400, "Not allowed"); return; }
@@ -187,11 +195,14 @@ static void sendFile(WiFiClient & c, const std::string & path, bool download)
   if (!f) { sendErr(c, 404, "File not found"); return; }
   fseek(f, 0, SEEK_END);
   long size = ftell(f);
-  fseek(f, 0, SEEK_SET);
+  long from = (s_rangeStart > 0 && s_rangeStart < size) ? s_rangeStart : 0;
+  fseek(f, from, SEEK_SET);
   std::string name = path.substr(path.rfind('/') + 1);
-  char h[400];
-  snprintf(h, sizeof(h), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\n%s%s%sConnection: close\r\n\r\n",
-           mimeOf(path), size, download ? "Content-Disposition: attachment; filename=\"" : "", download ? name.c_str() : "", download ? "\"\r\n" : "");
+  char h[400], cr[80] = "";
+  if (s_rangeStart >= 0) snprintf(cr, sizeof(cr), "Content-Range: bytes %ld-%ld/%ld\r\n", from, size - 1, size);
+  snprintf(h, sizeof(h), "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %ld\r\nAccept-Ranges: bytes\r\n%s%s%s%sConnection: close\r\n\r\n",
+           s_rangeStart >= 0 ? "206 Partial Content" : "200 OK", mimeOf(path), size - from, cr,
+           download ? "Content-Disposition: attachment; filename=\"" : "", download ? name.c_str() : "", download ? "\"\r\n" : "");
   c.write((const uint8_t *)h, strlen(h));
   uint8_t buf[1400];
   size_t n;
@@ -235,6 +246,7 @@ static void receiveFile(WiFiClient & c, const std::string & path, long len)
 
 static void handle(WiFiClient & c)
 {
+  s_rangeStart = -1;
   std::string line, method, target;
   long len = 0;
   bool first = true;
@@ -252,6 +264,7 @@ static void handle(WiFiClient & c)
       first = false;
     } else if (line.empty()) break;
     else if (strncasecmp(line.c_str(), "content-length:", 15) == 0) len = atol(line.c_str() + 15);
+    else if (strncasecmp(line.c_str(), "range:", 6) == 0) { const char * b = strstr(line.c_str(), "bytes="); if (b) s_rangeStart = atol(b + 6); }
     line.clear();
   }
   size_t q = target.find('?');
@@ -289,8 +302,9 @@ static void serverTask(void *)
 {
   for (;;) {
     bool wifi = WiFi.status() == WL_CONNECTED;
-    if (s_on && wifi && !s_listening) { s_srv.begin(); s_listening = true; netMdnsBegin(); }
-    if ((!s_on || !wifi) && s_listening) { s_srv.end(); s_listening = false; }
+    bool want = s_on || s_media;
+    if (want && wifi && !s_listening) { s_srv.begin(); s_listening = true; netMdnsBegin(); }
+    if ((!want || !wifi) && s_listening) { s_srv.end(); s_listening = false; }
     if (s_listening) {
       WiFiClient c = s_srv.available();
       if (c) { handle(c); continue; }
@@ -310,6 +324,28 @@ void fileServerSet(bool on)
 }
 
 bool fileServerOn() { return s_on; }
+
+void fileServerMedia(bool on)
+{
+  s_media = on;
+  if (on && !s_taskStarted) {
+    s_taskStarted = true;
+    xTaskCreatePinnedToCore(serverTask, "fileweb", 6144, nullptr, 1, nullptr, 0);
+  }
+}
+
+int fileServerPort() { return FILES_PORT; }
+
+std::string fileServerMediaPath(const std::string & file)
+{
+  std::string u = "/api/file?path=";
+  static const char * hex = "0123456789ABCDEF";
+  for (unsigned char ch : file) {
+    if (isalnum(ch) || ch == '/' || ch == '.' || ch == '-' || ch == '_') u += (char)ch;
+    else { u += '%'; u += hex[ch >> 4]; u += hex[ch & 15]; }
+  }
+  return u;
+}
 
 std::string fileServerUrl()
 {

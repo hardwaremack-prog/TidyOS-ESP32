@@ -88,8 +88,11 @@ void openSettings();
 void openSystem();
 void openMessages();
 void openGames();
+RGB888 themePal(int i);          // the screen palette (index 0 = black, 1 = white ...)
 void openPing();
 void openDoodle();
+void openPictures(const char * file);
+void openMusic();
 void openSwitches();
 void openRugged();
 

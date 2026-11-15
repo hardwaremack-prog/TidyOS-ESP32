@@ -37,6 +37,9 @@ static volatile bool s_view = false;
 static uint32_t      s_hash[SCREEN_H];
 static uint32_t      s_apSince = 0, s_connSince = 0;
 static char          s_sentHome[64];      // last "home Wi-Fi" address sent to this browser
+static char          s_mediaCmd[220];     // waiting media command for the page ("" = none)
+static volatile bool s_mediaPend = false;
+static volatile int  s_mState = -1, s_mPos = 0, s_mDur = 0;
 
 // ---------------------------------------------------------------- the page
 static const char PAGE[] = R"HTML(<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -54,10 +57,10 @@ canvas{background:#00aaaa;touch-action:none;outline:none;cursor:default}
 @media(max-width:560px){#bt,#bf{display:none}}
 </style></head><body>
 <div id="bar"><b>TidyOS</b><button id="bk">Keyboard</button><button id="bt">Task Manager</button><button id="bf">Full screen</button><button id="bz">Size: fit</button><span id="st">Connecting...</span></div>
-<div id="home"></div><div id="wrap"><canvas id="c" width="640" height="480" tabindex="0"></canvas></div>
+<div id="home"></div><div id="iv" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;z-index:9;background:#000d;align-items:center;justify-content:center;cursor:zoom-out"><img style="max-width:96vw;max-height:94vh"></div><div id="wrap"><canvas id="c" width="640" height="480" tabindex="0"></canvas></div>
 <input id="kb" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
 <div id="msg"><div id="mt">Connecting to TidyOS...</div><button id="mb" style="display:none">Use it here</button></div>
-<script>
+<script>var MP=8081;
 var c=document.getElementById('c'),g=c.getContext('2d'),o=document.createElement('canvas');o.width=640;o.height=480;window.tidyScreen=o;
 var og=o.getContext('2d'),img=og.createImageData(640,480),px=new Uint32Array(img.data.buffer),ZK=1;
 var home=null,ws=null,bpp=2,pal=new Uint32Array(8),dirty=false,rx=0,kicked=false,down={},mx=-1,my=-1,mb=0,mDirty=false;
@@ -90,6 +93,7 @@ function connect(){
     else{for(var k=0;k<80;k++){var q=o+k*3,v=d[q]|d[q+1]<<8|d[q+2]<<16;for(var i=0;i<8;i++)px[p++]=pal[v>>(21-3*i)&7];}}}
    dirty=true;}
   else if(d[0]==8){var t=new TextDecoder().decode(d.subarray(1)).split('\n');ver=t[0];upBase=parseInt(t[1])||0;upAt=Date.now();}
+  else if(d[0]==9)media(new TextDecoder().decode(d.subarray(1)));
   else if(d[0]==3){kicked=true;show('TidyOS was opened in another browser.',true);}
   else if(d[0]==7){var t=new TextDecoder().decode(d.subarray(1)).split('\n');home={ssid:t[0],ip:t[1]};
    var hb=document.getElementById('home');
@@ -104,7 +108,16 @@ btn.onclick=function(){connect();};
 function frame(){if(dirty){og.putImageData(img,0,0);g.imageSmoothingEnabled=false;g.drawImage(o,0,0,640*ZK,480*ZK);dirty=false;}
  if(mDirty){mDirty=false;send([2,mx&255,mx>>8,my&255,my>>8,mb,0]);}requestAnimationFrame(frame);}
 requestAnimationFrame(frame);
-var ver='',upBase=-1,upAt=0;
+var ver='',upBase=-1,upAt=0,au=null,auBlocked=false;
+function mUrl(p){return location.protocol+'//'+location.hostname+':'+MP+p;}
+function auReport(){if(!au)return;var t=au.currentTime|0,u=isFinite(au.duration)?au.duration|0:0;send([8,au.ended?2:au.paused?0:1,t&255,t>>8&255,u&255,u>>8&255]);}
+function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv');
+ if(k=='a'){if(!au){au=new Audio();au.onended=auReport;setInterval(auReport,1000);}au.src=mUrl(v);au.play().catch(function(){auBlocked=true;});}
+ else if(k=='p'&&au)au.pause();else if(k=='r'&&au)au.play().catch(function(){auBlocked=true;});
+ else if(k=='s'&&au){au.pause();au.removeAttribute('src');au.load();send([8,255,0,0,0,0]);}
+ else if(k=='v'&&au)au.volume=Math.max(0,Math.min(1,+v));else if(k=='k'&&au)au.currentTime=+v;
+ else if(k=='i'){iv.firstChild.src=mUrl(v);iv.style.display='flex';}else if(k=='x')iv.style.display='none';}
+addEventListener('pointerdown',function(){if(auBlocked&&au){auBlocked=false;au.play();}},true);
 function upStr(){if(upBase<0)return '';var u=upBase+Math.floor((Date.now()-upAt)/1000),d=Math.floor(u/86400),h=Math.floor(u/3600)%24,m=Math.floor(u/60)%60,s=u%60;
  return 'Up '+(d?d+'d '+h+'h '+m+'m':h?h+'h '+m+'m':m+'m '+s+'s');}
 setInterval(function(){if(ws&&ws.readyState==1)st.textContent='Connected  '+(rx/1024).toFixed(0)+' KB/s'+(upBase>=0?'   \u00b7   '+upStr():'')+(ver?'   \u00b7   v'+ver:'');rx=0;},1000);
@@ -306,6 +319,7 @@ static bool pollInput(WiFiClient & c)
       case 4: gOpenTaskMgr = true; break;
       case 5: inputWebReleaseAll(); break;
       case 6: if (keep >= 5) netSetClockFrom(p[1] | (p[2] << 8) | (p[3] << 16) | ((uint32_t)p[4] << 24)); break;
+      case 8: if (keep >= 6) { s_mState = p[1] == 255 ? -1 : p[1]; s_mPos = p[2] | (p[3] << 8); s_mDur = p[4] | (p[5] << 8); } break;
     }
   }
   return true;
@@ -522,6 +536,12 @@ static void screenTask(void *)
         if (n > 0 && n < (int)sizeof(m) && strcmp(m + 1, s_sentHome) != 0 && wsQueue((const uint8_t *)m, n))
           strncpy(s_sentHome, m + 1, sizeof(s_sentHome) - 1);
       }
+      if (s_view && s_mediaPend && outPending() == 0) {
+        static uint8_t mm[224];
+        size_t n = strlen(s_mediaCmd);
+        mm[0] = 9; memcpy(mm + 1, s_mediaCmd, n);
+        if (wsQueue(mm, n + 1)) s_mediaPend = false;
+      }
       if (s_view && !flushOut(s_ws)) { dropViewer(); Serial.println("[TidyOS] browser stopped receiving"); }
       else if (s_view && now - lastFrame >= 50 && outPending() == 0) {
         lastFrame = now;
@@ -547,6 +567,14 @@ void screenBegin()
 }
 
 bool screenViewer() { return s_view; }
+
+void screenMedia(const std::string & cmd)
+{
+  strlcpy(s_mediaCmd, cmd.c_str(), sizeof(s_mediaCmd));
+  s_mediaPend = true;
+}
+
+void screenMediaState(int & state, int & pos, int & dur) { state = s_mState; pos = s_mPos; dur = s_mDur; }
 bool screenApOn()   { return s_ap; }
 
 std::string screenUrl()

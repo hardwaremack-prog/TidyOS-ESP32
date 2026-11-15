@@ -1278,6 +1278,9 @@ void openBrowser(const char * url)
 // ====================================================================== Files
 
 void openDoodleFile(const char * path);     // doodle_app.h
+void openPictures(const char * file);       // media_apps.h
+void openMusicFile(const char * file);
+static bool isMusicFileName(const char * n) { const char * e = fileExt(n); return !strcmp(e, "mp3") || !strcmp(e, "m4a") || !strcmp(e, "wav") || !strcmp(e, "ogg"); }
 
 class FilesApp : public AppFrame {
 public:
@@ -1337,7 +1340,8 @@ public:
     std::string p = selPath();
     const char * e = fileExt(p.c_str());
     if (!strcmp(e, "csv") || !strcmp(e, "tsv")) openTidy(p.c_str());
-    else if (!strcmp(e, "bmp")) openDoodleFile(p.c_str());
+    else if (!strcmp(e, "bmp") || !strcmp(e, "jpg") || !strcmp(e, "jpeg")) openPictures(p.c_str());
+    else if (isMusicFileName(p.c_str())) openMusicFile(p.c_str());
     else openNeat(p.c_str());
   }
 
@@ -3044,3 +3048,4 @@ void openSwitches()
 }
 
 #include "doodle_app.h"
+#include "media_apps.h"

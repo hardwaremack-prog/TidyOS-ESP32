@@ -283,6 +283,16 @@ static const char * ART_DOODLE[16] = {
   ".#ww##wwww#a#w..", ".#wwwwwww#a#ww..", ".#wwwwww#a#www..", ".#wgggw##a#www..", ".#wgggw#g#wwww..", ".#wwwww##wwwww..",
   ".#wwwwwwwwwwww..", "..############..", "................", "................" };
 
+static const char * ART_PICS[16] = {
+  "................", ".##############.", ".#wwwwwwwwwwww#.", ".#wwwwwwwwaaww#.", ".#wwwwwwwwaaww#.", ".#wwwwwwwwwwww#.",
+  ".#wwww#wwwwwww#.", ".#www###wwwwww#.", ".#ww#####w#www#.", ".#w#######g#ww#.", ".##########gg##.", ".#gggggggggggg#.",
+  ".##############.", "................", "................", "................" };
+
+static const char * ART_MUSIC[16] = {
+  "................", "......#######...", "......#aaaaa#...", "......#######...", "......#.....#...", "......#.....#...",
+  "......#.....#...", "......#.....#...", "....###...###...", "...####..####...", "...####..####...", "....##....##....",
+  "................", "................", "................", "................" };
+
 static const char * ART_SD[16] = {
   "................", "...#########....", "...#a#a#a#a##...", "...#a#a#a#a#w#..",
   "...#wwwwwwwwww#.", "...#wwwwwwwwww#.", "...#wggggggggw#.", "...#wgwwwwwwgw#.",
@@ -311,13 +321,14 @@ struct DeskIcon {
 static void openNeat0()    { openNeat(nullptr); }
 static void openTidy0()    { openTidy(nullptr); }
 static void openBrowser0() { openBrowser(nullptr); }
+static void openPictures0() { openPictures(nullptr); }
 
 // roughly how much memory each app takes while open (measured on the board), in KB
 static int appNeedKB(const char * label)
 {
   static const struct { const char * n; int kb; } T_[] = {
     { "Task Manager", 18 }, { "Files", 14 }, { "Neat", 22 }, { "Tidy", 20 }, { "Doodle", 18 }, { "Browser", 30 },
-    { "Rugged", 18 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
+    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
   };
   for (auto & e : T_) if (!strcmp(e.n, label)) return e.kb;
   return 10;
@@ -344,6 +355,8 @@ static const DeskIcon ICONS[] = {
   { "Games",      ART_GAMES, nullptr, openGames },
   { "Ping",       ART_PING,  nullptr, openPing },
   { "Doodle",     ART_DOODLE, nullptr, openDoodle },
+  { "Pictures",   ART_PICS,  nullptr, openPictures0 },
+  { "Music",      ART_MUSIC, nullptr, openMusic },
   { "Switches",   ART_SD,    nullptr, openSwitches },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
@@ -899,7 +912,7 @@ static void memLog(const char * step)
 // comes up. Click anything (or press a key) to stop the countdown.
 static const int BW_X = 130, BW_Y = 30, BW_W = 380, BW_H = 400;
 
-static void bootRow(Canvas & cv, int i, const char * name, const char * note, bool on)
+static void bootRow(Canvas & cv, int i, const char * name, const char * note, bool on, const char * valText = nullptr)
 {
   int y = BW_Y + 40 + i * 50;
   cv.setBrushColor(T.win);
@@ -916,7 +929,7 @@ static void bootRow(Canvas & cv, int i, const char * name, const char * note, bo
   cv.setPenColor(T.shadow);
   cv.drawRectangle(sx, y, sx + 76, y + 26);
   cv.setPenColor(on ? T.accentText : T.text);
-  const char * t = on ? "ON" : "OFF";
+  const char * t = valText ? valText : on ? "ON" : "OFF";
   cv.drawText(&FONT_std_16, sx + 38 - cv.textExtent(&FONT_std_16, t) / 2, y + 5, t);
 }
 
@@ -927,6 +940,13 @@ static void bootStatus(Canvas & cv, const char * msg)
   cv.fillRectangle(BW_X + 1, y, BW_X + BW_W - 2, y + 18);
   cv.setPenColor(T.text);
   cv.drawText(&FONT_std_12, BW_X + BW_W / 2 - cv.textExtent(&FONT_std_12, msg) / 2, y + 2, msg);
+}
+
+static void bootScreenRow(Canvas & cv)
+{
+  int c = gSet.colors == 0 ? 4 : gSet.colors;
+  bootRow(cv, 3, "Screen", c == 8 ? "8 colours: ~38 KB less free memory" : c == 2 ? "Black & white: ~37 KB more free memory" : "4 colours (restarts TidyOS to change)",
+          c != 4, c == 8 ? "8 col" : c == 2 ? "B&W" : "4 col");
 }
 
 static void bootDraw(Canvas & cv)
@@ -946,7 +966,7 @@ static void bootDraw(Canvas & cv)
   bootRow(cv, 0, "SD card", "~15 KB. Off: files go to internal storage", gSet.sdOn);
   bootRow(cv, 1, "Wireless mesh", "A few KB. Coms boards nearby", gSet.meshOn);
   bootRow(cv, 2, "Blue light", "~2 KB. Breathes when TidyOS is ready", gSet.ledOn);
-  bootRow(cv, 3, "Black & white", "Saves ~37 KB. Restarts TidyOS to switch", gSet.colors == 2);
+  bootScreenRow(cv);
   bootRow(cv, 4, "Shelf messages", "~9 KB. Chat with your Shelves on Wi-Fi", gSet.shelfOn);
   // Boot button
   int bx = BW_X + BW_W / 2 - 80, by = BW_Y + BW_H - 70;
@@ -967,6 +987,7 @@ static RTC_NOINIT_ATTR uint32_t s_skipChooser;    // set before a restart the ch
 static void bootChooser()
 {
   if (s_skipChooser == 0x5EED) { s_skipChooser = 0; return; }
+  const int startColors = gSet.colors;
   inputBootGrab(true);
   screenBegin();                         // the browser can show this window right away
   Canvas cv(s_dc);
@@ -999,10 +1020,11 @@ static void bootChooser()
       if (k >= 0x1E && k <= 0x22) toggled = k - 0x1E;        // keys 1 to 5
       if (k == 0x28 || k == 0x58) boot = true;                // Enter
     }
-    if (toggled == 3) {
-      gSet.colors = gSet.colors == 2 ? 0 : 2;
+    if (toggled == 3) {                          // 4 colours -> 8 colours -> black & white -> 4 colours
+      int c = gSet.colors == 0 ? 4 : gSet.colors;
+      gSet.colors = c == 4 ? 8 : c == 8 ? 2 : 0;
       settingsSave();
-      bootRow(cv, 3, "Black & white", "Saves ~37 KB. Restarts TidyOS to switch", gSet.colors == 2);
+      bootScreenRow(cv);
       shown = -2;
       toggled = -1;
     }
@@ -1035,7 +1057,7 @@ static void bootChooser()
     delay(50);
   }
   inputBootGrab(false);
-  if ((gSet.colors == 2) != (gColors == 2)) {        // screen mode changed: it's set up at power-on
+  if (gSet.colors != startColors && (gSet.colors == 0 ? 4 : gSet.colors) != gColors) {   // screen mode changed here: set up at power-on
     s_skipChooser = 0x5EED;
     bootStatus(cv, "Restarting with the new screen...");
     cv.waitCompletion();

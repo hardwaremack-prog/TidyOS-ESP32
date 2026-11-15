@@ -7,3 +7,7 @@ void        fileServerSet(bool on);    // starts / stops it (and remembers the c
 bool        fileServerOn();
 std::string fileServerUrl();           // "http://192.168.1.40" or "" when off / no Wi-Fi
 void        netMdnsBegin();            // tidyos.local (shared with printer search)
+// Music / pictures in the browser: runs the file server without changing the sharing setting
+void        fileServerMedia(bool on);
+std::string fileServerMediaPath(const std::string & file);   // "/api/file?path=..." on port fileServerPort()
+int         fileServerPort();
