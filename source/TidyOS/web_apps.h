@@ -73,5 +73,5 @@ public:
 };
 
 static AppFrame * s_htmlGames = nullptr, * s_htmlProgs = nullptr;
-void openHtmlGames()    { if (!s_htmlGames) new WebShelfApp("HTML Games", "HTML Games", &s_htmlGames); s_htmlGames->open(); }
-void openHtmlPrograms() { if (!s_htmlProgs) new WebShelfApp("HTML Programs", "HTML Programs", &s_htmlProgs); s_htmlProgs->open(); }
+void openHtmlGames()    { if (!s_htmlGames) new WebShelfApp("HTML Games", "games", &s_htmlGames); s_htmlGames->open(); }
+void openHtmlPrograms() { if (!s_htmlProgs) new WebShelfApp("HTML Programs", "programs", &s_htmlProgs); s_htmlProgs->open(); }

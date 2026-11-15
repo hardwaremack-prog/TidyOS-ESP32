@@ -5,6 +5,7 @@
 #include <time.h>
 #include "screen.h"
 #include "led.h"
+#include <algorithm>
 #include "esp_sleep.h"
 #include <WiFi.h>
 #include "crashlog.h"
@@ -62,6 +63,7 @@ void settingsLoad()
   gSet.shelfOn   = s_prefs.getBool("shelf", false);
   gSet.tidyBands = s_prefs.getBool("tbands", false);
   gSet.tidyFreeze = s_prefs.getBool("tfreeze", false);
+  gSet.hotspot = s_prefs.getBool("hotspot", false);
   gSet.alarmOn   = s_prefs.getBool("alarm", false);
   gSet.alarmMin  = s_prefs.getInt("alarmm", 420);
   gSet.worldCity = s_prefs.getInt("wcity", 0);
@@ -89,6 +91,7 @@ void settingsSave()
   s_prefs.putBool("shelf", gSet.shelfOn);
   s_prefs.putBool("tbands", gSet.tidyBands);
   s_prefs.putBool("tfreeze", gSet.tidyFreeze);
+  s_prefs.putBool("hotspot", gSet.hotspot);
   s_prefs.putBool("alarm", gSet.alarmOn);
   s_prefs.putInt("alarmm", gSet.alarmMin);
   s_prefs.putInt("wcity", gSet.worldCity);
@@ -240,8 +243,26 @@ void setSavedLight(uiLabel * l, bool saved)
   l->repaint();
 }
 
+// minimized windows wait on the taskbar (between RAM and the clock)
+static std::vector<uiFrame *> s_minimized;
+static uiControl * s_deskCtl = nullptr;
+static int s_ramX = 330;          // where the RAM text starts on the taskbar
+static void taskbarRepaint() { if (s_deskCtl) s_deskCtl->repaint(Rect(0, SCREEN_H - 20, SCREEN_W - 1, SCREEN_H - 1)); }
+void taskbarMinimize(uiFrame * f)
+{
+  if (std::find(s_minimized.begin(), s_minimized.end(), f) == s_minimized.end()) s_minimized.push_back(f);
+  gApp->showWindow(f, false);
+  taskbarRepaint();
+}
+void taskbarForget(uiFrame * f)
+{
+  auto it = std::find(s_minimized.begin(), s_minimized.end(), f);
+  if (it != s_minimized.end()) { s_minimized.erase(it); taskbarRepaint(); }
+}
+
 void bringToFront(uiFrame * f)
 {
+  taskbarForget(f);                       // (back from the taskbar)
   gApp->showWindow(f, true);
   gApp->setActiveWindow(f);
 }
@@ -535,6 +556,14 @@ public:
       case UIEVT_MOUSEBUTTONDOWN:
         if (event->params.mouse.changedButton == 1) {
           int mx = event->params.mouse.status.X, my = event->params.mouse.status.Y;
+          if (my >= SCREEN_H - BAR_H && !s_minimized.empty()) {          // a minimized window's button
+            Canvas cv(s_dc);
+            int x1, x2; std::vector<Rect> slots;
+            taskSlots(&cv, ramText().c_str(), x1, x2, slots);
+            for (size_t i = 0; i < slots.size(); ++i)
+              if (mx >= slots[i].X1 && mx <= slots[i].X2) { uiFrame * f = s_minimized[i]; bringToFront(f); break; }
+            break;
+          }
           if (!showingHint() && mx >= s_affBtn.X1 && mx <= s_affBtn.X2 && my >= s_affBtn.Y1 && my <= s_affBtn.Y2) {
             s_affShown = s_affShown % 3 + 1;                      // the affirmation >> button
             repaint(deskPanelRect());
@@ -544,6 +573,13 @@ public:
           if (i >= 0) { m_pressed = i; repaintIcon(i); }
         }
         break;
+      case UIEVT_MOUSEMOVE: {
+        int mx = event->params.mouse.status.X, my = event->params.mouse.status.Y, h = -1;
+        if (!showingHint() && s_graphRect.X2 > s_graphRect.X1 && mx >= s_graphRect.X1 && mx <= s_graphRect.X2 && my >= s_graphRect.Y1 && my <= s_graphRect.Y2 && s_tempsN > 1)
+          h = ((mx - s_graphRect.X1) * (s_tempsN - 1) + (s_graphRect.width() / 2)) / imax(1, s_graphRect.width() - 1);
+        if (h != s_graphHover) { s_graphHover = h; Rect g = s_graphRect; repaint(Rect(g.X1 - 2, g.Y1 - 2, g.X2 + 2, g.Y2 + 16)); }
+        break;
+      }
       case UIEVT_MOUSEBUTTONUP:
         if (event->params.mouse.changedButton == 1 && m_pressed >= 0) {
           int i = m_pressed;
@@ -701,6 +737,28 @@ private:
   int m_pendingOpen = -1;          // icon clicked, opening shortly
   uint32_t m_pendingAt = 0;
 
+  // where the minimized windows' buttons go: after the RAM text, before the clock
+  void taskSlots(Canvas * cv, const char * ramText, int & x1, int & x2, std::vector<Rect> & out) {
+    int by = SCREEN_H - BAR_H;
+    x1 = s_ramX + cv->textExtent(&FONT_std_12, ramText) + 10;
+    x2 = SCREEN_W - cv->textExtent(&FONT_std_14, "12:00 PM") - 16;
+    int n = s_minimized.size();
+    if (!n || x2 - x1 < 30) return;
+    int w = imin(80, (x2 - x1) / n);
+    for (int i = 0; i < n && w >= 24; ++i) out.push_back(Rect(x1 + i * w, by + 3, x1 + i * w + w - 3, SCREEN_H - 3));
+  }
+  std::string ramText() {
+    char b[96];
+    std::string notice = msgLastNotice();
+    if (!notice.empty()) snprintf(b, sizeof(b), "%s", notice.substr(0, 40).c_str());
+#ifdef TIDYOS_HTML5
+    else snprintf(b, sizeof(b), "Browser: %s   RAM %uK", screenViewer() ? "on" : "--", (unsigned)(ramFree() / 1024));
+#else
+    else snprintf(b, sizeof(b), "Keyboard: %s  Mouse: %s   RAM %uK", inputKeyboards() ? "on" : "--", inputMice() ? "on" : "--", (unsigned)(ramFree() / 1024));
+#endif
+    return b;
+  }
+
   void paint(Rect const & clip) {
     auto cv = canvas();
     cv->setBrushColor(T.desk);
@@ -770,25 +828,44 @@ private:
       cv->drawLine(0, by, SCREEN_W - 1, by);
       cv->setPenColor(T.text);
       cv->setBrushColor(T.face);
-      cv->drawText(&FONT_std_14, 6, by + 3, "TidyOS");
-      int vx = 6 + cv->textExtent(&FONT_std_14, "TidyOS") + 6;
-      std::string vid = std::string(TIDYOS_VERSION "  ") + boardId().substr(7);     // version and this board's number
-      cv->drawText(&FONT_std_12, vx, by + 4, vid.c_str());
-      int nx = vx + cv->textExtent(&FONT_std_12, vid.c_str()) + 14;
+      // groups, each centred on the bar, with a thin divider between them
+      auto ty = [&](const fabgl::FontInfo * f) { return by + 1 + (BAR_H - 1 - (int)f->height) / 2; };
+      auto divider = [&](int x) { cv->setPenColor(T.shadow); cv->drawLine(x, by + 4, x, SCREEN_H - 4); cv->setPenColor(T.text); };
+      int x = 8;
+      cv->drawText(&FONT_std_14, x, ty(&FONT_std_14), "TidyOS");
+      x += cv->textExtent(&FONT_std_14, "TidyOS") + 6;
+      std::string vid = std::string("v" TIDYOS_VERSION "  ") + boardId().substr(7);     // version and this board's number
+      cv->drawText(&FONT_std_12, x, ty(&FONT_std_12), vid.c_str());
+      x += cv->textExtent(&FONT_std_12, vid.c_str()) + 8;
+      divider(x); x += 8;
       char b[96];
       std::string ns = netStatus();
-      if (fileServerOn()) ns += "  - sharing files";
+      if (fileServerOn()) ns += " - sharing";
       snprintf(b, sizeof(b), "%s", ns.c_str());
-      cv->drawText(&FONT_std_12, nx, by + 4, b);
-      std::string notice = msgLastNotice();
-      if (!notice.empty()) snprintf(b, sizeof(b), "%s", notice.substr(0, 40).c_str());
-#ifdef TIDYOS_HTML5
-      else snprintf(b, sizeof(b), "Browser: %s   RAM %uK", screenViewer() ? "on" : "--", (unsigned)(ramFree() / 1024));
-#else
-      else snprintf(b, sizeof(b), "Keyboard: %s  Mouse: %s   RAM %uK", inputKeyboards() ? "on" : "--", inputMice() ? "on" : "--",
-               (unsigned)(ramFree() / 1024));
-#endif
-      cv->drawText(&FONT_std_12, 330, by + 4, b);
+      cv->drawText(&FONT_std_12, x, ty(&FONT_std_12), b);
+      x += cv->textExtent(&FONT_std_12, b) + 8;
+      divider(x); x += 8;
+      s_ramX = x;
+      strlcpy(b, ramText().c_str(), sizeof(b));
+      cv->drawText(&FONT_std_12, x, ty(&FONT_std_12), b);
+      // minimized windows
+      {
+        int x1, x2; std::vector<Rect> slots;
+        taskSlots(cv, b, x1, x2, slots);
+        for (size_t i = 0; i < slots.size(); ++i) {
+          Rect s = slots[i];
+          cv->setBrushColor(T.win);
+          cv->fillRectangle(s.X1, s.Y1, s.X2, s.Y2);
+          cv->setPenColor(T.text);
+          cv->drawRectangle(s.X1, s.Y1, s.X2, s.Y2);
+          char t[40];
+          strlcpy(t, s_minimized[i]->title() ? s_minimized[i]->title() : "?", sizeof(t));
+          while (strlen(t) > 1 && cv->textExtent(&FONT_std_12, t) > s.width() - 6) t[strlen(t) - 1] = 0;
+          cv->setBrushColor(T.win);
+          cv->drawText(&FONT_std_12, s.X1 + 3, s.Y1 + 1, t);
+        }
+        cv->setBrushColor(T.face);
+      }
       time_t now = time(nullptr);
       struct tm tmv;
       localtime_r(&now, &tmv);
@@ -811,6 +888,7 @@ class TidyApp : public uiApp {
     gApp = this;
     rootWindow()->frameStyle().backgroundColor = T.desk;
     auto desk = new Desktop(rootWindow());
+    s_deskCtl = desk;
     setTimer(desk, 100);
     displayController()->setMouseCursor(CursorName::CursorPointerSimpleReduced);
     inputAttach(this, &s_keyboard, s_dc);

@@ -35,6 +35,12 @@ static int s_newsCount = 0;
 // temperatures every 3 hours over the last 4 days, for the little graph
 static int8_t s_temps[40];
 static int s_tempsN = 0;
+static int s_cityT[3]; static bool s_cityHave = false;   // Moscow, Los Angeles, Tokyo (F)
+void deskCityTempsFromPage(const char * t)
+{
+  s_cityHave = sscanf(t, "%d,%d,%d", &s_cityT[0], &s_cityT[1], &s_cityT[2]) == 3;
+  s_wxVer++;
+}
 void deskTempsFromPage(const char * t)
 {
   int n = 0;
@@ -219,8 +225,11 @@ static void drawWorldMap(Canvas * cv, int x0, int y0, time_t now)
 }
 
 // the last 4 days of temperatures, with the freezing line at 32 F (red where the screen has red)
+static Rect s_graphRect;        // where the graph is (for the mouse)
+static int s_graphHover = -1;   // the point under the mouse
 static void drawTempGraph(Canvas * cv, int gx, int gy, int gw, int gh)
 {
+  s_graphRect = Rect(gx, gy, gx + gw, gy + gh);
   int lo = 999, hi = -999;
   for (int i = 0; i < s_tempsN; ++i) { lo = imin(lo, s_temps[i]); hi = imax(hi, s_temps[i]); }
   if (lo < 45 && hi > 20) { lo = imin(lo, 30); hi = imax(hi, 34); }     // keep the freezing line in view when it matters
@@ -260,12 +269,40 @@ static void drawTempGraph(Canvas * cv, int gx, int gy, int gw, int gh)
     int y = Y(32);
     for (int k = gx + 1; k < gx + gw; k += (gColors >= 8 ? 1 : 3)) cv->setPixel(k, y);
     if (gColors >= 8) for (int k = gx + 1; k < gx + gw; ++k) cv->setPixel(k, y + 1);
+    // "freezing ->" to the left of the graph, pointing at the line
+    cv->setPenColor(red);
+    int fw = cv->textExtent(&FONT_5x7, "freezing");
+    cv->setBrushColor(T.win);
+    cv->drawText(&FONT_5x7, gx - 13 - fw, y - 3, "freezing");
+    cv->drawLine(gx - 11, y, gx - 2, y);
+    cv->drawLine(gx - 5, y - 3, gx - 2, y);
+    cv->drawLine(gx - 5, y + 3, gx - 2, y);
   }
   cv->setPenColor(T.accent);
   cv->setPenWidth(2);
   for (int i = 1; i < s_tempsN; ++i)
     cv->drawLine(gx + 1 + (i - 1) * (gw - 2) / (s_tempsN - 1), Y(s_temps[i - 1]), gx + 1 + i * (gw - 2) / (s_tempsN - 1), Y(s_temps[i]));
   cv->setPenWidth(1);
+  // the mouse over the graph: that point's time and temperature
+  if (s_graphHover >= 0 && s_graphHover < s_tempsN) {
+    int i = s_graphHover, px = gx + 1 + i * (gw - 2) / (s_tempsN - 1), py = Y(s_temps[i]);
+    cv->setPenColor(T.text);
+    for (int k = gy + 1; k < gy + gh; k += 2) cv->setPixel(px, k);
+    cv->setBrushColor(T.text);
+    cv->fillEllipse(px, py, 5, 5);
+    time_t when = tLast - (time_t)(s_tempsN - 1 - i) * 3 * 3600;
+    struct tm w; localtime_r(&when, &w);
+    static const char * DN[7] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+    char b[32];
+    snprintf(b, sizeof(b), "%s %d%s %d\xB0", DN[w.tm_wday % 7], w.tm_hour % 12 == 0 ? 12 : w.tm_hour % 12, w.tm_hour < 12 ? "am" : "pm", s_temps[i]);
+    int tw = cv->textExtent(&FONT_std_12, b);
+    int lx = imax(gx + 1, imin(px - tw / 2, gx + gw - tw - 3));
+    cv->setBrushColor(T.win);
+    cv->fillRectangle(lx - 2, gy + 1, lx + tw + 1, gy + 13);
+    cv->setPenColor(T.text);
+    cv->drawRectangle(lx - 2, gy + 1, lx + tw + 1, gy + 13);
+    cv->drawText(&FONT_std_12, lx, gy + 1, b);
+  }
 }
 
 static void drawDeskPanel(Canvas * cv)
@@ -306,13 +343,14 @@ static void drawDeskPanel(Canvas * cv)
   cv->drawLine(x, y - 4, r.X2 - 10, y - 4);
   if (s_wx.code >= 0) {
     snprintf(b, sizeof(b), "%d\xB0" "F  %s", s_wx.temp, wxText(s_wx.code));
-    const fabgl::FontInfo * tf = (s_tempsN > 1 && cv->textExtent(&FONT_std_18, b) > 150) ? &FONT_std_14 : &FONT_std_18;
+    const fabgl::FontInfo * tf = (s_tempsN > 1 && cv->textExtent(&FONT_std_18, b) > 116) ? &FONT_std_14 : &FONT_std_18;
+    while (s_tempsN > 1 && strlen(b) > 6 && cv->textExtent(tf, b) > 118) b[strlen(b) - 1] = 0;
     cv->drawText(tf, x, y, b);
     y += 24;
     snprintf(b, sizeof(b), "High %d\xB0  Low %d\xB0   %s", s_wx.hi, s_wx.lo, s_wx.city);
-    while (strlen(b) > 10 && cv->textExtent(&FONT_std_12, b) > (s_tempsN > 1 ? 150 : PANEL_W - 22)) b[strlen(b) - 1] = 0;
+    while (strlen(b) > 10 && cv->textExtent(&FONT_std_12, b) > (s_tempsN > 1 ? 116 : PANEL_W - 22)) b[strlen(b) - 1] = 0;
     cv->drawText(&FONT_std_12, x, y, b);
-    if (s_tempsN > 1) drawTempGraph(cv, r.X2 - 120, y - 23, 110, 26);
+    if (s_tempsN > 1) drawTempGraph(cv, r.X2 - 112, y - 23, 102, 26);
     y += 18;
   } else if (s_wx.err[0]) {
     cv->drawText(&FONT_std_14, x, y, "Weather unavailable");
@@ -335,7 +373,12 @@ static void drawDeskPanel(Canvas * cv)
     cv->drawText(&FONT_std_14, x, y, Z[i][0]);
     snprintf(b, sizeof(b), "%d:%02d %s  %.3s", w.tm_hour % 12 == 0 ? 12 : w.tm_hour % 12, w.tm_min, w.tm_hour < 12 ? "AM" : "PM", DAY[w.tm_wday % 7]);
     int tw = cv->textExtent(&FONT_std_14, b);
-    cv->drawText(&FONT_std_14, r.X2 - 12 - tw, y, b);
+    int tempW = cv->textExtent(&FONT_std_14, "-00\xB0");               // the temperature column on the right
+    cv->drawText(&FONT_std_14, r.X2 - 12 - tempW - 12 - tw, y, b);
+    if (s_cityHave) {
+      char tb[12]; snprintf(tb, sizeof(tb), "%d\xB0", s_cityT[i]);
+      cv->drawText(&FONT_std_14, r.X2 - 12 - cv->textExtent(&FONT_std_14, tb), y, tb);
+    }
     y += 19;
   }
   // affirmation of the day, word-wrapped

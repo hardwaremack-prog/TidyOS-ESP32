@@ -55,6 +55,7 @@ struct Settings {
   bool   ledOn;       // blue status light on (off by default)
   bool shelfOn = false;   // Shelf messages over Wi-Fi (start-up switch)
   bool tidyBands = false; // Tidy: shade every other row
+  bool hotspot = false;   // keep the TidyOS hotspot running (devices join TidyOS directly)
   bool tidyFreeze = false;// Tidy: keep row 1 at the top
   bool alarmOn = false;   // Clock: alarm set
   int  alarmMin = 420;    // Clock: alarm time, minutes after midnight
@@ -126,6 +127,8 @@ extern const char * gSDWiring;              // which microSD wiring was found   
 Point clientOrigin(fabgl::uiFrame * f);   // top-left of the client area in window coords
 fabgl::uiLabel * makeSavedLight(fabgl::uiWindow * parent, int x, int y);
 void setSavedLight(fabgl::uiLabel * l, bool saved);
-void bringToFront(fabgl::uiFrame * f);
+void bringToFront(fabgl::uiFrame * f);       // also brings it back from the taskbar
+void taskbarMinimize(fabgl::uiFrame * f);   // hide it; a button on the taskbar brings it back
+void taskbarForget(fabgl::uiFrame * f);     // it closed
 bool msgWanted();                        // Shelf messages or the mesh switched on
 std::string fmtMoney(double v);

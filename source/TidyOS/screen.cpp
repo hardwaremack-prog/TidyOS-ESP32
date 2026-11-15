@@ -29,6 +29,7 @@ void deskWeatherFromPage(const char * t);
 void storeFromPage(const char * t);
 void deskNewsFromPage(const char * t);
 void deskTempsFromPage(const char * t);
+void deskCityTempsFromPage(const char * t);
 void deskDropStart(int x, int y);
 void deskDropped(const char * name);
 void inputWebReleaseAll();
@@ -91,7 +92,7 @@ function connect(){
  kicked=false;show('Connecting to TidyOS...');
  ws=new WebSocket('ws://'+location.host+'/ws');ws.binaryType='arraybuffer';
  var w0=ws;setTimeout(function(){if(w0.readyState==0)w0.close();},3000);   // a board that's restarting can leave this hanging: give up and try again
- ws.onopen=function(){show('');st.textContent='Connected';c.focus();var t=Math.floor(Date.now()/1000);send([6,t&255,t>>8&255,t>>16&255,t>>>24]);wxAt=0;setTimeout(weather,1500);nwAt=0;setTimeout(news,3000);};
+ ws.onopen=function(){show('');st.textContent='Connected';c.focus();var t=Math.floor(Date.now()/1000);send([6,t&255,t>>8&255,t>>16&255,t>>>24]);wxAt=0;setTimeout(weather,1500);ctAt=0;setTimeout(cityTemps,2500);nwAt=0;setTimeout(news,3000);};
  ws.onmessage=function(e){var d=new Uint8Array(e.data);rx+=d.length;
   if(d[0]==1){bpp=d[1];for(var i=0;i<d[2];i++)pal[i]=0xff000000|d[5+i*3]<<16|d[4+i*3]<<8|d[3+i*3];}
   else if(d[0]==2){var y=d[1]|d[2]<<8,n=d[3],o=4,rb=bpp==1?80:bpp==2?160:240;
@@ -190,6 +191,12 @@ function weather(){if(!ws||ws.readyState!=1||Date.now()-wxAt<25*60000)return;wxA
    .catch(function(){wxSend('E|weather service unreachable|'+(+g.lat).toFixed(2)+'|'+(+g.lon).toFixed(2));throw 1;});})
  .catch(function(e){if(e!==1)wxSend('E|'+(typeof e=='string'?e:'no internet from this browser'));wxAt=Date.now()-22*60000;});}
 setInterval(weather,30000);
+var ctAt=0;function cityTemps(){if(!ws||ws.readyState!=1||Date.now()-ctAt<30*60000)return;ctAt=Date.now();   // Moscow, Los Angeles, Tokyo
+ fetch('https://api.open-meteo.com/v1/forecast?latitude=55.76,34.05,35.68&longitude=37.62,-118.24,139.69&current=temperature_2m&temperature_unit=fahrenheit')
+  .then(function(r){return r.json();}).then(function(a){if(!Array.isArray(a))a=[a];
+   send([18].concat(Array.from(new TextEncoder().encode(a.map(function(c){return Math.round(c.current.temperature_2m);}).join(',')))));})
+  .catch(function(){ctAt=Date.now()-28*60000;});}
+setInterval(cityTemps,30000);
 function rep13(s){send([13].concat(Array.from(new TextEncoder().encode(s.slice(0,1000)))));}
 function store(v){var a=v.split('\t'),op=a[0],R=(a[1]||'').replace(/\/+$/,''),B=a[2];
  var chk=function(r){return r.json().then(function(j){if(!r.ok||j.error)throw j.error||('error '+r.status);return j;},function(){throw 'the relay gave an odd answer ('+r.status+')';});};
@@ -454,6 +461,7 @@ static bool pollInput(WiFiClient & c)
       case 13: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; storeFromPage((const char *)p + 1); break; }   // Git-Store reply
       case 15: deskDropStart(keep >= 5 ? p[1] | (p[2] << 8) : -1, keep >= 5 ? p[3] | (p[4] << 8) : -1); break;                                                                  // files dropped on the page
       case 16: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskDropped((const char *)p + 1); break; }
+      case 18: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskCityTempsFromPage((const char *)p + 1); break; } // Moscow, LA, Tokyo
       case 17: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskTempsFromPage((const char *)p + 1); break; } // temperatures, last 4 days
       case 14: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskNewsFromPage((const char *)p + 1); break; } // news headlines
       case 5: inputWebReleaseAll(); break;
@@ -595,8 +603,9 @@ static void apManage()
   if (sta) { if (!s_connSince) s_connSince = now; } else s_connSince = 0;
   // no Wi-Fi set up, or it hasn't connected 25 s after start: open the hotspot
   if (!s_ap && !sta && (!gSet.ssid.length() || now > 25000)) apStart();
+  if (!s_ap && gSet.hotspot) apStart();                         // "Run TidyOS Hotspot" in Settings
   // on home Wi-Fi for 2 minutes and nobody uses the hotspot: close it
-  if (s_ap && sta && s_connSince && now - s_connSince > 300000 && WiFi.softAPgetStationNum() == 0) apStop();
+  if (s_ap && !gSet.hotspot && sta && s_connSince && now - s_connSince > 300000 && WiFi.softAPgetStationNum() == 0) apStop();
 }
 
 // Several connections at once, none allowed to stall the others: browsers and Windows open
@@ -721,6 +730,7 @@ void screenMedia(const std::string & cmd)
 
 void screenMediaState(int & state, int & pos, int & dur) { state = s_mState; pos = s_mPos; dur = s_mDur; }
 bool screenApOn()   { return s_ap; }
+void screenHotspot(bool on) { gSet.hotspot = on; if (on) apStart(); else if (WiFi.status() == WL_CONNECTED) apStop(); }
 
 std::string screenUrl()
 {

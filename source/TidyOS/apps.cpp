@@ -31,7 +31,7 @@ public:
   {
     applyStyle(this);
     frameProps().hasMaximizeButton = false;
-    frameProps().hasMinimizeButton = false;
+    frameProps().hasMinimizeButton = true;          // minimizes to the taskbar
     frameProps().resizeable        = false;
     *slot = this;
     Point o = clientOrigin(this);
@@ -40,6 +40,7 @@ public:
   }
 
   void processEvent(uiEvent * e) override {
+    if (e->id == UIEVT_MINIMIZE) { taskbarMinimize(this); return; }
     if (e->id == UIEVT_CLOSE) {
       if (m_closing) return;                 // a second close (double click on X): already on it
       m_closing = true;
@@ -47,6 +48,7 @@ public:
       if (m_timer) { gApp->killTimer(m_timer); m_timer = nullptr; }
       onClosing();
       *m_slot = nullptr;
+      taskbarForget(this);
       gApp->destroyWindow(this);
       return;
     }
@@ -1705,6 +1707,7 @@ public:
   uiTextEdit * ssidEd, * passEd, * proxyEd, * homeEd, * tzEd;
   uiListBox  * nets, * devs;
   uiLabel    * wifiLbl, * btLbl;
+  uiButton   * hotBtn = nullptr;
   uiCheckBox * dstCb, * shareCb;
   uiLabel    * shareLbl;
   uiButton   * colorsBtn;
@@ -1731,6 +1734,21 @@ public:
       settingsSave();
     };
     button("Find networks", cx + 290, y + 19, 120)->onClick = [this]() { netScanStart(); scanning = true; setWifiText("Looking for networks..."); };
+#ifdef TIDYOS_HTML5
+    hotBtn = button(gSet.hotspot ? "Hotspot: ON" : "Run TidyOS Hotspot", cx + 416, y + 19, 170);
+    hotBtn->onClick = [this]() {
+      if (!gSet.hotspot) {
+        char m[160];
+        snprintf(m, sizeof(m), "Run Wi-Fi from TidyOS: phones and PCs join \"%s\" (password %s) and open 192.168.4.1. Home Wi-Fi stays on if set.", SCREEN_AP_NAME, SCREEN_AP_PASS);
+        if (gApp->messageBox("TidyOS Hotspot", m, "Start", "Cancel", nullptr, uiMessageBoxIcon::Info) != uiMessageBoxResult::Button1) return;
+      }
+      screenHotspot(!gSet.hotspot);
+      settingsSave();
+      hotBtn->setText(gSet.hotspot ? "Hotspot: ON" : "Run TidyOS Hotspot");
+      hotBtn->repaint();
+      setWifiText(gSet.hotspot ? "Hotspot running" : "Hotspot off");
+    };
+#endif
     nets = S(new uiListBox(this, Point(cx + 290, y + 45), Size(296, 64)));
     nets->items().takeStrings();
     nets->onChange = [this]() {
