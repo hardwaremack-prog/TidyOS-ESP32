@@ -110,6 +110,8 @@ function frame(){if(dirty){og.putImageData(img,0,0);g.imageSmoothingEnabled=fals
  if(mDirty){mDirty=false;send([2,mx&255,mx>>8,my&255,my>>8,mb,0]);}requestAnimationFrame(frame);}
 requestAnimationFrame(frame);
 var ver='',upBase=-1,upAt=0,au=null,auBlocked=false;
+var ac=null,bT=null;function beep(){try{if(!ac)ac=new(window.AudioContext||window.webkitAudioContext)();if(ac.state=='suspended')ac.resume();var t=ac.currentTime;
+ for(var i=0;i<3;i++){var o=ac.createOscillator(),g=ac.createGain();o.frequency.value=880;o.connect(g);g.connect(ac.destination);g.gain.setValueAtTime(0.3,t+i*0.2);g.gain.setValueAtTime(0,t+i*0.2+0.12);o.start(t+i*0.2);o.stop(t+i*0.2+0.14);}}catch(e){}}
 function mUrl(p){return location.protocol+'//'+location.hostname+':'+MP+p;}
 function auReport(){if(!au)return;var t=au.currentTime|0,u=isFinite(au.duration)?au.duration|0:0;send([8,au.ended?2:au.paused?0:1,t&255,t>>8&255,u&255,u>>8&255]);}
 function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv');
@@ -119,8 +121,9 @@ function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv
  else if(k=='p'&&au)au.pause();else if(k=='r'&&au)au.play().catch(function(){auBlocked=true;});
  else if(k=='s'&&au){au.pause();au.removeAttribute('src');au.load();send([8,255,0,0,0,0]);}
  else if(k=='v'&&au)au.volume=Math.max(0,Math.min(1,+v));else if(k=='k'&&au)au.currentTime=+v;
- else if(k=='i'){iv.firstChild.src=mUrl(v);iv.style.display='flex';}else if(k=='x')iv.style.display='none';}
-addEventListener('pointerdown',function(){if(auBlocked&&au){auBlocked=false;au.play();}},true);
+ else if(k=='i'){iv.firstChild.src=mUrl(v);iv.style.display='flex';}else if(k=='x')iv.style.display='none';
+ else if(k=='b'){clearInterval(bT);bT=null;if(v=='1'){var n=0;beep();bT=setInterval(function(){beep();if(++n>=120){clearInterval(bT);bT=null;}},1000);}else if(v=='2')beep();}}
+addEventListener('pointerdown',function(){if(auBlocked&&au){auBlocked=false;au.play();}if(ac&&ac.state=='suspended')ac.resume();},true);
 function upStr(){if(upBase<0)return '';var u=upBase+Math.floor((Date.now()-upAt)/1000),d=Math.floor(u/86400),h=Math.floor(u/3600)%24,m=Math.floor(u/60)%60,s=u%60;
  return 'Up '+(d?d+'d '+h+'h '+m+'m':h?h+'h '+m+'m':m+'m '+s+'s');}
 setInterval(function(){if(ws&&ws.readyState==1)st.textContent='Connected  '+(rx/1024).toFixed(0)+' KB/s'+(upBase>=0?'   \u00b7   '+upStr():'')+(ver?'   \u00b7   v'+ver:'');rx=0;},1000);

@@ -15,8 +15,11 @@
 static bool s_pwm = false;
 static inline void ledLevel(uint32_t v)      // 0 = off .. 255 = full
 {
+#ifdef TIDYOS_HTML5
   if (s_pwm) ledcWrite(LED_CH, v);
-  else digitalWrite(LED_PIN, v >= 128 ? HIGH : LOW);   // no PWM: plain on / off
+  else
+#endif
+  digitalWrite(LED_PIN, v >= 128 ? HIGH : LOW);   // no PWM: plain on / off
 }
 
 volatile uint32_t gSdActivityMs = 0;
@@ -60,8 +63,10 @@ void ledBegin()
 {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
-  s_pwm = ledcSetup(LED_CH, 5000, 8) != 0;
+#ifdef TIDYOS_HTML5
+  s_pwm = ledcSetup(LED_CH, 5000, 8) != 0;        // fading
   if (s_pwm) ledcAttachPin(LED_PIN, LED_CH);
+#endif                                            // the monitor edition has no IRAM to spare for it: on / off
   ledLevel(0);
   Serial.printf("[TidyOS] blue light on GPIO %d (%s), switch %s\n", LED_PIN, s_pwm ? "PWM" : "on/off", gSet.ledOn ? "on" : "off");
   ledSetOn(gSet.ledOn);

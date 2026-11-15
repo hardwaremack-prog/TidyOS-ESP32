@@ -283,6 +283,7 @@ static void postKey(VirtualKey vk, uint8_t ascii, bool down)
 
 static void postUsage(uint8_t usage, bool down)
 {
+  if (usage == 0x46) { if (!down) gShotReq = true; return; }  // Print Screen: screenshot (on key-up: Windows browsers only report that)
   VirtualKey vk;
   uint8_t ascii;
   uint8_t m = s_mods;

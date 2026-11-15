@@ -59,6 +59,8 @@ void settingsLoad()
   gSet.shelfOn   = s_prefs.getBool("shelf", false);
   gSet.tidyBands = s_prefs.getBool("tbands", false);
   gSet.tidyFreeze = s_prefs.getBool("tfreeze", false);
+  gSet.alarmOn   = s_prefs.getBool("alarm", false);
+  gSet.alarmMin  = s_prefs.getInt("alarmm", 420);
   gSet.neatFont  = s_prefs.getInt("nfont", 0);
   gSet.neatSize  = s_prefs.getInt("nsize", 1);
 }
@@ -81,6 +83,8 @@ void settingsSave()
   s_prefs.putBool("shelf", gSet.shelfOn);
   s_prefs.putBool("tbands", gSet.tidyBands);
   s_prefs.putBool("tfreeze", gSet.tidyFreeze);
+  s_prefs.putBool("alarm", gSet.alarmOn);
+  s_prefs.putInt("alarmm", gSet.alarmMin);
   s_prefs.putInt("nfont", gSet.neatFont);
   s_prefs.putInt("nsize", gSet.neatSize);
 }
@@ -298,6 +302,44 @@ static const char * ART_MUSIC[16] = {
   "......#.....#...", "......#.....#...", "....###...###...", "...####..####...", "...####..####...", "....##....##....",
   "................", "................", "................", "................" };
 
+static const char * ART_SHOT[16] = {
+  "................",
+  "................",
+  "....#####.......",
+  "..############..",
+  ".#gggggggggggg#.",
+  ".#gggg####gaag#.",
+  ".#ggg#wwww#ggg#.",
+  ".#gg#wwaaww#gg#.",
+  ".#gg#wwaaww#gg#.",
+  ".#ggg#wwww#ggg#.",
+  ".#gggg####gggg#.",
+  ".#gggggggggggg#.",
+  "..############..",
+  "................",
+  "................",
+  "................",
+};
+
+static const char * ART_CLOCK[16] = {
+  ".......##.......",
+  "....########....",
+  "...##wwwwww##...",
+  "..##www#wwww##..",
+  ".##wwww#wwwww##.",
+  ".#wwwww#wwwwww#.",
+  ".#wwwww#wwwwww#.",
+  "##wwwww#aaaaww##",
+  "##wwwwwwwwwwww##",
+  ".#wwwwwwwwwwww#.",
+  ".#wwwwwwwwwwww#.",
+  ".##wwwwwwwwww##.",
+  "..##wwwwwwww##..",
+  "...##wwwwww##...",
+  "....########....",
+  ".......##.......",
+};
+
 static const char * ART_NIC[16] = {
   "................", ".##############.", ".#gggggggggggg#.", ".#g####ggwwwwg#.", ".#g#aa#ggw##wg#.", ".#g#aa#ggw##wg#.",
   ".#g####ggwwwwg#.", ".#gggggggggggg#.", ".#gg#g#g#g#ggg#.", ".##############.", "..a.a.a.a.a.a...", "..a.a.a.a.a.a...",
@@ -343,7 +385,7 @@ static int appNeedKB(const char * label)
 {
   static const struct { const char * n; int kb; } T_[] = {
     { "Task Manager", 18 }, { "Files", 14 }, { "Neat", 22 }, { "Tidy", 20 }, { "Doodle", 18 }, { "Browser", 30 },
-    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
+    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Screenshot", 6 }, { "Clock", 8 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
   };
   for (auto & e : T_) if (!strcmp(e.n, label)) return e.kb;
   return 10;
@@ -373,6 +415,8 @@ static const DeskIcon ICONS[] = {
   { "Pictures",   ART_PICS,  nullptr, openPictures0 },
   { "Music",      ART_MUSIC, nullptr, openMusic },
   { "Nic Sweep",  ART_NIC,   nullptr, openScan },
+  { "Screenshot", ART_SHOT,  nullptr, openShot },
+  { "Clock",      ART_CLOCK, nullptr, openClock },
   { "Switches",   ART_SD,    nullptr, openSwitches },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
@@ -423,6 +467,7 @@ public:
         break;
       case UIEVT_TIMER:
         if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
+        alarmTick();                                // Clock alarm + Print Screen
         if (gRestartReq) {
           gRestartReq = false;
           Serial.println("[TidyOS] restart asked for from the browser");

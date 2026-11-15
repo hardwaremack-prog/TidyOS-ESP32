@@ -1658,6 +1658,12 @@ void openFiles()
   FilesApp::inst->open();
 }
 
+void openFilesAt(const char * dir)
+{
+  openFiles();
+  if (FilesApp::inst) ((FilesApp *)FilesApp::inst)->fl->setDir(dir);
+}
+
 // ====================================================================== Settings
 
 class SettingsApp : public AppFrame {
@@ -3306,3 +3312,4 @@ void openSwitches()
 #include "doodle_app.h"
 #include "media_apps.h"
 #include "netscan_app.h"
+#include "clock_apps.h"

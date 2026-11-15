@@ -56,6 +56,8 @@ struct Settings {
   bool shelfOn = false;   // Shelf messages over Wi-Fi (start-up switch)
   bool tidyBands = false; // Tidy: shade every other row
   bool tidyFreeze = false;// Tidy: keep row 1 at the top
+  bool alarmOn = false;   // Clock: alarm set
+  int  alarmMin = 420;    // Clock: alarm time, minutes after midnight
   int    neatFont;    // Neat Lite font family (index)
   int    neatSize;    // Neat Lite font size (index within the family)
 };
@@ -96,6 +98,11 @@ void openDoodle();
 void openPictures(const char * file);
 void openMusic();
 void openScan();
+void openShot();
+void openClock();
+void openFilesAt(const char * dir);
+void alarmTick();
+extern volatile bool gShotReq;          // Print Screen key
 void openSwitches();
 void openRugged();
 
