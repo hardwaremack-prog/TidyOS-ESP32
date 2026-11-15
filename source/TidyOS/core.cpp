@@ -61,6 +61,8 @@ void settingsLoad()
   gSet.tidyFreeze = s_prefs.getBool("tfreeze", false);
   gSet.alarmOn   = s_prefs.getBool("alarm", false);
   gSet.alarmMin  = s_prefs.getInt("alarmm", 420);
+  gSet.worldCity = s_prefs.getInt("wcity", 0);
+  if (s_prefs.getBytesLength("apre") == sizeof(gSet.alarmPresets)) s_prefs.getBytes("apre", gSet.alarmPresets, sizeof(gSet.alarmPresets));
   gSet.neatFont  = s_prefs.getInt("nfont", 0);
   gSet.neatSize  = s_prefs.getInt("nsize", 1);
 }
@@ -85,6 +87,8 @@ void settingsSave()
   s_prefs.putBool("tfreeze", gSet.tidyFreeze);
   s_prefs.putBool("alarm", gSet.alarmOn);
   s_prefs.putInt("alarmm", gSet.alarmMin);
+  s_prefs.putInt("wcity", gSet.worldCity);
+  s_prefs.putBytes("apre", gSet.alarmPresets, sizeof(gSet.alarmPresets));
   s_prefs.putInt("nfont", gSet.neatFont);
   s_prefs.putInt("nsize", gSet.neatSize);
 }
@@ -385,7 +389,7 @@ static int appNeedKB(const char * label)
 {
   static const struct { const char * n; int kb; } T_[] = {
     { "Task Manager", 18 }, { "Files", 14 }, { "Neat", 22 }, { "Tidy", 20 }, { "Doodle", 18 }, { "Browser", 30 },
-    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Screenshot", 6 }, { "Clock", 8 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
+    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Screenshot", 6 }, { "Clock", 10 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
   };
   for (auto & e : T_) if (!strcmp(e.n, label)) return e.kb;
   return 10;

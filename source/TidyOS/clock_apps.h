@@ -126,53 +126,183 @@ void alarmTick()                          // the desktop calls this a few times 
   if (m == gSet.alarmMin && key != s_rungKey) { s_rungKey = key; ringAlarm(); }
 }
 
+// world time: POSIX time-zone rules, so summer time switches by itself
+static const struct { const char * name; const char * tz; } CITIES[] = {
+  { "London", "GMT0BST,M3.5.0/1,M10.5.0" },        { "Paris", "CET-1CEST,M3.5.0,M10.5.0/3" },
+  { "Tokyo", "JST-9" },                            { "Sydney", "AEST-10AEDT,M10.1.0,M4.1.0/3" },
+  { "Los Angeles", "PST8PDT,M3.2.0,M11.1.0" },     { "Denver", "MST7MDT,M3.2.0,M11.1.0" },
+  { "Chicago", "CST6CDT,M3.2.0,M11.1.0" },         { "New York", "EST5EDT,M3.2.0,M11.1.0" },
+  { "Honolulu", "HST10" },                         { "Anchorage", "AKST9AKDT,M3.2.0,M11.1.0" },
+  { "Rio de Janeiro", "<-03>3" },                  { "Moscow", "MSK-3" },
+  { "Dubai", "<+04>-4" },                          { "New Delhi", "IST-5:30" },
+  { "Beijing", "CST-8" },                          { "UTC", "UTC0" },
+};
+static const int NCITIES = sizeof(CITIES) / sizeof(CITIES[0]);
+
+static bool cityTime(int i, time_t now, struct tm & out)
+{
+  const char * old = getenv("TZ");
+  std::string keep = old ? old : "";
+  setenv("TZ", CITIES[i % NCITIES].tz, 1); tzset();
+  localtime_r(&now, &out);
+  if (keep.empty()) unsetenv("TZ"); else setenv("TZ", keep.c_str(), 1);
+  tzset();
+  return true;
+}
+
+// an analog watch face: fluted bezel, baton markers, date window at 3, sweep second hand
+class WatchFace : public uiControl {
+public:
+  struct tm t;
+  bool valid = false;
+  WatchFace(uiWindow * parent, Point pos, int size) : uiControl(parent, pos, Size(size, size), true, 0) {
+    windowStyle().borderSize = 0;
+    memset(&t, 0, sizeof(t));
+  }
+  void processEvent(uiEvent * e) override {
+    uiControl::processEvent(e);
+    if (e->id == UIEVT_PAINT) { beginPaint(e, clientRect(uiOrigin::Window)); paint(); }
+  }
+  static void hand(Canvas * cv, int x, int y, float turns, float len, float tail, int width) {
+    float a = turns * 2 * PI;
+    float sx = sinf(a), sy = -cosf(a);
+    cv->setPenWidth(width);
+    cv->drawLine(x - (int)(sx * tail), y - (int)(sy * tail), x + (int)(sx * len), y + (int)(sy * len));
+  }
+  void paint() {
+    Rect r = clientRect(uiOrigin::Window);
+    auto cv = canvas();
+    int D = r.width(), x = r.X1 + D / 2, y = r.Y1 + D / 2, R = D / 2 - 1;
+    cv->setBrushColor(T.win);
+    cv->fillRectangle(r.X1, r.Y1, r.X2, r.Y2);
+    // bezel with a fluted (ridged) edge
+    cv->setBrushColor(T.face);
+    cv->fillEllipse(x, y, R * 2, R * 2);
+    cv->setPenColor(T.text);
+    cv->setPenWidth(1);
+    cv->drawEllipse(x, y, R * 2, R * 2);
+    for (int i = 0; i < 72; ++i) {
+      float a = i * 2 * PI / 72;
+      cv->drawLine(x + (int)(sinf(a) * (R - 8)), y - (int)(cosf(a) * (R - 8)), x + (int)(sinf(a) * (R - 1)), y - (int)(cosf(a) * (R - 1)));
+    }
+    // dial
+    int dr = R - 10;
+    cv->setBrushColor(T.accent);
+    cv->fillEllipse(x, y, dr * 2, dr * 2);
+    cv->setPenColor(T.text);
+    cv->drawEllipse(x, y, dr * 2, dr * 2);
+    // minute track and hour batons
+    cv->setPenColor(T.accentText);
+    for (int i = 0; i < 60; ++i) {
+      float a = i * 2 * PI / 60, sx = sinf(a), sy = -cosf(a);
+      if (i % 5) { cv->setPenWidth(1); cv->drawLine(x + (int)(sx * (dr - 4)), y + (int)(sy * (dr - 4)), x + (int)(sx * (dr - 2)), y + (int)(sy * (dr - 2))); continue; }
+      if (i == 0) {                                             // a triangle at 12
+        Point tri[3] = { Point(x, y - dr + 16), Point(x - 6, y - dr + 4), Point(x + 6, y - dr + 4) };
+        cv->setBrushColor(T.accentText);
+        cv->fillPath(tri, 3);
+        continue;
+      }
+      if (i == 15) continue;                                    // the date window sits at 3
+      cv->setPenWidth(i % 15 == 0 ? 5 : 3);
+      cv->drawLine(x + (int)(sx * (dr - 16)), y + (int)(sy * (dr - 16)), x + (int)(sx * (dr - 4)), y + (int)(sy * (dr - 4)));
+    }
+    cv->setPenWidth(1);
+    // date window
+    if (valid) {
+      char b[4]; snprintf(b, sizeof(b), "%d", t.tm_mday);
+      int wx = x + dr - 30, wy = y - 7;
+      cv->setBrushColor(T.win);
+      cv->fillRectangle(wx, wy, wx + 20, wy + 14);
+      cv->setPenColor(T.text);
+      cv->drawRectangle(wx, wy, wx + 20, wy + 14);
+      cv->setBrushColor(T.win);
+      int tw = cv->textExtent(&FONT_std_12, b);
+      cv->drawText(&FONT_std_12, wx + 11 - tw / 2, wy, b);
+    }
+    // name plate
+    cv->setPenColor(T.accentText);
+    cv->setBrushColor(T.accent);
+    int nw = cv->textExtent(&FONT_std_12, "TidyOS");
+    cv->drawText(&FONT_std_12, x - nw / 2, y - dr / 2 - 4, "TidyOS");
+    nw = cv->textExtent(&FONT_std_12, "CHRONOMETER");
+    cv->drawText(&FONT_std_12, x - nw / 2, y + dr / 3, "CHRONOMETER");
+    if (!valid) return;
+    float sec = t.tm_sec, min = t.tm_min + sec / 60, hr = (t.tm_hour % 12) + min / 60;
+    // hands: an outline in the bezel colour keeps them readable on the dial
+    cv->setPenColor(T.text);
+    hand(cv, x, y, hr / 12, dr * 0.52f, 8, 7);
+    hand(cv, x, y, min / 60, dr * 0.80f, 8, 5);
+    cv->setPenColor(T.accentText);
+    hand(cv, x, y, hr / 12, dr * 0.50f, 6, 4);
+    hand(cv, x, y, min / 60, dr * 0.78f, 6, 2);
+    cv->setPenColor(T.face);
+    hand(cv, x, y, sec / 60, dr * 0.88f, 16, 1);
+    cv->setPenWidth(1);
+    cv->setBrushColor(T.face);
+    cv->fillEllipse(x, y, 9, 9);
+    cv->setPenColor(T.text);
+    cv->drawEllipse(x, y, 9, 9);
+  }
+};
+
 class ClockApp : public AppFrame {
 public:
   static AppFrame * inst;
-  uiLabel * timeLbl, * dateLbl, * alarmLbl, * swLbl, * lapsLbl;
-  uiButton * alarmBtn, * swBtn;
-  bool swRunning = false;
+  WatchFace * face;
+  uiLabel * timeLbl, * dateLbl, * worldLbl, * alarmLbl, * swLbl, * lapsLbl, * presetHint;
+  uiButton * alarmBtn, * swBtn, * storeBtn, * presetBtn[4];
+  bool swRunning = false, storing = false;
   uint32_t swStart = 0, swAcc = 0;          // ms
   std::vector<uint32_t> laps;
-  std::string lastTime;
+  int lastSec = -1;
 
-  ClockApp() : AppFrame("Clock", nextPos(440, 360), Size(440, 360), &inst) {
-    timeLbl = label("", cx, cy, 420, 30);
+  ClockApp() : AppFrame("Clock", Point(40, 2), Size(560, 454), &inst) {
+    face = new WatchFace(this, Point(cx, cy), 168);
+    int rx = cx + 180;
+    timeLbl = label("", rx, cy + 6, 360, 30);
     timeLbl->labelStyle().textFont = &FONT_std_24;
-    dateLbl = label("", cx, cy + 32, 420, 18);
-    int y = cy + 62;
-    label("Alarm", cx, y, 60, 18)->labelStyle().textFont = &FONT_std_16;
-    alarmLbl = label("", cx + 64, y - 2, 140, 22);
+    dateLbl = label("", rx, cy + 40, 360, 18);
+    label("World time", rx, cy + 74, 120, 16)->labelStyle().textFont = &FONT_std_12;
+    worldLbl = label("", rx, cy + 90, 250, 20);
+    worldLbl->labelStyle().textFont = &FONT_std_16;
+    button("Next city", rx + 256, cy + 88, 90, 24)->onClick = [this]() { gSet.worldCity = (gSet.worldCity + 1) % NCITIES; settingsSave(); lastSec = -1; tick(); };
+    button("Test sound", rx, cy + 128, 96, 24)->onClick = []() { screenMedia("b 2"); };
+    int y = cy + 178;
+    label("Alarm", cx, y + 2, 60, 18)->labelStyle().textFont = &FONT_std_16;
+    alarmLbl = label("", cx + 64, y, 120, 22);
     alarmLbl->labelStyle().textFont = &FONT_std_18;
-    alarmBtn = button("", cx + 214, y - 2, 96, 24);
+    alarmBtn = button("", cx + 190, y, 96, 24);
     alarmBtn->onClick = [this]() { gSet.alarmOn = !gSet.alarmOn; settingsSave(); showAlarm(); };
-    button("Test sound", cx + 316, y - 2, 96, 24)->onClick = []() { screenMedia("b 2"); };
-    y += 28;
+    y += 30;
     button("Hour -", cx + 64, y, 60, 24)->onClick = [this]() { moveAlarm(-60); };
     button("Hour +", cx + 128, y, 60, 24)->onClick = [this]() { moveAlarm(60); };
     button("Min -", cx + 196, y, 54, 24)->onClick = [this]() { moveAlarm(-5); };
     button("Min +", cx + 254, y, 54, 24)->onClick = [this]() { moveAlarm(5); };
-    button("-1", cx + 316, y, 46, 24)->onClick = [this]() { moveAlarm(-1); };
-    button("+1", cx + 366, y, 46, 24)->onClick = [this]() { moveAlarm(1); };
+    button("-1", cx + 316, y, 40, 24)->onClick = [this]() { moveAlarm(-1); };
+    button("+1", cx + 360, y, 40, 24)->onClick = [this]() { moveAlarm(1); };
     y += 30;
-#ifdef TIDYOS_HTML5
-    label("Rings with beeps in the web browser and a message on screen.", cx + 64, y, 360, 16)->labelStyle().textFont = &FONT_std_12;
-#else
-    label("Rings with a message on screen.", cx + 64, y, 360, 16)->labelStyle().textFont = &FONT_std_12;
-#endif
-    y += 30;
-    label("Stopwatch", cx, y + 4, 90, 18)->labelStyle().textFont = &FONT_std_16;
-    swLbl = label("0:00.0", cx + 96, y, 160, 30);
+    label("Presets", cx, y + 4, 60, 18)->labelStyle().textFont = &FONT_std_14;
+    for (int i = 0; i < 4; ++i) {
+      presetBtn[i] = button("", cx + 64 + i * 84, y, 80, 24);
+      presetBtn[i]->onClick = [this, i]() { usePreset(i); };
+    }
+    storeBtn = button("Save to...", cx + 404, y, 84, 24);
+    storeBtn->onClick = [this]() { storing = !storing; showPresets(); };
+    presetHint = label("", cx + 64, y + 26, 440, 16);
+    presetHint->labelStyle().textFont = &FONT_std_12;
+    y += 48;
+    label("Stopwatch", cx, y + 6, 90, 18)->labelStyle().textFont = &FONT_std_16;
+    swLbl = label("0:00.0", cx + 96, y, 150, 30);
     swLbl->labelStyle().textFont = &FONT_std_24;
-    y += 36;
-    swBtn = button("Start", cx, y, 80, 26);
+    swBtn = button("Start", cx + 256, y + 2, 70, 26);
     swBtn->onClick = [this]() { startStop(); };
-    button("Lap", cx + 86, y, 70, 26)->onClick = [this]() { lap(); };
-    button("Reset", cx + 162, y, 70, 26)->onClick = [this]() { reset(); };
-    lapsLbl = label("", cx, y + 32, 420, 100);
-    lapsLbl->labelStyle().textFont = &FONT_std_14;
+    button("Lap", cx + 332, y + 2, 60, 26)->onClick = [this]() { lap(); };
+    button("Reset", cx + 398, y + 2, 64, 26)->onClick = [this]() { reset(); };
+    lapsLbl = label("", cx + 96, y + 34, 440, 48);
+    lapsLbl->labelStyle().textFont = &FONT_std_12;
     lapsLbl->labelStyle().textAlign = uiHAlign::Left;
     showAlarm();
+    showPresets();
     onTimer = [this](uiTimerHandle) { tick(); };
     startTimer(100);
     tick();
@@ -194,12 +324,11 @@ public:
   void lap() {
     if (!swRunning) return;
     laps.push_back(swNow());
-    if (laps.size() > 5) laps.erase(laps.begin());
+    if (laps.size() > 3) laps.erase(laps.begin());
     std::string s;
     for (int i = laps.size() - 1; i >= 0; --i) {
-      uint32_t prev = i > 0 ? laps[i - 1] : 0;
       char b[64];
-      snprintf(b, sizeof(b), "Lap at %s   (+%s)\n", fmtSw(laps[i]).c_str(), fmtSw(laps[i] - (i > 0 ? prev : 0)).c_str());
+      snprintf(b, sizeof(b), "Lap at %s   (+%s)\n", fmtSw(laps[i]).c_str(), fmtSw(laps[i] - (i > 0 ? laps[i - 1] : 0)).c_str());
       s += b;
     }
     lapsLbl->setText(s.c_str()); lapsLbl->repaint();
@@ -216,26 +345,53 @@ public:
     alarmLbl->setText(hhmm(gSet.alarmMin).c_str()); alarmLbl->repaint();
     alarmBtn->setText(gSet.alarmOn ? "Alarm: on" : "Alarm: off"); alarmBtn->repaint();
   }
+  void usePreset(int i) {
+    if (storing) {                                  // keep the alarm time in this slot
+      gSet.alarmPresets[i] = gSet.alarmMin;
+      storing = false;
+      settingsSave();
+      showPresets();
+      return;
+    }
+    gSet.alarmMin = gSet.alarmPresets[i];
+    gSet.alarmOn = true;
+    settingsSave();
+    showAlarm();
+  }
+  void showPresets() {
+    for (int i = 0; i < 4; ++i) { presetBtn[i]->setText(hhmm(gSet.alarmPresets[i]).c_str()); presetBtn[i]->repaint(); }
+    storeBtn->setText(storing ? "Cancel" : "Save to..."); storeBtn->repaint();
+    presetHint->setText(storing ? "Click a preset to keep the alarm time above in it." : "Click a preset to set the alarm to it and turn it on.");
+    presetHint->repaint();
+  }
   void tick() {
     if (swRunning) showSw();
     time_t now = time(nullptr);
-    std::string ts, ds;
-    if (now < 1600000000) { ts = "--:--"; ds = "The clock sets itself once Wi-Fi or the browser connects."; }
-    else {
-      struct tm t; localtime_r(&now, &t);
-      char b[48];
-      snprintf(b, sizeof(b), "%d:%02d:%02d %s", t.tm_hour % 12 == 0 ? 12 : t.tm_hour % 12, t.tm_min, t.tm_sec, t.tm_hour < 12 ? "AM" : "PM");
-      ts = b;
-      static const char * DAY[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
-      static const char * MON[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
-      snprintf(b, sizeof(b), "%s, %s %d, %d", DAY[t.tm_wday % 7], MON[t.tm_mon % 12], t.tm_mday, t.tm_year + 1900);
-      ds = b;
+    if (now < 1600000000) {
+      if (lastSec != -2) {
+        lastSec = -2;
+        timeLbl->setText("--:--"); timeLbl->repaint();
+        dateLbl->setText("Waiting for the clock to be set..."); dateLbl->repaint();
+        face->valid = false; face->repaint();
+      }
+      return;
     }
-    if (ts != lastTime) {
-      lastTime = ts;
-      timeLbl->setText(ts.c_str()); timeLbl->repaint();
-      dateLbl->setText(ds.c_str()); dateLbl->repaint();
-    }
+    struct tm t; localtime_r(&now, &t);
+    if (t.tm_sec == lastSec) return;
+    lastSec = t.tm_sec;
+    char b[64];
+    snprintf(b, sizeof(b), "%d:%02d:%02d %s", t.tm_hour % 12 == 0 ? 12 : t.tm_hour % 12, t.tm_min, t.tm_sec, t.tm_hour < 12 ? "AM" : "PM");
+    timeLbl->setText(b); timeLbl->repaint();
+    static const char * DAY[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+    static const char * MON[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+    snprintf(b, sizeof(b), "%s, %s %d, %d", DAY[t.tm_wday % 7], MON[t.tm_mon % 12], t.tm_mday, t.tm_year + 1900);
+    dateLbl->setText(b); dateLbl->repaint();
+    face->t = t; face->valid = true; face->repaint();
+    struct tm w;
+    cityTime(gSet.worldCity, now, w);
+    snprintf(b, sizeof(b), "%s  %d:%02d %s %.3s", CITIES[gSet.worldCity % NCITIES].name, w.tm_hour % 12 == 0 ? 12 : w.tm_hour % 12, w.tm_min,
+             w.tm_hour < 12 ? "AM" : "PM", DAY[w.tm_wday % 7]);
+    worldLbl->setText(b); worldLbl->repaint();
   }
 };
 AppFrame * ClockApp::inst = nullptr;

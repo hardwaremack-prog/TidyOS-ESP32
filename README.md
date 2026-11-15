@@ -19,7 +19,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
 - **Updates itself from GitHub:** Settings → Check for updates
 
-> Status: version 2.3.2. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
+> Status: version 2.3.3. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---

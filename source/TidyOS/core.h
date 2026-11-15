@@ -58,6 +58,8 @@ struct Settings {
   bool tidyFreeze = false;// Tidy: keep row 1 at the top
   bool alarmOn = false;   // Clock: alarm set
   int  alarmMin = 420;    // Clock: alarm time, minutes after midnight
+  int  alarmPresets[4] = { 360, 390, 420, 480 };   // Clock: saved alarm times
+  int  worldCity = 0;     // Clock: world time city
   int    neatFont;    // Neat Lite font family (index)
   int    neatSize;    // Neat Lite font size (index within the family)
 };
