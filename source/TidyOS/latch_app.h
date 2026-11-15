@@ -363,6 +363,7 @@ public:
     search = edit("", cx + 166, y, 80);
     search->onChange = [this]() { fill(); };
     list = S(new uiListBox(this, Point(cx, y + 28), Size(246, 300)));
+    list->items().takeStrings();          // keep copies: the titles are built on the fly
     list->onChange = [this]() { int i = list->firstSelectedItem(); if (i >= 0 && i < (int)shown.size()) pick(shown[i]); };
     int rx = cx + 256, lw = 70, fw = 280;
     auto row = [&](const char * t, int yy) { label(t, rx, yy + 3, lw, 18); };

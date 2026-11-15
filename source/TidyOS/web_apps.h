@@ -12,6 +12,7 @@ public:
 
   WebShelfApp(const char * t, const char * sub, AppFrame ** ir) : AppFrame(t, nextPos(460, 380), Size(460, 380), ir), instRef(ir), folder(sub), title(t) {
     list = S(new uiListBox(this, Point(cx, cy), Size(300, 300)));
+    list->items().takeStrings();          // keep copies: the names are built on the fly
     list->onDblClick = [this]() { play(); };
     int bx = cx + 310;
     button("Play", bx, cy, 130, 34)->onClick = [this]() { play(); };

@@ -166,11 +166,20 @@ function openBanner(u,n){var w=null;try{w=window.open(u,'_blank');}catch(e){}if(
  e.innerHTML='';var b=document.createElement('button');b.textContent='▶ Play '+n;b.style.cssText='font:bold 18px sans-serif;padding:8px 14px;cursor:pointer';
  b.onclick=function(){window.open(u,'_blank');e.style.display='none';};var x=document.createElement('button');x.textContent='✕';x.style.cssText='font:16px sans-serif;padding:6px 10px;cursor:pointer';x.onclick=function(){e.style.display='none';};
  e.appendChild(b);e.appendChild(x);e.style.display='flex';}
-var wxAt=0;function weather(){if(!ws||ws.readyState!=1||Date.now()-wxAt<25*60000)return;wxAt=Date.now();
- fetch('http://ip-api.com/json/?fields=status,city,lat,lon').then(function(r){return r.json();}).then(function(g){if(g.status!='success')throw 0;
+var wxAt=0;
+function wxSend(s){send([12].concat(Array.from(new TextEncoder().encode(s.slice(0,62)))));}
+function geo(){var tries=[['https://ipwho.is/',function(j){return j.success!==false&&j.latitude!=null?{lat:j.latitude,lon:j.longitude,city:j.city}:null;}],
+  ['https://ipapi.co/json/',function(j){return j.latitude!=null?{lat:j.latitude,lon:j.longitude,city:j.city}:null;}],
+  ['http://ip-api.com/json/?fields=status,city,lat,lon',function(j){return j.status=='success'?{lat:j.lat,lon:j.lon,city:j.city}:null;}]],i=0;
+ return new Promise(function(ok,bad){(function next(){if(i>=tries.length){bad('location lookup blocked');return;}var t=tries[i++];
+  fetch(t[0]).then(function(r){return r.json();}).then(function(j){var g=t[1](j);if(g)ok(g);else next();}).catch(next);})();});}
+function weather(){if(!ws||ws.readyState!=1||Date.now()-wxAt<25*60000)return;wxAt=Date.now();
+ geo().then(function(g){
   return fetch('https://api.open-meteo.com/v1/forecast?latitude='+g.lat+'&longitude='+g.lon+'&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto&forecast_days=1')
-   .then(function(r){return r.json();}).then(function(w){var s=Math.round(w.current.temperature_2m)+'|'+w.current.weather_code+'|'+Math.round(w.daily.temperature_2m_max[0])+'|'+Math.round(w.daily.temperature_2m_min[0])+'|'+(g.city||'').replace(/[^\x20-\x7e]/g,'').slice(0,30);
-    send([12].concat(Array.from(new TextEncoder().encode(s))));});}).catch(function(){wxAt=Date.now()-22*60000;});}
+   .then(function(r){return r.json();}).then(function(w){
+    wxSend(Math.round(w.current.temperature_2m)+'|'+w.current.weather_code+'|'+Math.round(w.daily.temperature_2m_max[0])+'|'+Math.round(w.daily.temperature_2m_min[0])+'|'+(+g.lat).toFixed(2)+'|'+(+g.lon).toFixed(2)+'|'+(g.city||'').replace(/[^\x20-\x7e]/g,'').slice(0,24));})
+   .catch(function(){wxSend('E|weather service unreachable|'+(+g.lat).toFixed(2)+'|'+(+g.lon).toFixed(2));throw 1;});})
+ .catch(function(e){if(e!==1)wxSend('E|'+(typeof e=='string'?e:'no internet from this browser'));wxAt=Date.now()-22*60000;});}
 setInterval(weather,30000);
 function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv');
  if(mx&&(k=='p'||k=='r'||k=='s'||k=='v')){if(k=='p'){mx.paused=true;mx.ctx.suspend();midiReport();}else if(k=='r'){mx.paused=false;mx.ctx.resume();}else if(k=='s'){midiStop();send([8,255,0,0,0,0]);}else mx.out.gain.value=Math.max(0,Math.min(1,+v));return;}

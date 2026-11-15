@@ -3,16 +3,28 @@
 #include "worldmap.h"
 
 // weather arrives from the web page (it looks it up: ip-api.com for the place, Open-Meteo for the forecast)
-static struct { int temp = 0, code = -1, hi = 0, lo = 0; char city[40] = ""; uint32_t at = 0; } s_wx;
+static struct { int temp = 0, code = -1, hi = 0, lo = 0; float lat = 0, lon = 0; bool haveLoc = false; char city[32] = ""; char err[48] = ""; } s_wx;
 static volatile int s_wxVer = 0;
 
-void deskWeatherFromPage(const char * t)     // "41|3|45|33|Harsons Island"
+// from the page: "41|3|45|33|42.56|-82.63|Harsons Island", or "E|why|lat|lon"
+void deskWeatherFromPage(const char * t)
 {
+  if (t[0] == 'E' && t[1] == '|') {
+    const char * why = t + 2, * bar = strchr(why, '|');
+    size_t n = bar ? (size_t)(bar - why) : strlen(why);
+    snprintf(s_wx.err, sizeof(s_wx.err), "%.*s", (int)n, why);
+    float la, lo;
+    if (bar && sscanf(bar + 1, "%f|%f", &la, &lo) == 2) { s_wx.lat = la; s_wx.lon = lo; s_wx.haveLoc = true; }
+    s_wxVer++;
+    return;
+  }
   int temp, code, hi, lo, n = 0;
-  if (sscanf(t, "%d|%d|%d|%d|%n", &temp, &code, &hi, &lo, &n) < 4) return;
+  float la, lon;
+  if (sscanf(t, "%d|%d|%d|%d|%f|%f|%n", &temp, &code, &hi, &lo, &la, &lon, &n) < 6) return;
   s_wx.temp = temp; s_wx.code = code; s_wx.hi = hi; s_wx.lo = lo;
+  s_wx.lat = la; s_wx.lon = lon; s_wx.haveLoc = true;
   strlcpy(s_wx.city, n ? t + n : "", sizeof(s_wx.city));
-  s_wx.at = millis();
+  s_wx.err[0] = 0;
   s_wxVer++;
 }
 
@@ -106,14 +118,18 @@ static void drawWorldMap(Canvas * cv, int x0, int y0, time_t now)
   }
   cv->setPenColor(T.text);
   cv->drawRectangle(x0 - 1, y0 - 1, x0 + W * S, y0 + H * S);
-  // the sun's spot
-  int sx = x0 + (int)((sunLon * 180 / PI + 180) / 360 * W * S), sy = y0 + (int)((90 - decl * 180 / PI) / 180 * H * S);
-  while (sx < x0) sx += W * S;
-  while (sx >= x0 + W * S) sx -= W * S;
-  cv->setBrushColor(T.win);
-  cv->fillEllipse(sx, sy, 9, 9);
-  cv->setPenColor(T.text);
-  cv->drawEllipse(sx, sy, 9, 9);
+  // you are here (from the same lookup as the weather)
+  if (s_wx.haveLoc) {
+    int px = x0 + (int)((s_wx.lon + 180) / 360 * W * S), py = y0 + (int)((90 - s_wx.lat) / 180 * H * S);
+    cv->setBrushColor(T.win);
+    cv->fillEllipse(px, py, 11, 11);
+    cv->setPenColor(T.text);
+    cv->drawEllipse(px, py, 11, 11);
+    cv->setBrushColor(T.text);
+    cv->fillEllipse(px, py, 5, 5);
+    cv->drawLine(px - 9, py, px - 6, py); cv->drawLine(px + 6, py, px + 9, py);
+    cv->drawLine(px, py - 9, px, py - 6); cv->drawLine(px, py + 6, px, py + 9);
+  }
 }
 
 static void drawDeskPanel(Canvas * cv)
@@ -149,6 +165,10 @@ static void drawDeskPanel(Canvas * cv)
     snprintf(b, sizeof(b), "High %d\xB0  Low %d\xB0   %s", s_wx.hi, s_wx.lo, s_wx.city);
     cv->drawText(&FONT_std_12, x, y, b);
     y += 18;
+  } else if (s_wx.err[0]) {
+    cv->drawText(&FONT_std_14, x, y, "Weather unavailable");
+    cv->drawText(&FONT_std_12, x, y + 20, s_wx.err);
+    y += 42;
   } else {
 #ifdef TIDYOS_HTML5
     cv->drawText(&FONT_std_14, x, y, "Weather: looking it up...");
