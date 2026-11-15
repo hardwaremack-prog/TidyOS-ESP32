@@ -76,6 +76,10 @@ static void zoneTime(const char * tz, time_t now, struct tm & out)
   tzset();
 }
 
+// the >> button: show the next affirmations too (up to 3); back to one each new day
+static int s_affShown = 1, s_affDay = -1;
+static Rect s_affBtn;
+
 static const int PANEL_X = 344, PANEL_Y = 8, PANEL_W = 290, PANEL_H = 440;
 static Rect deskPanelRect() { return Rect(PANEL_X, PANEL_Y, PANEL_X + PANEL_W - 1, PANEL_Y + PANEL_H - 1); }
 
@@ -83,7 +87,7 @@ static Rect deskPanelRect() { return Rect(PANEL_X, PANEL_Y, PANEL_X + PANEL_W - 
 static int deskPanelSig()
 {
   time_t now = time(nullptr);
-  return (int)(now / 60) * 7 + s_wxVer;
+  return (int)(now / 60) * 7 + s_wxVer + s_affShown * 100003;
 }
 
 static void drawWorldMap(Canvas * cv, int x0, int y0, time_t now)
@@ -192,14 +196,27 @@ static void drawDeskPanel(Canvas * cv)
   // affirmation of the day, word-wrapped
   y += 4;
   cv->drawLine(x, y - 4, r.X2 - 10, y - 4);
-  std::string a = AFFIRM[(t.tm_yday + t.tm_year) % NAFFIRM];
-  int maxW = PANEL_W - 22, lines = 0;
-  while (!a.empty() && lines < 3) {
-    size_t cut = a.size();
-    while (cv->textExtent(&FONT_std_14, a.substr(0, cut).c_str()) > maxW) { size_t sp = a.rfind(' ', cut - 1); if (sp == std::string::npos || sp == 0) break; cut = sp; }
-    cv->drawText(&FONT_std_14, x, y, a.substr(0, cut).c_str());
-    a = cut < a.size() ? a.substr(cut + 1) : "";
-    y += 18; ++lines;
+  if (s_affDay != t.tm_yday) { s_affDay = t.tm_yday; s_affShown = 1; }
+  s_affBtn = Rect(r.X2 - 40, y - 1, r.X2 - 10, y + 15);                     // the >> button
+  cv->setBrushColor(T.face);
+  cv->fillRectangle(s_affBtn.X1, s_affBtn.Y1, s_affBtn.X2, s_affBtn.Y2);
+  cv->setPenColor(T.text);
+  cv->drawRectangle(s_affBtn.X1, s_affBtn.Y1, s_affBtn.X2, s_affBtn.Y2);
+  cv->setBrushColor(T.face);
+  cv->drawText(&FONT_std_12, s_affBtn.X1 + 8, s_affBtn.Y1 + 1, ">>");
+  cv->setBrushColor(T.win);
+  int base = (t.tm_yday + t.tm_year) % NAFFIRM;
+  for (int k = 0; k < s_affShown; ++k) {
+    std::string a = AFFIRM[(base + k) % NAFFIRM];
+    int maxW = PANEL_W - 22 - (k == 0 ? 36 : 0), lines = 0, maxLines = s_affShown == 1 ? 3 : 2;
+    while (!a.empty() && lines < maxLines) {
+      size_t cut = a.size();
+      while (cv->textExtent(&FONT_std_14, a.substr(0, cut).c_str()) > maxW) { size_t sp = a.rfind(' ', cut - 1); if (sp == std::string::npos || sp == 0) break; cut = sp; }
+      cv->drawText(&FONT_std_14, x, y, a.substr(0, cut).c_str());
+      a = cut < a.size() ? a.substr(cut + 1) : "";
+      y += 18; ++lines; maxW = PANEL_W - 22;
+    }
+    y += 4;
   }
   // the map sits at the bottom
   drawWorldMap(cv, r.X1 + (PANEL_W - 288) / 2, r.Y2 - 150, now);

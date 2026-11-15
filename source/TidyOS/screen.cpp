@@ -127,7 +127,7 @@ function auReport(){if(!au)return;var t=au.currentTime|0,u=isFinite(au.duration)
 var mx=null;
 function midiParse(d){var p=0,u16=function(){var v=d[p]<<8|d[p+1];p+=2;return v;},u32=function(){var v=(d[p]<<24|d[p+1]<<16|d[p+2]<<8|d[p+3])>>>0;p+=4;return v;},
  vlq=function(){var v=0,b;do{b=d[p++];v=v*128+(b&127);}while(b&128&&p<d.length);return v;};
- if(String.fromCharCode(d[0],d[1],d[2],d[3])!='MThd')throw 'not midi';p=4;var hl=u32();u16();var nt=u16(),div=u16();if(div&0x8000)div=480;p=8+hl;
+ for(var o=0;o<d.length-4&&o<512;o++)if(d[o]==77&&d[o+1]==84&&d[o+2]==104&&d[o+3]==100)break;if(o>0&&o<d.length-4)d=d.subarray(o);if(String.fromCharCode(d[0],d[1],d[2],d[3])!='MThd')throw 'not midi';p=4;var hl=u32();u16();var nt=u16(),div=u16();if(div&0x8000)div=480;p=8+hl;
  var ev=[];for(var k=0;k<nt&&p<d.length;k++){var id=String.fromCharCode(d[p],d[p+1],d[p+2],d[p+3]);p+=4;var len=u32(),end=p+len,tick=0,rs=0;if(id!='MTrk'){p=end;continue;}
   while(p<end){tick+=vlq();var st=d[p];if(st&128)p++;else st=rs;
    if(st==0xFF){var ty=d[p++],l=vlq();if(ty==0x51&&l==3)ev.push({k:tick,y:2,tp:d[p]<<16|d[p+1]<<8|d[p+2]});p+=l;}
@@ -193,7 +193,7 @@ function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv
  else if(k=='v'&&au)au.volume=Math.max(0,Math.min(1,+v));else if(k=='k'&&au)au.currentTime=+v;
  else if(k=='i'){iv.firstChild.src=mUrl(v);iv.style.display='flex';}else if(k=='x')iv.style.display='none';
  else if(k=='b'){clearInterval(bT);bT=null;alarmBanner(false);if(v=='1'){var n=0;alarmBanner(true);beep();bT=setInterval(function(){beep();if(++n>=120){clearInterval(bT);bT=null;}},1000);}else if(v=='2')beep();}}
-addEventListener('pointerdown',function(){unlockSound();if(auBlocked&&au){auBlocked=false;au.play();}if(ac&&ac.state=='suspended')ac.resume();},true);
+addEventListener('pointerdown',function(){unlockSound();if(auBlocked&&au){auBlocked=false;au.play();}if(ac&&ac.state=='suspended')ac.resume();if(mx&&mx.ctx.state=='suspended'&&!mx.paused)mx.ctx.resume();},true);
 addEventListener('keydown',function(){unlockSound();},true);
 function upStr(){if(upBase<0)return '';var u=upBase+Math.floor((Date.now()-upAt)/1000),d=Math.floor(u/86400),h=Math.floor(u/3600)%24,m=Math.floor(u/60)%60,s=u%60;
  return 'Up '+(d?d+'d '+h+'h '+m+'m':h?h+'h '+m+'m':m+'m '+s+'s');}

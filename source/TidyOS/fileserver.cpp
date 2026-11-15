@@ -220,7 +220,8 @@ static void sendFile(WiFiClient & c, const std::string & path, bool download)
   std::string name = path.substr(path.rfind('/') + 1);
   char h[400], cr[80] = "";
   if (s_rangeStart >= 0) snprintf(cr, sizeof(cr), "Content-Range: bytes %ld-%ld/%ld\r\n", from, to, size);
-  snprintf(h, sizeof(h), "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %ld\r\nAccept-Ranges: bytes\r\n%s%s%s%sConnection: close\r\n\r\n",
+  // Access-Control-Allow-Origin: the TidyOS page (port 80) reads MIDI files from here (port 8081) with fetch()
+  snprintf(h, sizeof(h), "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %ld\r\nAccept-Ranges: bytes\r\nAccess-Control-Allow-Origin: *\r\n%s%s%s%sConnection: close\r\n\r\n",
            s_rangeStart >= 0 ? "206 Partial Content" : "200 OK", mimeOf(path), to - from + 1, cr,
            download ? "Content-Disposition: attachment; filename=\"" : "", download ? name.c_str() : "", download ? "\"\r\n" : "");
   c.write((const uint8_t *)h, strlen(h));

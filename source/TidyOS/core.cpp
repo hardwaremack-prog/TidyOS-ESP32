@@ -511,7 +511,13 @@ public:
         break;
       case UIEVT_MOUSEBUTTONDOWN:
         if (event->params.mouse.changedButton == 1) {
-          int i = hit(event->params.mouse.status.X, event->params.mouse.status.Y);
+          int mx = event->params.mouse.status.X, my = event->params.mouse.status.Y;
+          if (!showingHint() && mx >= s_affBtn.X1 && mx <= s_affBtn.X2 && my >= s_affBtn.Y1 && my <= s_affBtn.Y2) {
+            s_affShown = s_affShown % 3 + 1;                      // the affirmation >> button
+            repaint(deskPanelRect());
+            break;
+          }
+          int i = hit(mx, my);
           if (i >= 0) { m_pressed = i; repaintIcon(i); }
         }
         break;

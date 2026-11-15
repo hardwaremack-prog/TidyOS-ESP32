@@ -324,6 +324,7 @@ public:
   int lastState = -1;
 
   uiButton * tabMp3, * tabMidi;
+  uiProgressBar * volBar;
   void showTab(bool midi) {
     list->setDir(mediaFolder(midi));
     tabMp3->setText(midi ? "MP3" : "[ MP3 ]"); tabMidi->setText(midi ? "[ MIDI ]" : "MIDI");
@@ -356,6 +357,12 @@ public:
     button("Next >", bx + 57, cy + 64, 53, 26)->onClick = [this]() { skip(1); };
     button("Vol -", bx, cy + 98, 53, 26)->onClick = [this]() { setVol(vol - 0.1f); };
     button("Vol +", bx + 57, cy + 98, 53, 26)->onClick = [this]() { setVol(vol + 0.1f); };
+    volBar = S(new uiProgressBar(this, Point(bx, cy + 127), Size(110, 9)));
+    volBar->progressBarProps().showPercentage = false;
+    volBar->progressBarStyle().backgroundColor = T.win;
+    volBar->progressBarStyle().foregroundColor = T.accent;
+    volBar->windowStyle().borderColor = T.text;
+    volBar->setPercentage((int)(vol * 100 + 0.5f));
     button("Scroll up", bx, cy + 140, 110, 22)->onClick = [this]() { list->scroll(-10); };
     button("Scroll down", bx, cy + 166, 110, 22)->onClick = [this]() { list->scroll(10); };
     now = label("Click a song to play it.", cx, cy + FileList::RH * 15 + 10, 440, 18);
@@ -396,6 +403,7 @@ public:
   }
   void setVol(float v) {
     vol = fmaxf(0, fminf(1, v));
+    volBar->setPercentage((int)(vol * 100 + 0.5f));
     char b[24]; snprintf(b, sizeof(b), "v %.2f", vol);
     screenMedia(b);
   }
