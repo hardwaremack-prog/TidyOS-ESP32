@@ -249,7 +249,7 @@ class ClockApp : public AppFrame {
 public:
   static AppFrame * inst;
   WatchFace * face;
-  uiLabel * timeLbl, * dateLbl, * worldLbl, * alarmLbl, * swLbl, * lapsLbl, * presetHint;
+  uiLabel * timeLbl, * dateLbl, * worldLbl, * alarmLbl, * swLbl, * lapsLbl[3], * presetHint;
   uiButton * alarmBtn, * swBtn, * storeBtn, * presetBtn[4];
   bool swRunning = false, storing = false;
   uint32_t swStart = 0, swAcc = 0;          // ms
@@ -298,9 +298,7 @@ public:
     swBtn->onClick = [this]() { startStop(); };
     button("Lap", cx + 332, y + 2, 60, 26)->onClick = [this]() { lap(); };
     button("Reset", cx + 398, y + 2, 64, 26)->onClick = [this]() { reset(); };
-    lapsLbl = label("", cx + 96, y + 34, 440, 48);
-    lapsLbl->labelStyle().textFont = &FONT_std_12;
-    lapsLbl->labelStyle().textAlign = uiHAlign::Left;
+    for (int i = 0; i < 3; ++i) { lapsLbl[i] = label("", cx + 96, y + 34 + i * 15, 340, 15); lapsLbl[i]->labelStyle().textFont = &FONT_std_12; }
     showAlarm();
     showPresets();
     onTimer = [this](uiTimerHandle) { tick(); };
@@ -325,18 +323,20 @@ public:
     if (!swRunning) return;
     laps.push_back(swNow());
     if (laps.size() > 3) laps.erase(laps.begin());
-    std::string s;
-    for (int i = laps.size() - 1; i >= 0; --i) {
-      char b[64];
-      snprintf(b, sizeof(b), "Lap at %s   (+%s)\n", fmtSw(laps[i]).c_str(), fmtSw(laps[i] - (i > 0 ? laps[i - 1] : 0)).c_str());
-      s += b;
+    showLaps();
+  }
+  void showLaps() {
+    for (int k = 0; k < 3; ++k) {
+      int i = (int)laps.size() - 1 - k;
+      char b[64] = "";
+      if (i >= 0) snprintf(b, sizeof(b), "Lap at %s   (+%s)", fmtSw(laps[i]).c_str(), fmtSw(laps[i] - (i > 0 ? laps[i - 1] : 0)).c_str());
+      lapsLbl[k]->setText(b); lapsLbl[k]->repaint();
     }
-    lapsLbl->setText(s.c_str()); lapsLbl->repaint();
   }
   void reset() {
     swRunning = false; swAcc = 0; laps.clear();
     swBtn->setText("Start"); swBtn->repaint();
-    lapsLbl->setText(""); lapsLbl->repaint();
+    showLaps();
     showSw();
   }
   void showSw() { swLbl->setText(fmtSw(swNow()).c_str()); swLbl->repaint(); }

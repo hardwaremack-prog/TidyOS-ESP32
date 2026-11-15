@@ -14,6 +14,7 @@ std::string screenUrl();         // where to open the desktop, e.g. http://192.1
 //   "a <path>" play audio, "p" pause, "r" resume, "s" stop, "v 0.5" volume, "k 63" seek (s),
 //   "i <path>" show a picture full size, "x" close it.  <path> is on the file server's port.
 //   "m <path>" play a MIDI file (synthesised in the browser; p/r/s/v work on it too)
+//   "o <path>\t<name>" open a web page from the card in a new browser tab (HTML games / programs)
 //   "b 1" ring the alarm (beeps for up to 2 minutes), "b 0" stop it, "b 2" one beep.
 void        screenMedia(const std::string & cmd);
 void        screenMediaState(int & state, int & pos, int & dur);   // state 0 paused 1 playing 2 ended -1 none

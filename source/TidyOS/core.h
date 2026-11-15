@@ -103,6 +103,8 @@ void openScan();
 void openShot();
 void openClock();
 void openLatch();
+void openHtmlGames();
+void openHtmlPrograms();
 void openFilesAt(const char * dir);
 void alarmTick();
 extern volatile bool gShotReq;          // Print Screen key

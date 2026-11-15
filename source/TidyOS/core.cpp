@@ -365,6 +365,44 @@ static const char * ART_LOCK[16] = {
   "................",
 };
 
+static const char * ART_HTMLG[16] = {
+  "################",
+  "#aaaaaaaaaaaa#w#",
+  "################",
+  "#wwwwwwwwwwwwww#",
+  "#wwwwwwwwwwwwww#",
+  "#www########www#",
+  "#ww#gggggggg#ww#",
+  "#ww#g#gggg#g#ww#",
+  "#ww####gg#g##ww#",
+  "#ww#g#gggggg#ww#",
+  "#ww#gggggggg#ww#",
+  "#www########www#",
+  "#wwwwwwwwwwwwww#",
+  "#wwwwwwwwwwwwww#",
+  "################",
+  "................",
+};
+
+static const char * ART_HTMLP[16] = {
+  "################",
+  "#aaaaaaaaaaaa#w#",
+  "################",
+  "#wwwwwwwwwwwwww#",
+  "#wwwwwwwwwwwwww#",
+  "#ww#wwwwww#wwww#",
+  "#w#wwwwww#wwwww#",
+  "##wwwwww#wwwwww#",
+  "#w#wwwww#wwwwww#",
+  "#ww#wwww#ww#www#",
+  "#wwwwww#wwww#ww#",
+  "#wwwwww#wwwww#w#",
+  "#wwwwww#wwww#ww#",
+  "#wwwwwwwwww#www#",
+  "################",
+  "................",
+};
+
 static const char * ART_NIC[16] = {
   "................", ".##############.", ".#gggggggggggg#.", ".#g####ggwwwwg#.", ".#g#aa#ggw##wg#.", ".#g#aa#ggw##wg#.",
   ".#g####ggwwwwg#.", ".#gggggggggggg#.", ".#gg#g#g#g#ggg#.", ".##############.", "..a.a.a.a.a.a...", "..a.a.a.a.a.a...",
@@ -410,7 +448,7 @@ static int appNeedKB(const char * label)
 {
   static const struct { const char * n; int kb; } T_[] = {
     { "Task Manager", 18 }, { "Files", 14 }, { "Neat", 22 }, { "Tidy", 20 }, { "Doodle", 18 }, { "Browser", 30 },
-    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Screenshot", 6 }, { "Clock", 10 }, { "Latch", 24 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
+    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Screenshot", 6 }, { "Clock", 10 }, { "Latch", 24 }, { "HTML Games", 8 }, { "HTML Programs", 8 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
   };
   for (auto & e : T_) if (!strcmp(e.n, label)) return e.kb;
   return 10;
@@ -443,11 +481,15 @@ static const DeskIcon ICONS[] = {
   { "Screenshot", ART_SHOT,  nullptr, openShot },
   { "Clock",      ART_CLOCK, nullptr, openClock },
   { "Latch",      ART_LOCK,  nullptr, openLatch },
+  { "HTML Games", ART_HTMLG, nullptr, openHtmlGames },
+  { "HTML Programs", ART_HTMLP, nullptr, openHtmlPrograms },
   { "Switches",   ART_SD,    nullptr, openSwitches },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
 
 static std::string s_bootNote;              // shown once on the desktop (update result)
+
+#include "desk_panel.h"
 
 class Desktop : public uiControl {
 public:
@@ -527,7 +569,11 @@ public:
           if (unread != m_unread) { m_unread = unread; for (int k = 0; k < NICONS; ++k) if (ICONS[k].open == openMessages) repaintIcon(k); }
           if (sig != m_hintSig) {
             m_hintSig = sig;
-            repaint(Rect(CELL_W * COLS + 16, 140, SCREEN_W - 1, 330));
+            repaint(Rect(CELL_W * COLS + 16, 0, SCREEN_W - 1, SCREEN_H - BAR_H - 1));   // hint or panel
+            m_panelSig = deskPanelSig();
+          } else if (!showingHint() && deskPanelSig() != m_panelSig) {
+            m_panelSig = deskPanelSig();
+            repaint(deskPanelRect());
           }
         }
         break;
@@ -604,6 +650,15 @@ private:
     cv->drawText(lf, r.X1 + CELL_W / 2 - w / 2, iy + 40, ic.label);
   }
 
+  bool showingHint() {
+#ifdef TIDYOS_HTML5
+    return !gSet.ssid.length() || !netConnected();
+#else
+    return inputKeyboards() == 0 || inputMice() == 0 || !gSet.ssid.length();
+#endif
+  }
+  int m_panelSig = -1;
+
   void paint(Rect const & clip) {
     auto cv = canvas();
     cv->setBrushColor(T.desk);
@@ -613,7 +668,8 @@ private:
       if (r.X2 >= clip.X1 && r.X1 <= clip.X2 && r.Y2 >= clip.Y1 && r.Y1 <= clip.Y2)
         drawIcon(cv, i);
     }
-    // welcome / pairing hint
+    // welcome / pairing hint - or, once everything is set up, the panel on the right
+    if (!showingHint()) { Rect p = deskPanelRect(); if (p.intersects(clip)) drawDeskPanel(cv); }
 #ifdef TIDYOS_HTML5
     if (!gSet.ssid.length() || !netConnected()) {
       int x = CELL_W * COLS + 24, y = 150;
@@ -1221,6 +1277,7 @@ void setup()
   Serial.println("\n[TidyOS] " TIDYOS_VERSION " (" TIDYOS_EDITION " edition) starting");
 
   settingsLoad();
+  ledSetOn(gSet.ledOn);   // ledBegin ran before the settings were read, so the switch looked "off" to it
 
   if (updateModeRequested()) {
     // update mode: screen + Wi-Fi only, so there's room for HTTPS

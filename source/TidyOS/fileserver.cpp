@@ -151,6 +151,16 @@ static const char * mimeOf(const std::string & p)
   if (!strcmp(e, "ogg")) return "audio/ogg";
   if (!strcmp(e, "bmp")) return "image/bmp";
   if (!strcmp(e, "gif")) return "image/gif";
+  if (!strcmp(e, "js") || !strcmp(e, "mjs")) return "text/javascript";
+  if (!strcmp(e, "css")) return "text/css";
+  if (!strcmp(e, "json")) return "application/json";
+  if (!strcmp(e, "svg")) return "image/svg+xml";
+  if (!strcmp(e, "webp")) return "image/webp";
+  if (!strcmp(e, "ico")) return "image/x-icon";
+  if (!strcmp(e, "wasm")) return "application/wasm";
+  if (!strcmp(e, "woff2")) return "font/woff2";
+  if (!strcmp(e, "mp4")) return "video/mp4";
+  if (!strcmp(e, "webm")) return "video/webm";
   return "application/octet-stream";
 }
 
@@ -290,6 +300,11 @@ static void handle(WiFiClient & c)
 
   if (path == "/" || path == "/index.html") send(c, 200, "text/html; charset=utf-8", PAGE);
   else if (path == "/api/list") listDir(c, p.empty() ? "/" : p);
+  else if (path.compare(0, 5, "/run/") == 0 && method == "GET") {     // a web page and its files, by path (HTML games / programs)
+    std::string f = urlDecode(path.substr(4));
+    if (!f.empty() && f.back() == '/') f += "index.html";
+    sendFile(c, f, false);
+  }
   else if (path == "/api/file" && method == "GET") sendFile(c, p, param(query, "dl") == "1");
   else if (path == "/api/file" && (method == "PUT" || method == "POST")) receiveFile(c, p, len);
   else if (path == "/api/delete" && method == "POST") {
@@ -355,6 +370,17 @@ int fileServerPort() { return FILES_PORT; }
 std::string fileServerMediaPath(const std::string & file)
 {
   std::string u = "/api/file?path=";
+  static const char * hex = "0123456789ABCDEF";
+  for (unsigned char ch : file) {
+    if (isalnum(ch) || ch == '/' || ch == '.' || ch == '-' || ch == '_') u += (char)ch;
+    else { u += '%'; u += hex[ch >> 4]; u += hex[ch & 15]; }
+  }
+  return u;
+}
+
+std::string fileServerRunPath(const std::string & file)     // "/run/SD/HTML%20Games/x.html": relative links keep working
+{
+  std::string u = "/run";
   static const char * hex = "0123456789ABCDEF";
   for (unsigned char ch : file) {
     if (isalnum(ch) || ch == '/' || ch == '.' || ch == '-' || ch == '_') u += (char)ch;

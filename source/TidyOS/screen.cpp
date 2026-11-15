@@ -25,6 +25,7 @@
 
 void inputWebKey(uint8_t usage, uint8_t mods, bool down);
 void inputWebMouse(int x, int y, int wheel, uint8_t buttons);
+void deskWeatherFromPage(const char * t);
 void inputWebReleaseAll();
 RGB888 themePal(int i);
 
@@ -37,7 +38,7 @@ static volatile bool s_view = false;
 static uint32_t      s_hash[SCREEN_H];
 static uint32_t      s_apSince = 0, s_connSince = 0;
 static char          s_sentHome[64];      // last "home Wi-Fi" address sent to this browser
-static char          s_mediaQ[4][220];    // media commands waiting for the page (small ring)
+static char          s_mediaQ[4][300];    // media commands waiting for the page (small ring)
 static volatile uint8_t s_mqW = 0, s_mqR = 0;
 static portMUX_TYPE  s_mqMux = portMUX_INITIALIZER_UNLOCKED;
 static volatile int  s_mState = -1, s_mPos = 0, s_mDur = 0;
@@ -84,7 +85,7 @@ function send(a){if(ws&&ws.readyState==1)ws.send(new Uint8Array(a));}
 function connect(){
  kicked=false;show('Connecting to TidyOS...');
  ws=new WebSocket('ws://'+location.host+'/ws');ws.binaryType='arraybuffer';
- ws.onopen=function(){show('');st.textContent='Connected';c.focus();var t=Math.floor(Date.now()/1000);send([6,t&255,t>>8&255,t>>16&255,t>>>24]);};
+ ws.onopen=function(){show('');st.textContent='Connected';c.focus();var t=Math.floor(Date.now()/1000);send([6,t&255,t>>8&255,t>>16&255,t>>>24]);wxAt=0;setTimeout(weather,1500);};
  ws.onmessage=function(e){var d=new Uint8Array(e.data);rx+=d.length;
   if(d[0]==1){bpp=d[1];for(var i=0;i<d[2];i++)pal[i]=0xff000000|d[5+i*3]<<16|d[4+i*3]<<8|d[3+i*3];}
   else if(d[0]==2){var y=d[1]|d[2]<<8,n=d[3],o=4,rb=bpp==1?80:bpp==2?160:240;
@@ -160,9 +161,21 @@ function midiPlay(url,vol){midiStop();if(au){au.pause();}
   m.dur=ev.length?ev[ev.length-1].t:0;m.t0=ctx.currentTime+0.15;mx=m;if(ctx.state=='suspended'){ctx.resume();auBlocked=true;}
   m.timer=setInterval(midiPump,50);m.rep=setInterval(midiReport,1000);midiPump();}).catch(function(){send([8,2,0,0,0,0]);});}
 
+function openBanner(u,n){var w=null;try{w=window.open(u,'_blank');}catch(e){}if(w)return;
+ var e=document.getElementById('ob');if(!e){e=document.createElement('div');e.id='ob';e.style.cssText='position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:21;background:#0055aa;color:#fff;font:bold 18px sans-serif;padding:10px 14px;border-radius:8px;display:none;gap:10px;align-items:center;box-shadow:0 4px 16px #0008';document.body.appendChild(e);}
+ e.innerHTML='';var b=document.createElement('button');b.textContent='▶ Play '+n;b.style.cssText='font:bold 18px sans-serif;padding:8px 14px;cursor:pointer';
+ b.onclick=function(){window.open(u,'_blank');e.style.display='none';};var x=document.createElement('button');x.textContent='✕';x.style.cssText='font:16px sans-serif;padding:6px 10px;cursor:pointer';x.onclick=function(){e.style.display='none';};
+ e.appendChild(b);e.appendChild(x);e.style.display='flex';}
+var wxAt=0;function weather(){if(!ws||ws.readyState!=1||Date.now()-wxAt<25*60000)return;wxAt=Date.now();
+ fetch('http://ip-api.com/json/?fields=status,city,lat,lon').then(function(r){return r.json();}).then(function(g){if(g.status!='success')throw 0;
+  return fetch('https://api.open-meteo.com/v1/forecast?latitude='+g.lat+'&longitude='+g.lon+'&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto&forecast_days=1')
+   .then(function(r){return r.json();}).then(function(w){var s=Math.round(w.current.temperature_2m)+'|'+w.current.weather_code+'|'+Math.round(w.daily.temperature_2m_max[0])+'|'+Math.round(w.daily.temperature_2m_min[0])+'|'+(g.city||'').replace(/[^\x20-\x7e]/g,'').slice(0,30);
+    send([12].concat(Array.from(new TextEncoder().encode(s))));});}).catch(function(){wxAt=Date.now()-22*60000;});}
+setInterval(weather,30000);
 function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv');
  if(mx&&(k=='p'||k=='r'||k=='s'||k=='v')){if(k=='p'){mx.paused=true;mx.ctx.suspend();midiReport();}else if(k=='r'){mx.paused=false;mx.ctx.resume();}else if(k=='s'){midiStop();send([8,255,0,0,0,0]);}else mx.out.gain.value=Math.max(0,Math.min(1,+v));return;}
  if(k=='m'){midiPlay(mUrl(v),au?au.volume:0.8);return;}
+ if(k=='o'){var t=v.split('\t');openBanner(mUrl(t[0]),t[1]||'');return;}
  if(k=='a'){midiStop();if(!au){au=new Audio();au.onended=auReport;setInterval(auReport,1000);
    au.onerror=function(){if(au.tries++<4&&au.getAttribute('src'))setTimeout(function(){au.load();au.play().catch(function(){auBlocked=true;});},1500);};}
   au.tries=0;au.src=mUrl(v);au.play().catch(function(e){if(e&&e.name=='NotAllowedError')auBlocked=true;});}
@@ -376,6 +389,7 @@ static bool pollInput(WiFiClient & c)
       case 4: gOpenTaskMgr = true; break;
       case 10: gRestartReq = true; break;
       case 11: gSleepReq = true; break;
+      case 12: { char t[65]; memcpy(t, p + 1, keep - 1); t[keep - 1] = 0; deskWeatherFromPage(t); break; }   // weather, looked up by the page
       case 5: inputWebReleaseAll(); break;
       case 6: if (keep >= 5) netSetClockFrom(p[1] | (p[2] << 8) | (p[3] << 16) | ((uint32_t)p[4] << 24)); break;
       case 8: if (keep >= 6) { s_mState = p[1] == 255 ? -1 : p[1]; s_mPos = p[2] | (p[3] << 8); s_mDur = p[4] | (p[5] << 8); } break;
