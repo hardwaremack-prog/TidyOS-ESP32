@@ -10,11 +10,11 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Bluetooth keyboard and mouse** (Bluetooth LE, VGA edition)
 - **microSD card** for your files (falls back to internal flash with no card)
 - **Wi-Fi** with a clock that sets itself from the internet
-- Apps: **Calculator, Neat Lite** (writing with fonts, sizes, colours and spell check), **Tidy Lite** (spreadsheet: opens and saves .csv and .xlsx, with drag-select, right-click insert/delete rows and columns, resizable sizes, left/center/right, Auto sum, check boxes, row shading and a frozen top row), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Doodle** (MacPaint-style drawing), **Pictures** (JPEG/BMP viewer), **Music** (MP3 and MIDI, plays in your browser), **Nic Sweep** (who's on your network, export to Tidy or Excel), **Screenshot** (also the Print Screen key), **Clock** (watch face, alarm, presets, world time, stopwatch), **Latch** (password safe - opens the same .latch vaults as the Latch web app), **Messages, Browser, Files, Settings, Task Manager, Ping, Switches**
+- Apps: **Calculator, Neat Lite** (writing with fonts, sizes, colours and spell check), **Tidy Lite** (spreadsheet: opens and saves .csv and .xlsx, with drag-select, right-click insert/delete rows and columns, resizable sizes, left/center/right, Auto sum, check boxes, row shading and a frozen top row), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Doodle** (MacPaint-style drawing), **Pictures** (JPEG/BMP viewer), **Music** (MP3 and MIDI with shuffle, plays in your browser), **Nic Sweep** (who's on your network, export to Tidy or Excel), **Screenshot** (also the Print Screen key), **Clock** (watch face, alarm, presets, world time, stopwatch), **Latch** (password safe - opens the same .latch vaults as the Latch web app), **Messages, Browser, Files, Settings, Task Manager, Ping, Switches**
 - **Printing** to network printers (found automatically), through a Pi with CUPS, or Save as PDF
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
 - **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
-- **Games:** Sammy the Snake (with music), Minesweeper, Blocks, 2048, **Bricks** (Arkanoid-style), **Paradrop** (Airborne!-style), **Deep Drill**, **Missile Command** and **StuntCopter**. Arrow keys or WASD
+- **Games:** Sammy the Snake (with shuffled MIDI music), Minesweeper, Blocks, 2048, **Bricks** (Arkanoid-style), **Paradrop** (Airborne!-style), **Deep Drill**, **Missile Command** and **StuntCopter**. Arrow keys or WASD
 - **HTML Games / HTML Programs:** put web games and programs (a .html file, or a folder with index.html) in those folders on the SD card; Play opens them in a new browser tab
 - **Desktop panel:** time, date, weather in °F with a 4-day temperature graph (freezing line at 32°), Moscow / Los Angeles / Tokyo times, daily affirmations (>> shows up to 3), up to six news headlines, a world map shaded for day and night with a you-are-here marker, and a drop box: drag files onto the page and TidyOS asks which SD folder they go in
 - **Git-Store:** a cloud folder for each board (up to 1 GB, 25 MB a file), kept by a free Cloudflare Worker - see [gitstore/](gitstore/README.md)
@@ -22,7 +22,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
 - **Updates itself from GitHub:** Settings → Check for updates
 
-> Status: version 2.4.6. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
+> Status: version 2.4.7. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---

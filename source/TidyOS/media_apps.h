@@ -30,6 +30,24 @@ static bool isMusicFile(const char * n)
 }
 static bool isMidiFile(const char * n) { const char * e = fileExt(n); return !strcmp(e, "mid") || !strcmp(e, "midi"); }
 
+// a random song in dir (not cur); midiOnly: just .mid files. "" if there are none
+static std::string randomSong(const std::string & dir, const std::string & cur, bool midiOnly)
+{
+  std::vector<std::string> all;
+  DIR * dd = opendir(dir.c_str());
+  if (!dd) return "";
+  struct dirent * e;
+  while ((e = readdir(dd)) != nullptr) {
+    if (e->d_name[0] == '.' || !isMusicFile(e->d_name) || (midiOnly && !isMidiFile(e->d_name))) continue;
+    all.push_back(e->d_name);
+  }
+  closedir(dd);
+  if (all.empty()) return "";
+  std::string pick;
+  for (int t = 0; t < 4; ++t) { pick = all[esp_random() % all.size()]; if (all.size() == 1 || pick != cur) break; }
+  return joinPath(dir.c_str(), pick.c_str());
+}
+
 // the card's Music or MIDI folder (any capitalisation), or Documents
 static std::string mediaFolder(bool midi)
 {
@@ -312,6 +330,8 @@ void openPictures(const char * file)
 
 // ---------------------------------------------------------------- Music
 
+static bool s_musicShuffle = false;
+
 class MusicApp : public AppFrame {
 public:
   static AppFrame * inst;
@@ -325,6 +345,7 @@ public:
 
   uiButton * tabMp3, * tabMidi;
   uiProgressBar * volBar;
+  uiButton * shuffleBtn;
   void showTab(bool midi) {
     list->setDir(mediaFolder(midi));
     tabMp3->setText(midi ? "MP3" : "[ MP3 ]"); tabMidi->setText(midi ? "[ MIDI ]" : "MIDI");
@@ -365,6 +386,8 @@ public:
     volBar->setPercentage((int)(vol * 100 + 0.5f));
     button("Scroll up", bx, cy + 140, 110, 22)->onClick = [this]() { list->scroll(-10); };
     button("Scroll down", bx, cy + 166, 110, 22)->onClick = [this]() { list->scroll(10); };
+    shuffleBtn = button(s_musicShuffle ? "Shuffle: on" : "Shuffle: off", bx, cy + 196, 110, 26);
+    shuffleBtn->onClick = [this]() { s_musicShuffle = !s_musicShuffle; shuffleBtn->setText(s_musicShuffle ? "Shuffle: on" : "Shuffle: off"); shuffleBtn->repaint(); };
     now = label("Click a song to play it.", cx, cy + FileList::RH * 15 + 10, 440, 18);
     timeLbl = label("", cx, cy + FileList::RH * 15 + 30, 440, 18);
     timeLbl->labelStyle().textFont = &FONT_std_12;
@@ -409,6 +432,12 @@ public:
   }
   void skip(int d) {
     std::string dir = playing.empty() ? list->dir : dirOf(playing), cur = playing.empty() ? "" : baseName(playing);
+    if (s_musicShuffle && d > 0) {                       // shuffle: any other song in the folder
+      std::string p = randomSong(dir, cur, false);
+      if (p.empty()) { now->setText("No music files in this folder."); now->repaint(); return; }
+      play(p);
+      return;
+    }
     std::string prev, next, first, last;
     bool seen = false;
     DIR * dd = opendir(dir.c_str());
@@ -460,27 +489,6 @@ static std::string s_qPlaying;
 static bool s_qPaused = false;
 static int  s_qLast = 2;
 
-static std::string musicFolder() { return mediaFolder(false); }
-
-static std::string songAfter(const std::string & dir, const std::string & cur)   // next song (wraps), "" if none
-{
-  std::string first, next;
-  bool seen = cur.empty();
-  DIR * dd = opendir(dir.c_str());
-  if (!dd) return "";
-  struct dirent * e;
-  while ((e = readdir(dd)) != nullptr) {
-    if (e->d_name[0] == '.' || !isMusicFile(e->d_name)) continue;
-    std::string n = e->d_name;
-    if (first.empty()) first = n;
-    if (seen && next.empty() && n != cur) next = n;
-    if (n == cur) seen = true;
-  }
-  closedir(dd);
-  std::string to = next.empty() ? first : next;
-  return to.empty() ? "" : joinPath(dir.c_str(), to.c_str());
-}
-
 static void quickPlayFile(const std::string & p)
 {
   fileServerMedia(true);
@@ -501,8 +509,8 @@ std::string musicQuickPlay()
   if (!screenViewer()) return "Music plays in the web browser.";
   if (!s_qPlaying.empty() && s_qPaused) { screenMedia("r"); s_qPaused = false; return "Music: " + baseName(s_qPlaying); }
   if (!s_qPlaying.empty()) return "Music: " + baseName(s_qPlaying);
-  std::string p = songAfter(musicFolder(), "");
-  if (p.empty()) return "No .mp3 files in the Music folder on the card.";
+  std::string p = randomSong(mediaFolder(true), "", true);          // Sammy plays the MIDI folder, shuffled
+  if (p.empty()) return "No .mid files in the MIDI folder on the card.";
   quickPlayFile(p);
   return "Music: " + baseName(p);
 }
@@ -518,7 +526,7 @@ void musicQuickTick()             // once a second: on to the next song when one
   if (MusicApp::inst || s_qPlaying.empty() || s_qPaused) return;
   int st, pos, dur;
   screenMediaState(st, pos, dur);
-  if (st == 2 && s_qLast != 2) { std::string n = songAfter(dirOf(s_qPlaying), baseName(s_qPlaying)); if (!n.empty()) quickPlayFile(n); return; }
+  if (st == 2 && s_qLast != 2) { std::string n = randomSong(dirOf(s_qPlaying), baseName(s_qPlaying), true); if (!n.empty()) quickPlayFile(n); return; }
   s_qLast = st;
 }
 
