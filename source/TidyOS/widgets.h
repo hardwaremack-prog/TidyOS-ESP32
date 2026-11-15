@@ -50,6 +50,8 @@ private:
 void wrapText(const std::string & text, int width, std::vector<std::string> & out);
 
 // ---------------------------------------------------------------- Spreadsheet model
+std::string fmtNum(double v);   // how Tidy shows a number
+
 class Sheet {
 public:
   static const int COLS = 26;
@@ -66,6 +68,7 @@ public:
   void writeCSV(RSink & o);
   void readCSV(RSource & in);
   static std::string cellName(int r, int c);
+  static int  checkState(const std::string & s) { return s == "[x]" || s == "[X]" ? 1 : s == "[ ]" ? 0 : -1; }   // -1 = not a check box
 
 private:
   struct P { const char * s; int depth; bool err; };
@@ -85,6 +88,9 @@ public:
 
   Sheet * sheet;
   int  selR = 0, selC = 0, topR = 0, leftC = 0;
+  int  ancR = 0, ancC = 0;             // other corner of a dragged / shift-selected range
+  bool bands = false;                  // shade every other row
+  bool freezeTop = false;              // row 1 stays put while scrolling
   bool editing = false;
   std::string edit;
   std::function<void()> onSelect;      // selection / edit buffer changed
@@ -94,10 +100,20 @@ public:
   int visRows();
   int visCols();
   void commit();
+  int  r1() const { return selR < ancR ? selR : ancR; }
+  int  r2() const { return selR > ancR ? selR : ancR; }
+  int  c1() const { return selC < ancC ? selC : ancC; }
+  int  c2() const { return selC > ancC ? selC : ancC; }
+  bool isRange() const { return selR != ancR || selC != ancC; }
+  void collapse() { ancR = selR; ancC = selC; }
+  void toggleChecks();                 // selected cells: add check boxes, or tick / untick them
 
 private:
   void paint(Rect const & r);
   void ensureVisible();
   void keyDown(uiKeyEventInfo const & k);
+  int  rowAt(int i) const { return freezeTop ? (i == 0 ? 0 : topR + i) : topR + i; }   // screen row -> sheet row
+  bool cellAt(int mx, int my, int & r, int & c);
+  bool dragging = false;
   static const int HDRW = 34, COLW = 74, ROWH = 16;
 };

@@ -54,6 +54,8 @@ struct Settings {
   bool   meshOn;      // Coms wireless mesh (ESP-NOW) on (off by default)
   bool   ledOn;       // blue status light on (off by default)
   bool shelfOn = false;   // Shelf messages over Wi-Fi (start-up switch)
+  bool tidyBands = false; // Tidy: shade every other row
+  bool tidyFreeze = false;// Tidy: keep row 1 at the top
   int    neatFont;    // Neat Lite font family (index)
   int    neatSize;    // Neat Lite font size (index within the family)
 };

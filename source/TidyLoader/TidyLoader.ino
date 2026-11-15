@@ -9,6 +9,8 @@
 #include <Update.h>
 #include <esp_ota_ops.h>
 #include "mbedtls/sha256.h"
+#include <Preferences.h>
+#include <driver/gpio.h>
 
 #define LED_PIN 2
 static SPIClass sdSpi(VSPI);
@@ -18,9 +20,14 @@ static bool s_card = false;
 static void bootApp(const char * why)
 {
   Serial.printf("[loader] %s - starting TidyOS\n", why);
+  bool noted = false;
   if (s_card) {                                 // leave a note for TidyOS to show
     File l = SD.open("/tidyos/update.log", FILE_WRITE);
-    if (l) { l.print(why); l.close(); }
+    if (l) { l.print(why); l.close(); noted = true; }
+  }
+  if (!noted) {                                 // no card: leave the note in flash instead
+    Preferences p;
+    if (p.begin("tidyload", false)) { p.putString("note", why); p.end(); }
   }
   const esp_partition_t * app = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, nullptr);
   if (app) esp_ota_set_boot_partition(app);
@@ -31,7 +38,7 @@ static void bootApp(const char * why)
 static bool mountCard(int miso, int mosi, int clk, int cs)
 {
   sdSpi.begin(clk, miso, mosi, cs);
-  for (int pin : { miso, mosi, cs }) pinMode(pin, INPUT_PULLUP);
+  for (int pin : { miso, mosi, cs }) gpio_pullup_en((gpio_num_t)pin);   // not pinMode: that unhooks the pins from SPI
   for (uint32_t hz : { 10000000u, 4000000u, 1000000u }) {
     if (SD.begin(cs, sdSpi, hz, "/sd", 2)) return true;
     SD.end();

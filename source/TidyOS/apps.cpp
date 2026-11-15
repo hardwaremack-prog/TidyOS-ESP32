@@ -712,13 +712,19 @@ public:
     button("Save",    cx + 108, cy, 50)->onClick = [this]() { save(); };
     button("Save as", cx + 162, cy, 64)->onClick = [this]() { saveAs(); };
     button("Print",   cx + 230, cy, 50)->onClick = [this]() { print(); };
-    nameLbl = label("Untitled", cx + 288, cy + 3, 240, 18);
-    saved = makeSavedLight(this, cx + 542, cy + 2);
-    cellLbl = label("A1:", cx, cy + 28, 612, 18);
+    button("Check box", cx + 290, cy, 76)->onClick = [this]() { grid->toggleChecks(); gApp->setFocusedWindow(grid); };
+    bandBtn = button("", cx + 370, cy, 112);
+    bandBtn->onClick = [this]() { gSet.tidyBands = !gSet.tidyBands; settingsSave(); applyView(); };
+    freezeBtn = button("", cx + 486, cy, 126);
+    freezeBtn->onClick = [this]() { gSet.tidyFreeze = !gSet.tidyFreeze; settingsSave(); applyView(); };
+    cellLbl = label("A1:", cx, cy + 28, 396, 18);
+    nameLbl = label("Untitled", cx + 402, cy + 28, 180, 18);
+    saved = makeSavedLight(this, cx + 586, cy + 28);
     cellLbl->labelStyle().backgroundColor = T.face;
     grid = new SheetGrid(this, Point(cx, cy + 50), Size(614, 340), &sheet);
-    label("Type to fill a cell, Enter to confirm, F2 or double-click to edit.  =A1+B2  =SUM(A1:A9)  AVG MIN MAX COUNT ROUND IF",
+    label("Drag or Shift+arrows to select. Type to fill, F2 or double-click to edit.  =SUM(A1:A9) AVG MIN MAX COUNT ROUND IF",
           cx, cy + 394, 612, 16)->labelStyle().textFont = &FONT_std_12;
+    applyView();
     grid->onSelect = [this]() { updateCell(); };
     grid->onModified = [this]() { if (!dirty) { dirty = true; setSavedLight(saved, false); } };
     grid->onKey = [this](uiKeyEventInfo const & k) {
@@ -763,7 +769,39 @@ public:
     printDialog(d);
   }
 
+  uiButton * bandBtn;
+  uiButton * freezeBtn;
+
+  void applyView() {
+    grid->bands = gSet.tidyBands;
+    grid->freezeTop = gSet.tidyFreeze;
+    bandBtn->setText(gSet.tidyBands ? "Shading: on" : "Shading: off");
+    freezeBtn->setText(gSet.tidyFreeze ? "Freeze row 1: on" : "Freeze row 1: off");
+    bandBtn->repaint(); freezeBtn->repaint();
+    grid->repaint();
+    gApp->setFocusedWindow(grid);
+  }
+
   void updateCell() {
+    if (grid->isRange() && !grid->editing) {                 // a range: name it, with its total and how many are filled
+      double sum = 0; int filled = 0, ticks = 0, boxes = 0;
+      for (int r = grid->r1(); r <= grid->r2(); ++r)
+        for (int c = grid->c1(); c <= grid->c2(); ++c) {
+          const std::string & v = sheet.raw(r, c);
+          if (v.empty()) continue;
+          ++filled;
+          int st = Sheet::checkState(v);
+          if (st >= 0) { ++boxes; ticks += st; continue; }
+          bool err = false; sum += sheet.value(r, c, err);
+        }
+      char b[120];
+      std::string nm = Sheet::cellName(grid->r1(), grid->c1()) + ":" + Sheet::cellName(grid->r2(), grid->c2());
+      if (boxes) snprintf(b, sizeof(b), "%s   %d of %d ticked", nm.c_str(), ticks, boxes);
+      else snprintf(b, sizeof(b), "%s   Sum %s   Count %d", nm.c_str(), fmtNum(sum).c_str(), filled);
+      cellLbl->setText(b);
+      cellLbl->repaint();
+      return;
+    }
     std::string s = Sheet::cellName(grid->selR, grid->selC) + ":  " + (grid->editing ? grid->edit + "_" : sheet.raw(grid->selR, grid->selC));
     cellLbl->setText(s.c_str());
     cellLbl->repaint();
@@ -793,7 +831,7 @@ public:
     if (!f) { gApp->messageBox("Tidy", "Could not open that file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
     { FileSource in(f); sheet.readCSV(in); }
     fclose(f);
-    grid->selR = grid->selC = grid->topR = grid->leftC = 0;
+    grid->selR = grid->selC = grid->topR = grid->leftC = 0; grid->collapse();
     grid->repaint();
     setPath(p);
     dirty = false;
@@ -805,7 +843,7 @@ public:
   void newDoc() {
     if (!askSave()) return;
     sheet.cells.clear();
-    grid->selR = grid->selC = grid->topR = grid->leftC = 0;
+    grid->selR = grid->selC = grid->topR = grid->leftC = 0; grid->collapse();
     grid->repaint();
     setPath("");
     dirty = false;

@@ -56,6 +56,8 @@ void settingsLoad()
   gSet.meshOn    = s_prefs.getBool("mesh", false);
   gSet.ledOn     = s_prefs.getBool("led", false);
   gSet.shelfOn   = s_prefs.getBool("shelf", false);
+  gSet.tidyBands = s_prefs.getBool("tbands", false);
+  gSet.tidyFreeze = s_prefs.getBool("tfreeze", false);
   gSet.neatFont  = s_prefs.getInt("nfont", 0);
   gSet.neatSize  = s_prefs.getInt("nsize", 1);
 }
@@ -76,6 +78,8 @@ void settingsSave()
   s_prefs.putBool("mesh", gSet.meshOn);
   s_prefs.putBool("led", gSet.ledOn);
   s_prefs.putBool("shelf", gSet.shelfOn);
+  s_prefs.putBool("tbands", gSet.tidyBands);
+  s_prefs.putBool("tfreeze", gSet.tidyFreeze);
   s_prefs.putInt("nfont", gSet.neatFont);
   s_prefs.putInt("nsize", gSet.neatSize);
 }
@@ -1090,6 +1094,18 @@ static void bootChooser()
 // what happened to the last update (the installer leaves tidyos/update.log on the card)
 static void checkUpdateNote()
 {
+  {                                              // the installer couldn't use the card: its note is in flash
+    Preferences p;
+    if (p.begin("tidyload", false)) {
+      String n = p.getString("note", "");
+      if (n.length()) {
+        p.remove("note");
+        Serial.printf("[TidyOS] update installer said: %s\n", n.c_str());
+        if (n != "no update waiting") s_bootNote = std::string("The update wasn't installed: ") + n.substring(0, 70).c_str();
+      }
+      p.end();
+    }
+  }
   if (!gSDMounted) return;
   std::string l;
   if (readFileStr(SD_MOUNT "/tidyos/update.log", l, 200)) {
