@@ -352,7 +352,12 @@ void updateRun(void (*status)(const char * msg, int percent))
 
   // hand over to the loader
   const esp_partition_t * loader = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, nullptr);
-  esp_ota_set_boot_partition(loader);
+  esp_err_t er = loader ? esp_ota_set_boot_partition(loader) : ESP_ERR_NOT_FOUND;
+  if (er != ESP_OK) {
+    snprintf(b, sizeof(b), "Couldn't start the installer (%s) - reinstall from the web flasher", esp_err_to_name(er));
+    remove(SD_MOUNT "/tidyos/update.bin");
+    finish(status, b, 0, 9000);
+  }
   snprintf(b, sizeof(b), "Installing %s - TidyOS restarts in about 30 s", ver.c_str());
   finish(status, b, 100, 2500);
 }

@@ -37,8 +37,9 @@ static volatile bool s_view = false;
 static uint32_t      s_hash[SCREEN_H];
 static uint32_t      s_apSince = 0, s_connSince = 0;
 static char          s_sentHome[64];      // last "home Wi-Fi" address sent to this browser
-static char          s_mediaCmd[220];     // waiting media command for the page ("" = none)
-static volatile bool s_mediaPend = false;
+static char          s_mediaQ[4][220];    // media commands waiting for the page (small ring)
+static volatile uint8_t s_mqW = 0, s_mqR = 0;
+static portMUX_TYPE  s_mqMux = portMUX_INITIALIZER_UNLOCKED;
 static volatile int  s_mState = -1, s_mPos = 0, s_mDur = 0;
 
 // ---------------------------------------------------------------- the page
@@ -112,7 +113,9 @@ var ver='',upBase=-1,upAt=0,au=null,auBlocked=false;
 function mUrl(p){return location.protocol+'//'+location.hostname+':'+MP+p;}
 function auReport(){if(!au)return;var t=au.currentTime|0,u=isFinite(au.duration)?au.duration|0:0;send([8,au.ended?2:au.paused?0:1,t&255,t>>8&255,u&255,u>>8&255]);}
 function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv');
- if(k=='a'){if(!au){au=new Audio();au.onended=auReport;setInterval(auReport,1000);}au.src=mUrl(v);au.play().catch(function(){auBlocked=true;});}
+ if(k=='a'){if(!au){au=new Audio();au.onended=auReport;setInterval(auReport,1000);
+   au.onerror=function(){if(au.tries++<4&&au.getAttribute('src'))setTimeout(function(){au.load();au.play().catch(function(){auBlocked=true;});},1500);};}
+  au.tries=0;au.src=mUrl(v);au.play().catch(function(e){if(e&&e.name=='NotAllowedError')auBlocked=true;});}
  else if(k=='p'&&au)au.pause();else if(k=='r'&&au)au.play().catch(function(){auBlocked=true;});
  else if(k=='s'&&au){au.pause();au.removeAttribute('src');au.load();send([8,255,0,0,0,0]);}
  else if(k=='v'&&au)au.volume=Math.max(0,Math.min(1,+v));else if(k=='k'&&au)au.currentTime=+v;
@@ -536,11 +539,14 @@ static void screenTask(void *)
         if (n > 0 && n < (int)sizeof(m) && strcmp(m + 1, s_sentHome) != 0 && wsQueue((const uint8_t *)m, n))
           strncpy(s_sentHome, m + 1, sizeof(s_sentHome) - 1);
       }
-      if (s_view && s_mediaPend && outPending() == 0) {
+      while (s_view && s_mqR != s_mqW && outPending() == 0) {
         static uint8_t mm[224];
-        size_t n = strlen(s_mediaCmd);
-        mm[0] = 9; memcpy(mm + 1, s_mediaCmd, n);
-        if (wsQueue(mm, n + 1)) s_mediaPend = false;
+        const char * cmd = s_mediaQ[s_mqR % 4];
+        size_t n = strlen(cmd);
+        mm[0] = 9; memcpy(mm + 1, cmd, n);
+        if (!wsQueue(mm, n + 1)) break;
+        s_mqR++;
+        if (!flushOut(s_ws)) break;
       }
       if (s_view && !flushOut(s_ws)) { dropViewer(); Serial.println("[TidyOS] browser stopped receiving"); }
       else if (s_view && now - lastFrame >= 50 && outPending() == 0) {
@@ -570,8 +576,11 @@ bool screenViewer() { return s_view; }
 
 void screenMedia(const std::string & cmd)
 {
-  strlcpy(s_mediaCmd, cmd.c_str(), sizeof(s_mediaCmd));
-  s_mediaPend = true;
+  portENTER_CRITICAL(&s_mqMux);
+  if ((uint8_t)(s_mqW - s_mqR) >= 4) s_mqR++;           // full: drop the oldest
+  strlcpy(s_mediaQ[s_mqW % 4], cmd.c_str(), sizeof(s_mediaQ[0]));
+  s_mqW++;
+  portEXIT_CRITICAL(&s_mqMux);
 }
 
 void screenMediaState(int & state, int & pos, int & dur) { state = s_mState; pos = s_mPos; dur = s_mDur; }

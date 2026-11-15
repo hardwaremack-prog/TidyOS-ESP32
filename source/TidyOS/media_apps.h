@@ -339,15 +339,15 @@ public:
     timeLbl->labelStyle().textFont = &FONT_std_12;
     startTimer(1000);
     onTimer = [this](uiTimerHandle) { tick(); };
+    if (WiFi.status() == WL_CONNECTED) fileServerMedia(true);   // listening before the first song is asked for
   }
 
   void play(const std::string & p) {
     if (WiFi.status() != WL_CONNECTED) { gApp->messageBox("Music", "Music plays over your home Wi-Fi - join it in Settings.", "OK", nullptr, nullptr, uiMessageBoxIcon::Info); return; }
     fileServerMedia(true);
     playing = p; paused = false; lastState = -1;
-    screenMedia("a " + fileServerMediaPath(p));
     char v[24]; snprintf(v, sizeof(v), "v %.2f", vol);
-    delay(60);
+    screenMedia("a " + fileServerMediaPath(p));
     screenMedia(v);
     now->setText(("Playing: " + baseName(p)).c_str()); now->repaint();
     playBtn->setText("Pause"); playBtn->repaint();

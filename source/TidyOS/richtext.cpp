@@ -514,6 +514,7 @@ void RichText::paint(Rect const & clip)
 void RichText::processEvent(uiEvent * event)
 {
   uiControl::processEvent(event);
+  if (event->id == UIEVT_DESTROY) return;      // the control has just deleted itself: touch nothing
   Rect cr = clientRect(uiOrigin::Window);
   switch (event->id) {
     case UIEVT_PAINT:

@@ -1,5 +1,5 @@
 --- /tmp/fabui_orig.cpp	2026-11-13 23:20:04.193665144 -0500
-+++ fabui.cpp	2026-11-15 02:40:46.539072669 -0500
++++ fabui.cpp	2026-11-15 03:21:19.914253530 -0500
 @@ -174,10 +174,21 @@
  // uiEvtHandler
  
@@ -71,6 +71,17 @@
      // first destroy children
      for (auto child = window->lastChild(); child; child = child->prev())
        destroyWindow(child);
+@@ -1076,6 +1099,10 @@
+     m_modalWindow = nullptr;
+   if (m_caretWindow == window)
+     m_caretWindow = nullptr;
++  if (m_lastFocusedWindow == window)    // TidyOS patch: these two were left pointing at deleted windows
++    m_lastFocusedWindow = nullptr;
++  if (m_keyDownHandler == window)
++    m_keyDownHandler = nullptr;
+ }
+ 
+ 
 --- /tmp/fabui_h_orig.h	2026-11-15 02:40:46.349505119 -0500
 +++ fabui.h	2026-11-15 02:40:52.975582322 -0500
 @@ -711,6 +711,8 @@

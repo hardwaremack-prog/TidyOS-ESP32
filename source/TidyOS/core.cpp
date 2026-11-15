@@ -367,10 +367,12 @@ static const DeskIcon ICONS[] = {
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
 
+static std::string s_bootNote;              // shown once on the desktop (update result)
+
 class Desktop : public uiControl {
 public:
   static const int BAR_H = 20;
-  static const int CELL_W = 84, CELL_H = 80, X0 = 8, Y0 = 10;
+  static const int CELL_W = 80, CELL_H = 72, X0 = 6, Y0 = 6, COLS = 4;   // 4 columns: 20+ icons fit
 
   Desktop(uiWindow * parent) : uiControl(parent, Point(0, 0), Size(SCREEN_W, SCREEN_H), true, 0) {
     windowStyle().borderSize = 0;
@@ -411,6 +413,10 @@ public:
         break;
       case UIEVT_TIMER:
         if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
+        if (!s_bootNote.empty() && (m_tick > 8 || screenViewer())) {     // show it once, when someone can see it
+          std::string n = s_bootNote; s_bootNote.clear();
+          gApp->messageBox("Update", n.c_str(), "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
+        }
         if (++m_tick % 4) break;
         netTick();
         gHeapSnap = ramFree(); gMinHeapSnap = ramLowest();
@@ -423,7 +429,7 @@ public:
           if (unread != m_unread) { m_unread = unread; for (int k = 0; k < NICONS; ++k) if (ICONS[k].open == openMessages) repaintIcon(k); }
           if (sig != m_hintSig) {
             m_hintSig = sig;
-            repaint(Rect(CELL_W * 3 + 16, 140, SCREEN_W - 1, 330));
+            repaint(Rect(CELL_W * COLS + 16, 140, SCREEN_W - 1, 330));
           }
         }
         break;
@@ -439,7 +445,7 @@ private:
   std::string m_hintSig;
 
   Rect iconRect(int i) {
-    int col = i % 3, row = i / 3;
+    int col = i % COLS, row = i / COLS;
     int x = X0 + col * CELL_W, y = Y0 + row * CELL_H;
     return Rect(x, y, x + CELL_W - 1, y + CELL_H - 1);
   }
@@ -492,10 +498,12 @@ private:
         cv->drawText(&FONT_std_12, ix + 32 - nw / 2, iy - 2, nb);
       }
     }
-    int w = cv->textExtent(&FONT_std_14, ic.label);
+    const fabgl::FontInfo * lf = &FONT_std_14;
+    int w = cv->textExtent(lf, ic.label);
+    if (w > CELL_W - 4) { lf = &FONT_std_12; w = cv->textExtent(lf, ic.label); }   // long names: smaller text
     cv->setPenColor(T.deskText);
     cv->setBrushColor(down ? T.shadow : T.desk);
-    cv->drawText(&FONT_std_14, r.X1 + CELL_W / 2 - w / 2, iy + 40, ic.label);
+    cv->drawText(lf, r.X1 + CELL_W / 2 - w / 2, iy + 40, ic.label);
   }
 
   void paint(Rect const & clip) {
@@ -510,7 +518,7 @@ private:
     // welcome / pairing hint
 #ifdef TIDYOS_HTML5
     if (!gSet.ssid.length() || !netConnected()) {
-      int x = CELL_W * 3 + 24, y = 150;
+      int x = CELL_W * COLS + 24, y = 150;
       cv->setPenColor(T.deskText);
       cv->setBrushColor(T.desk);
       cv->drawText(&FONT_std_22, x, y, "Welcome to TidyOS");
@@ -531,7 +539,7 @@ private:
 #else
     bool needKbd = inputKeyboards() == 0, needMouse = inputMice() == 0;
     if (needKbd || needMouse || !gSet.ssid.length()) {
-      int x = CELL_W * 3 + 24, y = 150;
+      int x = CELL_W * COLS + 24, y = 150;
       cv->setPenColor(T.deskText);
       cv->setBrushColor(T.desk);
       cv->drawText(&FONT_std_22, x, y, "Welcome to TidyOS");
@@ -1074,6 +1082,23 @@ static void bootChooser()
 }
 #endif
 
+// what happened to the last update (the installer leaves tidyos/update.log on the card)
+static void checkUpdateNote()
+{
+  if (!gSDMounted) return;
+  std::string l;
+  if (readFileStr(SD_MOUNT "/tidyos/update.log", l, 200)) {
+    remove(SD_MOUNT "/tidyos/update.log");
+    while (!l.empty() && (l.back() == '\n' || l.back() == '\r')) l.pop_back();
+    Serial.printf("[TidyOS] update installer said: %s\n", l.c_str());
+    if (l.find("installed") != std::string::npos) s_bootNote = "TidyOS was updated to " TIDYOS_VERSION ".";
+    else s_bootNote = "The update wasn't installed: " + l.substr(0, 70);
+  } else if (fileSize(SD_MOUNT "/tidyos/update.bin") > 0) {
+    s_bootNote = "An update was downloaded but the installer didn't run. Try again.";
+    remove(SD_MOUNT "/tidyos/update.bin");
+  }
+}
+
 void setup()
 {
 #ifdef TIDYOS_HTML5
@@ -1124,6 +1149,7 @@ void setup()
 
   if (!gSDMounted) gFlashMounted = FileBrowser::mountSPIFFS(true, FLASH_MOUNT, 2);
   memLog("display + storage");
+  checkUpdateNote();
   makeDirs();
   crashSave(dataPath("crash.txt"));
   splash("Loading the dictionary", 50);

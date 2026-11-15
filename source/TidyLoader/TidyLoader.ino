@@ -13,9 +13,15 @@
 #define LED_PIN 2
 static SPIClass sdSpi(VSPI);
 
+static bool s_card = false;
+
 static void bootApp(const char * why)
 {
   Serial.printf("[loader] %s - starting TidyOS\n", why);
+  if (s_card) {                                 // leave a note for TidyOS to show
+    File l = SD.open("/tidyos/update.log", FILE_WRITE);
+    if (l) { l.print(why); l.close(); }
+  }
   const esp_partition_t * app = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, nullptr);
   if (app) esp_ota_set_boot_partition(app);
   delay(100);
@@ -51,6 +57,7 @@ void setup()
 
   // the in-line wiring (MISO 19, CLK 18, MOSI 5, CS 17) first, then the classic one
   if (!mountCard(19, 5, 18, 17) && !mountCard(16, 17, 14, 13)) bootApp("no SD card");
+  s_card = true;
 
   File f = SD.open("/tidyos/update.bin", FILE_READ);
   if (!f) bootApp("no update waiting");
@@ -79,7 +86,11 @@ void setup()
 
   // 2. write it into the app slot (Update writes the next OTA slot = app0 when running from here)
   f = SD.open("/tidyos/update.bin", FILE_READ);
-  if (!Update.begin(size, U_FLASH)) bootApp("could not start writing");
+  if (!Update.begin(size, U_FLASH)) {
+    static char m[96];
+    snprintf(m, sizeof(m), "could not start writing (%s) - kept the current version", Update.errorString());
+    bootApp(m);
+  }
   size_t done = 0;
   uint32_t lastPct = 101;
   while ((n = f.read(buf, sizeof(buf))) > 0) {
