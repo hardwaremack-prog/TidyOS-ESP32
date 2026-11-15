@@ -102,6 +102,7 @@ void openMusic();
 void openScan();
 void openShot();
 void openClock();
+void openLatch();
 void openFilesAt(const char * dir);
 void alarmTick();
 extern volatile bool gShotReq;          // Print Screen key
@@ -112,6 +113,7 @@ extern fabgl::uiApp * gApp;
 extern volatile uint64_t gNetRx, gNetTx;     // TidyOS network traffic since start (bytes)
 extern volatile bool gOpenTaskMgr;
 extern volatile bool gRestartReq;
+extern volatile bool gSleepReq;
 extern const char * gSDWiring;              // which microSD wiring was found           // Ctrl+Shift+Esc pressed
 
 // Helpers used by every app window

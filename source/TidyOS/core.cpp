@@ -5,6 +5,7 @@
 #include <time.h>
 #include "screen.h"
 #include "led.h"
+#include "esp_sleep.h"
 #include <WiFi.h>
 #include "crashlog.h"
 #include "update.h"
@@ -32,7 +33,8 @@ Settings gSet;
 uiApp *  gApp = nullptr;
 volatile uint64_t gNetRx = 0, gNetTx = 0;
 volatile bool gOpenTaskMgr = false;
-volatile bool gRestartReq = false;   // the page's Restart button
+volatile bool gRestartReq = false;
+volatile bool gSleepReq = false;     // the page's Sleep button   // the page's Restart button
 
 static Preferences s_prefs;
 static BitmappedDisplayController * s_dc = nullptr;
@@ -344,6 +346,25 @@ static const char * ART_CLOCK[16] = {
   ".......##.......",
 };
 
+static const char * ART_LOCK[16] = {
+  "................",
+  "......####......",
+  ".....#....#.....",
+  "....#......#....",
+  "....#......#....",
+  "....#......#....",
+  "..############..",
+  "..#aaaaaaaaaa#..",
+  "..#aaaaaaaaaa#..",
+  "..#aaaa##aaaa#..",
+  "..#aaaa##aaaa#..",
+  "..#aaaaa#aaaa#..",
+  "..#aaaaaaaaaa#..",
+  "..#aaaaaaaaaa#..",
+  "..############..",
+  "................",
+};
+
 static const char * ART_NIC[16] = {
   "................", ".##############.", ".#gggggggggggg#.", ".#g####ggwwwwg#.", ".#g#aa#ggw##wg#.", ".#g#aa#ggw##wg#.",
   ".#g####ggwwwwg#.", ".#gggggggggggg#.", ".#gg#g#g#g#ggg#.", ".##############.", "..a.a.a.a.a.a...", "..a.a.a.a.a.a...",
@@ -389,7 +410,7 @@ static int appNeedKB(const char * label)
 {
   static const struct { const char * n; int kb; } T_[] = {
     { "Task Manager", 18 }, { "Files", 14 }, { "Neat", 22 }, { "Tidy", 20 }, { "Doodle", 18 }, { "Browser", 30 },
-    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Screenshot", 6 }, { "Clock", 10 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
+    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Screenshot", 6 }, { "Clock", 10 }, { "Latch", 24 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
   };
   for (auto & e : T_) if (!strcmp(e.n, label)) return e.kb;
   return 10;
@@ -421,6 +442,7 @@ static const DeskIcon ICONS[] = {
   { "Nic Sweep",  ART_NIC,   nullptr, openScan },
   { "Screenshot", ART_SHOT,  nullptr, openShot },
   { "Clock",      ART_CLOCK, nullptr, openClock },
+  { "Latch",      ART_LOCK,  nullptr, openLatch },
   { "Switches",   ART_SD,    nullptr, openSwitches },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
@@ -472,6 +494,17 @@ public:
       case UIEVT_TIMER:
         if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
         alarmTick();                                // Clock alarm + Print Screen
+#ifdef TIDYOS_HTML5                                 // (the monitor edition has no IRAM to spare for sleep code)
+        if (gSleepReq) {
+          gSleepReq = false;
+          Serial.println("[TidyOS] deep sleep - press BOOT (or EN) to wake");
+          ledSetOn(false);
+          delay(400);                               // let the page get the last frame
+          WiFi.disconnect(true);
+          esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);   // the BOOT button wakes it
+          esp_deep_sleep_start();
+        }
+#endif
         if (gRestartReq) {
           gRestartReq = false;
           Serial.println("[TidyOS] restart asked for from the browser");

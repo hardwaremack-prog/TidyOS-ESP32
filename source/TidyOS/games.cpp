@@ -4,6 +4,7 @@
 #include <deque>
 #include <math.h>
 #include <vector>
+#include <algorithm>
 #include "core.h"
 #include "style.h"
 
@@ -1132,6 +1133,8 @@ public:
   }
 };
 
+#include "games2.h"
+
 // ====================================================================== game windows
 
 std::string musicQuickPlay();     // media_apps.h: music while you play
@@ -1141,7 +1144,7 @@ void musicQuickStop();
 
 class GameFrame : public uiFrame {
 public:
-  static GameFrame * open[6];
+  static GameFrame * open[9];
   int idx;
   Board * board;
   uiLabel * info;
@@ -1152,7 +1155,7 @@ public:
     frameProps().hasMaximizeButton = false;
     frameProps().hasMinimizeButton = false;
     frameProps().resizeable = false;
-    static const char * titles[6] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop" };
+    static const char * titles[9] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop", "Deep Drill", "Missile Command", "StuntCopter" };
     setTitle(titles[i]);
     Point o = clientOrigin(this);
     int x = o.X + 6, y = o.Y + 6;
@@ -1177,6 +1180,9 @@ public:
       case 2:  board = new BlocksBoard(this, Point(x, y)); break;
       case 4:  board = new BricksBoard(this, Point(x, y)); break;
       case 5:  board = new ParadropBoard(this, Point(x, y)); break;
+      case 6:  board = new DrillBoard(this, Point(x, y)); break;
+      case 7:  board = new MissileBoard(this, Point(x, y)); break;
+      case 8:  board = new CopterBoard(this, Point(x, y)); break;
       default: board = new Board2048(this, Point(x, y)); break;
     }
     Size bs = board->size();
@@ -1221,7 +1227,7 @@ public:
     if (e->id == UIEVT_ACTIVATE) gApp->setFocusedWindow(board);
   }
 };
-GameFrame * GameFrame::open[6] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+GameFrame * GameFrame::open[9] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 
 static void openGame(int i)
 {
@@ -1235,17 +1241,19 @@ static void openGame(int i)
 class GamesFrame : public uiFrame {
 public:
   static GamesFrame * inst;
-  GamesFrame() : uiFrame(gApp->rootWindow(), "Games", Point(200, 40), Size(300, 380), false) {
+  GamesFrame() : uiFrame(gApp->rootWindow(), "Games", Point(40, 40), Size(560, 360), false) {
     applyStyle(this);
     frameProps().hasMaximizeButton = false;
     frameProps().hasMinimizeButton = false;
     frameProps().resizeable = false;
     Point o = clientOrigin(this);
-    static const char * names[6] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop" };
-    static const char * about[6] = { "Eat apples, don't bite your tail", "Find the 40 mines", "Stack and clear lines", "Slide tiles to make 2048",
-                                     "Arkanoid-style: break every brick", "Airborne!-style: guard the gun" };
-    for (int i = 0; i < 6; ++i) {
-      auto b = S(new uiButton(this, names[i], Point(o.X + 10, o.Y + 10 + i * 56), Size(270, 30)));
+    static const char * names[9] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop", "Deep Drill", "Missile Command", "StuntCopter" };
+    static const char * about[9] = { "Eat apples, don't bite your tail", "Find the 40 mines", "Stack and clear lines", "Slide tiles to make 2048",
+                                     "Arkanoid-style: break every brick", "Airborne!-style: guard the gun", "Dig for ore, upgrade your rig",
+                                     "Save the cities from missiles", "Drop the stuntman in the hay" };
+    for (int i = 0; i < 9; ++i) {
+      int col = i / 5, row = i % 5;
+      auto b = S(new uiButton(this, names[i], Point(o.X + 10 + col * 272, o.Y + 10 + row * 60), Size(260, 30)));
       b->buttonStyle().textFont = &FONT_std_16;
       b->onClick = [i]() {
         openGame(i);
@@ -1253,7 +1261,7 @@ public:
         uiEvent evt(GameFrame::open[i], UIEVT_ACTIVATE);
         gApp->postEvent(&evt);
       };
-      auto l = S(new uiLabel(this, about[i], Point(o.X + 14, o.Y + 42 + i * 56), Size(266, 14)));
+      auto l = S(new uiLabel(this, about[i], Point(o.X + 14 + col * 272, o.Y + 42 + row * 60), Size(256, 14)));
       l->labelStyle().textFont = &FONT_std_12;
     }
   }

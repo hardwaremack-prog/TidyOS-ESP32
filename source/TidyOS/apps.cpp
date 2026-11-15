@@ -3313,3 +3313,4 @@ void openSwitches()
 #include "media_apps.h"
 #include "netscan_app.h"
 #include "clock_apps.h"
+#include "latch_app.h"

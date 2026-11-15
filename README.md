@@ -10,7 +10,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Bluetooth keyboard and mouse** (Bluetooth LE, VGA edition)
 - **microSD card** for your files (falls back to internal flash with no card)
 - **Wi-Fi** with a clock that sets itself from the internet
-- Apps: **Calculator, Neat Lite** (writing with fonts, sizes, colours and spell check), **Tidy Lite** (spreadsheet with drag-select, right-click insert/delete rows and columns, resizable sizes, left/center/right, Auto sum, check boxes, row shading and a frozen top row), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Doodle** (MacPaint-style drawing), **Pictures** (JPEG/BMP viewer), **Music** (MP3 and MIDI, plays in your browser), **Nic Sweep** (who's on your network, export to Tidy or Excel), **Screenshot** (also the Print Screen key), **Clock** (alarm and stopwatch), **Messages, Browser, Files, Settings, Task Manager, Ping, Switches**
+- Apps: **Calculator, Neat Lite** (writing with fonts, sizes, colours and spell check), **Tidy Lite** (spreadsheet with drag-select, right-click insert/delete rows and columns, resizable sizes, left/center/right, Auto sum, check boxes, row shading and a frozen top row), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Doodle** (MacPaint-style drawing), **Pictures** (JPEG/BMP viewer), **Music** (MP3 and MIDI, plays in your browser), **Nic Sweep** (who's on your network, export to Tidy or Excel), **Screenshot** (also the Print Screen key), **Clock** (watch face, alarm, presets, world time, stopwatch), **Latch** (password safe - opens the same .latch vaults as the Latch web app), **Messages, Browser, Files, Settings, Task Manager, Ping, Switches**
 - **Printing** to network printers (found automatically), through a Pi with CUPS, or Save as PDF
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
 - **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
@@ -19,7 +19,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
 - **Updates itself from GitHub:** Settings → Check for updates
 
-> Status: version 2.3.4. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
+> Status: version 2.3.5. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -34,7 +34,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 
 | | |
 |---|---|
-| ![Desktop](docs/previews/02-desktop.png) | **Desktop** – 20 apps in four columns. The bottom bar shows your Wi-Fi, address and free memory. |
+| ![Desktop](docs/previews/02-desktop.png) | **Desktop** – 21 apps in four columns. The bottom bar shows your Wi-Fi, address and free memory. |
 | ![Start-up switches](docs/previews/17-startup-switches.png) | **Start-up switches** – pick what runs before TidyOS starts: SD card, mesh, blue light, Shelf messages, and 4 colours / 8 colours / black & white. It boots by itself after a few seconds. |
 | ![Doodle](docs/previews/18-doodle.png) | **Doodle** – a little MacPaint: pencil, brush, eraser, spray, lines, boxes, ovals, paint fill and text, with undo. Saves black-and-white .bmp pictures. The picture lives on the SD card, not in RAM. |
 | ![Pictures](docs/previews/19-pictures.png) | **Pictures** – JPEG and BMP photos, dithered to the screen's colours like a classic Mac. **Full colour** opens the original in your browser (HTML5 edition). |
