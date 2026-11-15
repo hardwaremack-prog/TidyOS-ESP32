@@ -17,12 +17,12 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Games:** Sammy the Snake (with music), Minesweeper, Blocks, 2048, **Bricks** (Arkanoid-style), **Paradrop** (Airborne!-style), **Deep Drill**, **Missile Command** and **StuntCopter**. Arrow keys or WASD
 - **HTML Games / HTML Programs:** put web games and programs (a .html file, or a folder with index.html) in those folders on the SD card; Play opens them in a new browser tab
 - **Desktop panel:** time, date, weather in °F, Moscow / Los Angeles / Tokyo times, daily affirmations (>> shows up to 3), three news headlines, a world map shaded for day and night with a you-are-here marker, and a drop box: drag files onto the page and TidyOS asks which SD folder they go in
-- **Git-Store:** a small cloud folder for each board (5 MB) in a GitHub repo, through a free Cloudflare relay - see [gitstore/](gitstore/README.md)
+- **Git-Store:** a small cloud folder for each board (5 MB), kept by a free Cloudflare Worker - see [gitstore/](gitstore/README.md)
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores (with a Test button that runs a core flat out), RAM, open apps, every FreeRTOS task, network, storage and power
 - **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
 - **Updates itself from GitHub:** Settings → Check for updates
 
-> Status: version 2.4.0. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
+> Status: version 2.4.1. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---

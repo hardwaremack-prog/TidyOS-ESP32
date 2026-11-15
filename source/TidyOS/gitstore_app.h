@@ -55,7 +55,7 @@ public:
     label("Downloads go to Documents.", bx, cy + 180, 150, 14)->labelStyle().textFont = &FONT_std_12;
     label("Up to 2 MB a file, 5 MB in all.", bx, cy + 196, 150, 14)->labelStyle().textFont = &FONT_std_12;
     label("Relay", cx, cy + 302, 44, 18);
-    relay = edit(gSet.storeUrl.c_str(), cx + 46, cy + 298, 340);
+    relay = edit(url().c_str(), cx + 46, cy + 298, 340);
     button("Save", cx + 392, cy + 298, 54, 24)->onClick = [this]() {
       std::string u = relay->text() ? relay->text() : "";
       while (!u.empty() && (u.back() == '/' || u.back() == ' ')) u.pop_back();
@@ -71,7 +71,7 @@ public:
   }
 
   void say(const std::string & m) { status->setText(m.c_str()); status->repaint(); }
-  std::string url() { return std::string(gSet.storeUrl.c_str()); }
+  std::string url() { return gSet.storeUrl.length() ? std::string(gSet.storeUrl.c_str()) : std::string(TIDYOS_STORE_URL); }
   bool ready() {
 #ifndef TIDYOS_HTML5
     say("Git-Store works in the browser edition.");

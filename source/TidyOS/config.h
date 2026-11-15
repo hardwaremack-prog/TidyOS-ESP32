@@ -2,7 +2,10 @@
 // Pin map and build-time settings.
 #pragma once
 
-#define TIDYOS_VERSION "2.4.0"
+// Git-Store: the Cloudflare relay every board uses unless one is typed in (see gitstore/README.md)
+#define TIDYOS_STORE_URL ""
+
+#define TIDYOS_VERSION "2.4.1"
 
 // Edition. The VGA edition draws on a monitor and uses Bluetooth keyboard + mouse.
 // The HTML5 edition shows the desktop in a web browser (keyboard + mouse come from the browser).
