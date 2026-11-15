@@ -39,6 +39,8 @@ public:
   // formatting (selection, or the typing style when nothing is selected)
   void setSize(int px);
   void setFont(int f);
+  void setColor(int c);                   // index into RCOLORS
+  static RGB888 textColor(int c);         // what colour index c looks like on this screen
   void toggleFlag(uint8_t flag);
   void paraAfter(int delta);                          // space after paragraph(s), px
   void paraSpacing(int percent);                      // line spacing 100 / 150 / 200

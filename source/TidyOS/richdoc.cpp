@@ -407,13 +407,15 @@ void RichDoc::writeRtf(RSink & o) const
   o.put("{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl");
   char b[96];
   for (int i = 0; i < RTF_FONT_COUNT; ++i) { snprintf(b, sizeof(b), "{\\f%d %s;}", i, RTF_FONTS[i]); o.put(b); }
+  o.put("}{\\colortbl;");
+  for (int i = 0; i < RCOLOR_COUNT; ++i) { snprintf(b, sizeof(b), "\\red%d\\green%d\\blue%d;", RCOLORS[i].r, RCOLORS[i].g, RCOLORS[i].b); o.put(b); }
   o.put("}\n");
   for (auto & P : paras) {
     snprintf(b, sizeof(b), "\\pard%s\\sa%d\\sl%d\\slmult1 ", P.align == 1 ? "\\qc" : P.align == 2 ? "\\qr" : "\\ql", P.after * 15, P.spacing * 240 / 100);
     o.put(b);
     for (auto & r : P.runs) {
       if (r.t.empty()) continue;
-      snprintf(b, sizeof(b), "{\\f%d\\fs%d%s%s ", r.s.font, (r.s.size * 3 + 1) / 2, r.s.flags & RS_BOLD ? "\\b" : "", r.s.flags & RS_UNDER ? "\\ul" : "");
+      snprintf(b, sizeof(b), "{\\f%d\\fs%d\\cf%d%s%s ", r.s.font, (r.s.size * 3 + 1) / 2, r.s.color + 1, r.s.flags & RS_BOLD ? "\\b" : "", r.s.flags & RS_UNDER ? "\\ul" : "");
       o.put(b);
       for (unsigned char c : r.t) {
         if (c == '\\' || c == '{' || c == '}') { o.put('\\'); o.put((char)c); }
@@ -464,11 +466,26 @@ bool RichDoc::readRtf(RSource & in)
     cur = n;
   };
   bool firstInGroup = false;
+  // colour table: entry k (\cfk) -> nearest of our colours; entry 0 is "automatic" (black)
+  uint8_t ctMap[16] = { 0 };
+  int ctCount = 0, ctDepth = -1, cr = 0, cg = 0, cb = 0;
   for (;;) {
     int c = in.peek();
+    if (ctDepth >= 0 && c == ';') {            // end of one colour table entry
+      if (ctCount < 16) {
+        int best = 0; long bd = 1L << 30;
+        for (int k = 0; k < RCOLOR_COUNT; ++k) {
+          long d = (long)(cr - RCOLORS[k].r) * (cr - RCOLORS[k].r) + (long)(cg - RCOLORS[k].g) * (cg - RCOLORS[k].g) + (long)(cb - RCOLORS[k].b) * (cb - RCOLORS[k].b);
+          if (d < bd) { bd = d; best = k; }
+        }
+        ctMap[ctCount++] = best;
+      }
+      cr = cg = cb = 0;
+      in.skip(); continue;
+    }
     if (c < 0) break;
     if (c == '{') { stack.push_back(st); firstInGroup = true; in.skip(); continue; }
-    if (c == '}') { flush(); if (!stack.empty()) { st = stack.back(); stack.pop_back(); } firstInGroup = false; in.skip(); continue; }
+    if (c == '}') { flush(); if (!stack.empty()) { st = stack.back(); stack.pop_back(); } if (ctDepth >= 0 && (int)stack.size() < ctDepth) ctDepth = -1; firstInGroup = false; in.skip(); continue; }
     if (c == '\r' || c == '\n') { in.skip(); continue; }
     if (c != '\\') { addChar((char)c); firstInGroup = false; in.skip(); continue; }
     // control word / symbol
@@ -493,18 +510,23 @@ bool RichDoc::readRtf(RSource & in)
     if (neg) num = -num;
     if (in.peek() == ' ') in.skip();
     // destinations we don't show
+    if (firstInGroup && word == "colortbl") { ctDepth = stack.size(); ctCount = 0; cr = cg = cb = 0; }
+    if (ctDepth >= 0) {
+      if (word == "red" && hasNum) cr = num; else if (word == "green" && hasNum) cg = num; else if (word == "blue" && hasNum) cb = num;
+    }
     if (firstInGroup && (word == "fonttbl" || word == "colortbl" || word == "stylesheet" || word == "info" || word == "pict" ||
                          word == "header" || word == "footer" || word == "listtable" || word == "listoverridetable" || word == "generator")) st.skip = true;
     firstInGroup = false;
     if (word == "par" || word == "line") { if (!st.skip) endPara(); }
     else if (word == "tab") addChar(' ');
     else if (word == "pard") { flush(); cur.after = 0; cur.spacing = 100; cur.align = 0; }
-    else if (word == "plain") { flush(); st.s.flags = 0; st.s.font = 0; st.s.size = 16; }
+    else if (word == "plain") { flush(); st.s.flags = 0; st.s.font = 0; st.s.size = 16; st.s.color = 0; }
     else if (word == "f" && hasNum) { if (!st.skip) { flush(); st.s.font = (num >= 0 && num < RTF_FONT_COUNT) ? num : 0; } }
     else if (word == "fs" && hasNum) { flush(); st.s.size = std::max(8L, std::min(48L, (num * 2 + 1) / 3)); }
     else if (word == "b") { flush(); if (hasNum && num == 0) st.s.flags &= ~RS_BOLD; else st.s.flags |= RS_BOLD; }
     else if (word == "ul") { flush(); if (hasNum && num == 0) st.s.flags &= ~RS_UNDER; else st.s.flags |= RS_UNDER; }
     else if (word == "ulnone") { flush(); st.s.flags &= ~RS_UNDER; }
+    else if (word == "cf" && hasNum) { flush(); st.s.color = (num > 0 && num < ctCount) ? ctMap[num] : 0; }
     else if (word == "qc") cur.align = 1;
     else if (word == "qr") cur.align = 2;
     else if (word == "ql" || word == "qj") cur.align = 0;

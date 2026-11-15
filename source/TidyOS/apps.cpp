@@ -39,7 +39,9 @@ public:
 
   void processEvent(uiEvent * e) override {
     if (e->id == UIEVT_CLOSE) {
-      if (!canClose()) return;
+      if (m_closing) return;                 // a second close (double click on X): already on it
+      m_closing = true;
+      if (!canClose()) { m_closing = false; return; }
       if (m_timer) { gApp->killTimer(m_timer); m_timer = nullptr; }
       onClosing();
       *m_slot = nullptr;
@@ -64,6 +66,7 @@ public:
 protected:
   AppFrame ** m_slot;
   uiTimerHandle m_timer = nullptr;
+  bool m_closing = false;
 };
 
 static int s_cascade = 0;
@@ -383,7 +386,7 @@ public:
   static AppFrame * inst;
   RichText * rt;
   uiLabel *  saved;
-  uiButton * fontBtn, * boldBtn, * underBtn, * alignBtn[3], * linesBtn;
+  uiButton * fontBtn, * boldBtn, * underBtn, * alignBtn[3], * linesBtn, * colorBtn;
   uiSlider * sizeSl;
   uiLabel  * sizeLbl, * afterLbl;
   std::string path;
@@ -441,7 +444,14 @@ public:
       rt->paraSpacing(sp == 100 ? 150 : sp == 150 ? 200 : 100);
       refreshBar(); focusText();
     };
-    auto tip = label("Select text first to change just that part", cx + 374, y + 4, 240, 16);
+    colorBtn = button("", cx + 374, y, 118);
+    colorBtn->onClick = [this]() {
+      if (gColors == 2) { gApp->messageBox("Neat", "Colours need the 4 or 8 colour screen.", "OK", nullptr, nullptr, uiMessageBoxIcon::Info); return; }
+      int n = gColors >= 8 ? RCOLOR_COUNT : 3;        // 4-colour screen: black, blue, gray
+      rt->setColor((rt->styleHere().color + 1) % n);
+      refreshBar(); focusText();
+    };
+    auto tip = label("Select text to style part", cx + 498, y + 4, 120, 16);
     tip->labelStyle().textFont = &FONT_std_12;
 
     rt = new RichText(this, Point(cx, cy + 78), Size(618, 344));
@@ -486,6 +496,11 @@ public:
     afterLbl->setText(b); afterLbl->repaint();
     snprintf(b, sizeof(b), "Lines: %s", P.spacing == 200 ? "double" : P.spacing == 150 ? "1.5" : "single");
     linesBtn->setText(b); linesBtn->repaint();
+    int col = st.color < RCOLOR_COUNT ? st.color : 0;
+    snprintf(b, sizeof(b), "Colour: %s", RCOLORS[col].name);
+    colorBtn->setText(b);
+    colorBtn->buttonStyle().textColor = col == 2 ? T.text : RichText::textColor(col);   // gray on a gray button wouldn't show
+    colorBtn->repaint();
     updating = false;
   }
 

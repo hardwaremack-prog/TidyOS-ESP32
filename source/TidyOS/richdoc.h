@@ -13,9 +13,18 @@ struct RStyle {
   uint8_t font  = 0;     // family index (see richfonts / richtext.cpp)
   uint8_t size  = 16;    // pixel height asked for (8..48)
   uint8_t flags = 0;     // RS_BOLD | RS_UNDER
-  bool operator==(const RStyle & o) const { return font == o.font && size == o.size && flags == o.flags; }
+  uint8_t color = 0;     // index into RCOLORS (0 = black)
+  bool operator==(const RStyle & o) const { return font == o.font && size == o.size && flags == o.flags && color == o.color; }
   bool operator!=(const RStyle & o) const { return !(*this == o); }
 };
+
+// text colours: the first 3 exist in the 4-colour palette, the rest in 8 colours
+struct RColor { const char * name; uint8_t r, g, b; };
+static const RColor RCOLORS[] = {
+  { "Black", 0, 0, 0 }, { "Blue", 0, 85, 170 }, { "Gray", 170, 170, 170 },
+  { "Red", 170, 0, 0 }, { "Green", 0, 170, 0 }, { "Teal", 0, 170, 170 }, { "Dark gray", 85, 85, 85 },
+};
+static const int RCOLOR_COUNT = sizeof(RCOLORS) / sizeof(RCOLORS[0]);
 
 struct RRun { std::string t; RStyle s; };
 

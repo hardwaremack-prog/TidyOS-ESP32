@@ -1184,6 +1184,7 @@ public:
 
   void processEvent(uiEvent * e) override {
     if (e->id == UIEVT_CLOSE) {
+      if (open[idx] != this) return;         // already closing
       board->stopTimer();
       open[idx] = nullptr;
       gApp->destroyWindow(this);
@@ -1237,7 +1238,7 @@ public:
     }
   }
   void processEvent(uiEvent * e) override {
-    if (e->id == UIEVT_CLOSE) { inst = nullptr; gApp->destroyWindow(this); return; }
+    if (e->id == UIEVT_CLOSE) { if (inst != this) return; inst = nullptr; gApp->destroyWindow(this); return; }
     uiFrame::processEvent(e);
   }
 };

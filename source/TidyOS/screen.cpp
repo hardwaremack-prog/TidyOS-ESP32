@@ -70,10 +70,11 @@ var mode=0;try{mode=+localStorage.tidySize||0;}catch(x){}
 // shrink that a little smoothly. Every letter keeps the same shape at any window size.
 function fit(){var r=window.devicePixelRatio||1,w=innerWidth,h=innerHeight-36,s=Math.min(w/640,h/480)*r,wrap=document.getElementById('wrap');
  if(mode==1)s=Math.max(1,Math.round(r));
+ if(mode==2)s=Math.max(1,Math.floor(s+0.001));          // sharp: whole screen pixels, no smoothing
  ZK=Math.max(1,Math.ceil(s-0.001));if(c.width!=640*ZK){c.width=640*ZK;c.height=480*ZK;}
- c.style.width=(640*s/r)+'px';c.style.height=(480*s/r)+'px';dirty=true;
+ c.style.width=(640*s/r)+'px';c.style.height=(480*s/r)+'px';c.style.imageRendering=mode==2?'pixelated':'auto';dirty=true;
  var big=640*s/r>w||480*s/r>h;wrap.style.overflow=mode==1?'auto':'hidden';wrap.style.alignItems=wrap.style.justifyContent=(mode==1&&big)?'flex-start':'center';
- document.getElementById('bz').textContent=mode==1?'Size: 1:1':'Size: fit';}
+ document.getElementById('bz').textContent=mode==1?'Size: 1:1':mode==2?'Size: sharp':'Size: fit';}
 addEventListener('resize',fit);
 function send(a){if(ws&&ws.readyState==1)ws.send(new Uint8Array(a));}
 function connect(){
@@ -134,7 +135,7 @@ kb.addEventListener('input',function(e){
 kb.addEventListener('keydown',function(e){if(e.key=='Enter'&&e.keyCode==229)tap(40,0);});
 document.getElementById('bk').onclick=function(){kb.focus();};
 document.getElementById('bt').onclick=function(){send([4]);c.focus();};
-document.getElementById('bz').onclick=function(){mode=mode?0:1;try{localStorage.tidySize=mode;}catch(x){}fit();};
+document.getElementById('bz').onclick=function(){mode=mode==0?2:mode==2?1:0;try{localStorage.tidySize=mode;}catch(x){}fit();};
 fit();
 document.getElementById('bf').onclick=function(){var d=document.documentElement;(d.requestFullscreen||d.webkitRequestFullscreen||function(){}).call(d);};
 // ---- mouse and touch

@@ -217,6 +217,20 @@ void RichText::setSize(int px)
   changed();
 }
 
+RGB888 RichText::textColor(int c)
+{
+  if (c <= 0 || c >= RCOLOR_COUNT || gColors == 2) return T.text;
+  return RGB888(RCOLORS[c].r, RCOLORS[c].g, RCOLORS[c].b);
+}
+
+void RichText::setColor(int c)
+{
+  if (!hasSel()) { typing.color = c; if (doc.len(cur.p) == 0) { doc.applyStyle(cur, cur, [&](RStyle & s) { s.color = c; }); changed(); } if (onSelChange) onSelChange(); return; }
+  RPos a, b; selRange(a, b);
+  doc.applyStyle(a, b, [&](RStyle & s) { s.color = c; });
+  changed();
+}
+
 void RichText::setFont(int f)
 {
   if (!hasSel()) { typing.font = f; if (doc.len(cur.p) == 0) { doc.applyStyle(cur, cur, [&](RStyle & s) { s.font = f; }); changed(); } return; }
@@ -404,7 +418,7 @@ void RichText::drawLine(Canvas * cv, const RPara & P, const RLine & L, int x0, i
       int w = 0;
       for (int k = i; k < j; ++k) w += rCharW(r.s, (uint8_t)r.t[k]);
       if (sel) { cv->setBrushColor(T.accent); cv->fillRectangle(x, yTop, x + w - 1, yTop + L.h - 1); }
-      RGB888 ink = sel ? T.accentText : T.text;
+      RGB888 ink = sel ? T.accentText : textColor(r.s.color);
       cv->setPenColor(ink);
       cv->setBrushColor(ink);
       int bold = (r.s.flags & RS_BOLD) ? pk.s : 0;
