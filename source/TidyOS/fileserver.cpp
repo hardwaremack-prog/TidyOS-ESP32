@@ -145,6 +145,7 @@ static const char * mimeOf(const std::string & p)
   if (!strcmp(e, "png")) return "image/png";
   if (!strcmp(e, "pdf")) return "application/pdf";
   if (!strcmp(e, "mp3")) return "audio/mpeg";
+  if (!strcmp(e, "mid") || !strcmp(e, "midi")) return "audio/midi";
   if (!strcmp(e, "m4a")) return "audio/mp4";
   if (!strcmp(e, "wav")) return "audio/wav";
   if (!strcmp(e, "ogg")) return "audio/ogg";
@@ -186,7 +187,10 @@ static void listDir(WiFiClient & c, const std::string & path)
   send(c, 200, "application/json", out);
 }
 
-static long s_rangeStart = -1;     // from a "Range: bytes=N-" request (music seeking)
+static long s_rangeStart = -1;     // from a "Range: bytes=N-M" request (music streaming / seeking)
+static long s_rangeEnd = -1;
+static const long RANGE_PIECE = 192 * 1024;   // a range answer is at most this much: the browser asks for the next
+                                              // piece, so it can start playing (and probe the song) without waiting
 
 static void sendFile(WiFiClient & c, const std::string & path, bool download)
 {
@@ -196,19 +200,27 @@ static void sendFile(WiFiClient & c, const std::string & path, bool download)
   fseek(f, 0, SEEK_END);
   long size = ftell(f);
   long from = (s_rangeStart > 0 && s_rangeStart < size) ? s_rangeStart : 0;
+  if (s_rangeStart == 0 && s_rangeEnd <= -2) { from = std::max(0L, size + 2 + s_rangeEnd); s_rangeEnd = size - 1; }   // suffix range
+  long to = size - 1;
+  if (s_rangeStart >= 0) {
+    if (s_rangeEnd >= from && s_rangeEnd < size) to = s_rangeEnd;
+    if (to - from + 1 > RANGE_PIECE) to = from + RANGE_PIECE - 1;
+  }
   fseek(f, from, SEEK_SET);
   std::string name = path.substr(path.rfind('/') + 1);
   char h[400], cr[80] = "";
-  if (s_rangeStart >= 0) snprintf(cr, sizeof(cr), "Content-Range: bytes %ld-%ld/%ld\r\n", from, size - 1, size);
+  if (s_rangeStart >= 0) snprintf(cr, sizeof(cr), "Content-Range: bytes %ld-%ld/%ld\r\n", from, to, size);
   snprintf(h, sizeof(h), "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %ld\r\nAccept-Ranges: bytes\r\n%s%s%s%sConnection: close\r\n\r\n",
-           s_rangeStart >= 0 ? "206 Partial Content" : "200 OK", mimeOf(path), size - from, cr,
+           s_rangeStart >= 0 ? "206 Partial Content" : "200 OK", mimeOf(path), to - from + 1, cr,
            download ? "Content-Disposition: attachment; filename=\"" : "", download ? name.c_str() : "", download ? "\"\r\n" : "");
   c.write((const uint8_t *)h, strlen(h));
   uint8_t buf[1400];
+  long left = to - from + 1;
   size_t n;
-  while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
+  while (left > 0 && (n = fread(buf, 1, (size_t)std::min(left, (long)sizeof(buf)), f)) > 0) {
     if (c.write(buf, n) != n) break;
     gNetTx += n;
+    left -= n;
   }
   fclose(f);
 }
@@ -246,7 +258,7 @@ static void receiveFile(WiFiClient & c, const std::string & path, long len)
 
 static void handle(WiFiClient & c)
 {
-  s_rangeStart = -1;
+  s_rangeStart = s_rangeEnd = -1;
   std::string line, method, target;
   long len = 0;
   bool first = true;
@@ -264,7 +276,11 @@ static void handle(WiFiClient & c)
       first = false;
     } else if (line.empty()) break;
     else if (strncasecmp(line.c_str(), "content-length:", 15) == 0) len = atol(line.c_str() + 15);
-    else if (strncasecmp(line.c_str(), "range:", 6) == 0) { const char * b = strstr(line.c_str(), "bytes="); if (b) s_rangeStart = atol(b + 6); }
+    else if (strncasecmp(line.c_str(), "range:", 6) == 0) {
+      const char * b = strstr(line.c_str(), "bytes=");
+      if (b && b[6] == '-') { s_rangeStart = 0; s_rangeEnd = -2 - atol(b + 7); }   // "bytes=-N": the last N bytes
+      else if (b) { char * e; s_rangeStart = strtol(b + 6, &e, 10); if (*e == '-' && isdigit((unsigned char)e[1])) s_rangeEnd = atol(e + 1); }
+    }
     line.clear();
   }
   size_t q = target.find('?');

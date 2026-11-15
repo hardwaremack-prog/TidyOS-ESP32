@@ -26,7 +26,22 @@ static bool isPictureFile(const char * n)
 static bool isMusicFile(const char * n)
 {
   const char * e = fileExt(n);
-  return !strcmp(e, "mp3") || !strcmp(e, "m4a") || !strcmp(e, "wav") || !strcmp(e, "ogg");
+  return !strcmp(e, "mp3") || !strcmp(e, "m4a") || !strcmp(e, "wav") || !strcmp(e, "ogg") || !strcmp(e, "mid") || !strcmp(e, "midi");
+}
+static bool isMidiFile(const char * n) { const char * e = fileExt(n); return !strcmp(e, "mid") || !strcmp(e, "midi"); }
+
+// the card's Music or MIDI folder (any capitalisation), or Documents
+static std::string mediaFolder(bool midi)
+{
+  if (gSDMounted) {
+    static const char * M[3] = { SD_MOUNT "/Music", SD_MOUNT "/music", SD_MOUNT "/MUSIC" };
+    static const char * D[3] = { SD_MOUNT "/MIDI", SD_MOUNT "/Midi", SD_MOUNT "/midi" };
+    for (int i = 0; i < 3; ++i) {
+      DIR * t = opendir(midi ? D[i] : M[i]);
+      if (t) { closedir(t); return midi ? D[i] : M[i]; }
+    }
+  }
+  return documentsDir();
 }
 
 // ---- dithering to the running palette (ordered 4x4 Bayer)
@@ -308,7 +323,19 @@ public:
   bool paused = false;
   int lastState = -1;
 
-  MusicApp() : AppFrame("Music", nextPos(470, 380), Size(470, 380), &inst) {
+  uiButton * tabMp3, * tabMidi;
+  void showTab(bool midi) {
+    list->setDir(mediaFolder(midi));
+    tabMp3->setText(midi ? "MP3" : "[ MP3 ]"); tabMidi->setText(midi ? "[ MIDI ]" : "MIDI");
+    tabMp3->repaint(); tabMidi->repaint();
+  }
+
+  MusicApp() : AppFrame("Music", nextPos(470, 410), Size(470, 410), &inst) {
+    tabMp3 = button("[ MP3 ]", cx, cy, 80, 24);
+    tabMidi = button("MIDI", cx + 84, cy, 80, 24);
+    tabMp3->onClick = [this]() { showTab(false); };
+    tabMidi->onClick = [this]() { showTab(true); };
+    cy += 30;
     list = new FileList(this, Point(cx, cy), Size(330, FileList::RH * 15 + 2));
     list->onPick = [this](const std::string & nm, bool isDir, bool) {
       if (isDir) {
@@ -320,10 +347,7 @@ public:
       }
       if (isMusicFile(nm.c_str())) play(joinPath(list->dir.c_str(), nm.c_str()));
     };
-    std::string start = gSDMounted ? SD_MOUNT "/Music" : "";
-    DIR * t = start.empty() ? nullptr : opendir(start.c_str());
-    if (t) closedir(t); else start = documentsDir();
-    list->setDir(start);
+    list->setDir(mediaFolder(false));
     int bx = cx + 338;
     playBtn = button("Play", bx, cy, 110, 26);
     playBtn->onClick = [this]() { playPause(); };
@@ -334,7 +358,7 @@ public:
     button("Vol +", bx + 57, cy + 98, 53, 26)->onClick = [this]() { setVol(vol + 0.1f); };
     button("Scroll up", bx, cy + 140, 110, 22)->onClick = [this]() { list->scroll(-10); };
     button("Scroll down", bx, cy + 166, 110, 22)->onClick = [this]() { list->scroll(10); };
-    now = label("Click an .mp3 to play it.", cx, cy + FileList::RH * 15 + 10, 440, 18);
+    now = label("Click a song to play it.", cx, cy + FileList::RH * 15 + 10, 440, 18);
     timeLbl = label("", cx, cy + FileList::RH * 15 + 30, 440, 18);
     timeLbl->labelStyle().textFont = &FONT_std_12;
     startTimer(1000);
@@ -348,8 +372,8 @@ public:
     playing = p; paused = false;
     lastState = 2;           // ignore "ended" until the browser has started this song (its last report may be the old song's)
     char v[24]; snprintf(v, sizeof(v), "v %.2f", vol);
-    screenMedia("a " + fileServerMediaPath(p));
     screenMedia(v);
+    screenMedia((isMidiFile(p.c_str()) ? "m " : "a ") + fileServerMediaPath(p));
     now->setText(("Playing: " + baseName(p)).c_str()); now->repaint();
     playBtn->setText("Pause"); playBtn->repaint();
   }
@@ -428,13 +452,7 @@ static std::string s_qPlaying;
 static bool s_qPaused = false;
 static int  s_qLast = 2;
 
-static std::string musicFolder()
-{
-  std::string d = gSDMounted ? SD_MOUNT "/Music" : "";
-  DIR * t = d.empty() ? nullptr : opendir(d.c_str());
-  if (t) { closedir(t); return d; }
-  return documentsDir();
-}
+static std::string musicFolder() { return mediaFolder(false); }
 
 static std::string songAfter(const std::string & dir, const std::string & cur)   // next song (wraps), "" if none
 {
@@ -459,8 +477,8 @@ static void quickPlayFile(const std::string & p)
 {
   fileServerMedia(true);
   s_qPlaying = p; s_qPaused = false; s_qLast = 2;
-  screenMedia("a " + fileServerMediaPath(p));
   screenMedia("v 0.80");
+  screenMedia((isMidiFile(p.c_str()) ? "m " : "a ") + fileServerMediaPath(p));
 }
 
 // returns a line for the game's info bar

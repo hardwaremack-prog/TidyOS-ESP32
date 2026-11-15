@@ -1536,7 +1536,7 @@ void openBrowser(const char * url)
 void openDoodleFile(const char * path);     // doodle_app.h
 void openPictures(const char * file);       // media_apps.h
 void openMusicFile(const char * file);
-static bool isMusicFileName(const char * n) { const char * e = fileExt(n); return !strcmp(e, "mp3") || !strcmp(e, "m4a") || !strcmp(e, "wav") || !strcmp(e, "ogg"); }
+static bool isMusicFileName(const char * n) { const char * e = fileExt(n); return !strcmp(e, "mp3") || !strcmp(e, "m4a") || !strcmp(e, "wav") || !strcmp(e, "ogg") || !strcmp(e, "mid") || !strcmp(e, "midi"); }
 
 class FilesApp : public AppFrame {
 public:
