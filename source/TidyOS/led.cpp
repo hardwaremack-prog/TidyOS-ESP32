@@ -9,16 +9,14 @@
 #include "led.h"
 #include "crashlog.h"
 #include "core.h"
-#include "soc/gpio_sd_struct.h"
-#include "soc/gpio_sig_map.h"
-#include "esp_rom_gpio.h"
-
 #define LED_PIN 2
-#define LED_SD  0                 // sigma-delta channel 0: hardware dimming with no driver code (keeps IRAM free)
+#define LED_CH  7                 // LEDC (PWM) channel 7: nothing else in TidyOS uses LEDC
 
+static bool s_pwm = false;
 static inline void ledLevel(uint32_t v)      // 0 = off .. 255 = full
 {
-  SIGMADELTA.channel[LED_SD].duty = (uint8_t)(int8_t)((int)v - 128);
+  if (s_pwm) ledcWrite(LED_CH, v);
+  else digitalWrite(LED_PIN, v >= 128 ? HIGH : LOW);   // no PWM: plain on / off
 }
 
 volatile uint32_t gSdActivityMs = 0;
@@ -61,10 +59,11 @@ static void ledTask(void *)
 void ledBegin()
 {
   pinMode(LED_PIN, OUTPUT);
-  SIGMADELTA.cg.clk_en = 1;
-  SIGMADELTA.channel[LED_SD].prescale = 80;
+  digitalWrite(LED_PIN, LOW);
+  s_pwm = ledcSetup(LED_CH, 5000, 8) != 0;
+  if (s_pwm) ledcAttachPin(LED_PIN, LED_CH);
   ledLevel(0);
-  esp_rom_gpio_connect_out_signal(LED_PIN, GPIO_SD0_OUT_IDX + LED_SD, false, false);
+  Serial.printf("[TidyOS] blue light on GPIO %d (%s), switch %s\n", LED_PIN, s_pwm ? "PWM" : "on/off", gSet.ledOn ? "on" : "off");
   ledSetOn(gSet.ledOn);
 }
 
