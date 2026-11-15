@@ -396,8 +396,8 @@ public:
   NeatApp() : AppFrame("Neat Lite - Untitled", Point(4, 4), Size(632, 452), &inst) {
     // row 1: file
     button("New",      cx,       cy, 44)->onClick = [this]() { newDoc(); };
-    button("Open",     cx + 48,  cy, 46)->onClick = [this]() { openDoc(); };
-    button("Save",     cx + 98,  cy, 44)->onClick = [this]() { save(); };
+    button("Save",     cx + 48,  cy, 44)->onClick = [this]() { save(); };
+    button("Open",     cx + 96,  cy, 46)->onClick = [this]() { openDoc(); };
     button("Save as",  cx + 146, cy, 60)->onClick = [this]() { saveAs(); };
     button("Print",    cx + 210, cy, 46)->onClick = [this]() { print(); };
     button("Spelling", cx + 260, cy, 70)->onClick = [this]() { spelling(); };

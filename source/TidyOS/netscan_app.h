@@ -1,5 +1,5 @@
 #pragma once
-// ====================================================================== Who's On (network sweep)
+// ====================================================================== Nic Sweep (network sweep)
 // (included from apps.cpp, after the Ping app)
 //
 // Sweeps this TidyOS's /24 subnet with ARP ("who has 10.0.0.x?"). Every device on the
@@ -10,6 +10,7 @@
 #include "lwip/etharp.h"
 #include "lwip/tcpip.h"
 #include "esp_netif.h"
+#include "xlsx.h"
 
 struct ScanHost { uint32_t ip; uint8_t mac[6]; int ms; };   // ms: -1 = no ping reply, -2 = not pinged yet
 static std::vector<ScanHost> s_scan;
@@ -125,13 +126,15 @@ public:
   uiButton * scanBtn;
   int shownVer = -1;
 
-  ScanApp() : AppFrame("Who's On", nextPos(520, 400), Size(520, 400), &inst) {
+  ScanApp() : AppFrame("Nic Sweep", nextPos(520, 420), Size(520, 420), &inst) {
     scanBtn = button("Scan", cx, cy, 80, 24);
     scanBtn->onClick = [this]() { toggle(); };
-    button("Add all to Ping", cx + 86, cy, 120, 24)->onClick = [this]() { addToPing(); };
-    status = label("", cx + 214, cy + 4, 290, 16);
+    button("Add all to Ping", cx + 86, cy, 112, 24)->onClick = [this]() { addToPing(); };
+    button("Open in Tidy", cx + 204, cy, 96, 24)->onClick = [this]() { exportTo(false); };
+    button("Save Excel", cx + 306, cy, 86, 24)->onClick = [this]() { exportTo(true); };
+    status = label("", cx, cy + 364, 504, 16);
     status->labelStyle().textFont = &FONT_std_12;
-    view = new TextArea(this, Point(cx, cy + 30), Size(504, 330), false);
+    view = new TextArea(this, Point(cx, cy + 30), Size(504, 328), false);
     startTimer(500);
     onTimer = [this](uiTimerHandle) { refresh(); };
     refresh();
@@ -139,11 +142,11 @@ public:
 
   void toggle() {
     if (s_scanAlive) { s_scanRun = false; return; }
-    if (!netConnected()) { gApp->messageBox("Who's On", "Join a Wi-Fi network first (Settings).", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning); return; }
+    if (!netConnected()) { gApp->messageBox("Nic Sweep", "Join a Wi-Fi network first (Settings).", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning); return; }
     s_scanRun = s_scanAlive = true;
     if (xTaskCreatePinnedToCore(scanTask, "netscan", 3072, nullptr, 1, nullptr, 0) != pdPASS) {
       s_scanRun = s_scanAlive = false;
-      gApp->messageBox("Who's On", "Not enough memory to scan.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+      gApp->messageBox("Nic Sweep", "Not enough memory to scan.", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
     }
     refresh();
   }
@@ -179,6 +182,51 @@ public:
     s_pChanged++;
     char b[64]; snprintf(b, sizeof(b), "Added %d address%s to Ping.", added, added == 1 ? "" : "es");
     status->setText(b); status->repaint();
+  }
+
+  // the sweep as a table: IP, MAC, ping, maker. Excel = .xlsx, otherwise .csv opened in Tidy
+  void exportTo(bool excel) {
+    struct Row { uint32_t ip; uint8_t mac[6]; int ms; };
+    std::vector<Row> rows;
+    uint32_t gw = (uint32_t)WiFi.gatewayIP();
+    {
+      std::lock_guard<std::mutex> lk(s_scanMx);
+      for (auto & h : s_scan) { Row r; r.ip = h.ip; memcpy(r.mac, h.mac, 6); r.ms = h.ms; rows.push_back(r); }
+    }
+    if (rows.size() <= 1) { gApp->messageBox("Nic Sweep", "Run a scan first.", "OK", nullptr, nullptr, uiMessageBoxIcon::Info); return; }
+    char name[48];
+    time_t now = time(nullptr); struct tm tmv; localtime_r(&now, &tmv);
+    if (tmv.tm_year > 100) snprintf(name, sizeof(name), "nic-sweep-%04d-%02d-%02d-%02d%02d", tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min);
+    else snprintf(name, sizeof(name), "nic-sweep");
+    std::string path = joinPath(documentsDir().c_str(), name) + (excel ? ".xlsx" : ".csv");
+    auto cell = [&](int r, int c, bool & num) -> std::string {
+      if (r == 0) { static const char * h[4] = { "IP address", "MAC address", "Ping (ms)", "Maker / note" }; return h[c]; }
+      const Row & x = rows[r - 1];
+      char b[32];
+      if (c == 0) { IPAddress a(x.ip); return a.toString().c_str(); }
+      if (c == 1) { snprintf(b, sizeof(b), "%02x:%02x:%02x:%02x:%02x:%02x", x.mac[0], x.mac[1], x.mac[2], x.mac[3], x.mac[4], x.mac[5]); return b; }
+      if (c == 2) { if (r == 1) return "this TidyOS"; if (x.ms < 0) return "no ping"; num = true; return std::to_string(x.ms); }
+      if (r == 1) return "";
+      return x.ip == gw ? "router" : macMaker(x.mac);
+    };
+    bool ok;
+    int nr = rows.size() + 1;
+    if (excel) {
+      static const int widths[4] = { 16, 20, 12, 22 };
+      ok = xlsx::write(path.c_str(), "Nic Sweep", nr, 4, widths, cell);
+    } else {
+      ok = writeFileWith(path.c_str(), [&](RSink & o) {
+        for (int r = 0; r < nr; ++r) {
+          for (int c = 0; c < 4; ++c) { bool n = false; std::string v = cell(r, c, n); if (c) o.put(','); o.put(v); }
+          o.put('\n');
+        }
+      });
+    }
+    if (!ok) { gApp->messageBox("Nic Sweep", "Couldn't save the file.", "OK", nullptr, nullptr, uiMessageBoxIcon::Error); return; }
+    if (excel) {
+      char m[120]; snprintf(m, sizeof(m), "Saved %.60s in Documents.", baseName(path).c_str());
+      status->setText(m); status->repaint();
+    } else openTidy(path.c_str());
   }
 
   void refresh() {

@@ -293,6 +293,11 @@ static const char * ART_MUSIC[16] = {
   "......#.....#...", "......#.....#...", "....###...###...", "...####..####...", "...####..####...", "....##....##....",
   "................", "................", "................", "................" };
 
+static const char * ART_NIC[16] = {
+  "................", ".##############.", ".#gggggggggggg#.", ".#g####ggwwwwg#.", ".#g#aa#ggw##wg#.", ".#g#aa#ggw##wg#.",
+  ".#g####ggwwwwg#.", ".#gggggggggggg#.", ".#gg#g#g#g#ggg#.", ".##############.", "..a.a.a.a.a.a...", "..a.a.a.a.a.a...",
+  "................", "...#...#...#....", "..#.#.#.#.#.#...", ".#...#...#...#.." };
+
 static const char * ART_SCAN[16] = {
   "................", "......#####.....", "....##wwwww##...", "...#wwwww#www#..", "..#wwwww#wwwww#.", "..#wwww#wwwwww#.",
   ".#wwwww#waawww#.", ".#wwwwwwwaawww#.", ".#wwwwwwwwwwww#.", "..#wawwwwwwww#..", "..#wwwwwwwaw#...", "...#wwwwwwww#...",
@@ -333,7 +338,7 @@ static int appNeedKB(const char * label)
 {
   static const struct { const char * n; int kb; } T_[] = {
     { "Task Manager", 18 }, { "Files", 14 }, { "Neat", 22 }, { "Tidy", 20 }, { "Doodle", 18 }, { "Browser", 30 },
-    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Who's On", 12 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
+    { "Rugged", 18 }, { "Pictures", 24 }, { "Music", 14 }, { "Nic Sweep", 12 }, { "Settings", 16 }, { "Messages", 16 }, { "Ping", 14 }, { "Games", 6 }, { "Steady", 14 },
   };
   for (auto & e : T_) if (!strcmp(e.n, label)) return e.kb;
   return 10;
@@ -362,7 +367,7 @@ static const DeskIcon ICONS[] = {
   { "Doodle",     ART_DOODLE, nullptr, openDoodle },
   { "Pictures",   ART_PICS,  nullptr, openPictures0 },
   { "Music",      ART_MUSIC, nullptr, openMusic },
-  { "Who's On",   ART_SCAN,  nullptr, openScan },
+  { "Nic Sweep",  ART_NIC,   nullptr, openScan },
   { "Switches",   ART_SD,    nullptr, openSwitches },
 };
 static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
@@ -583,9 +588,9 @@ private:
       std::string notice = msgLastNotice();
       if (!notice.empty()) snprintf(b, sizeof(b), "%s", notice.substr(0, 40).c_str());
 #ifdef TIDYOS_HTML5
-      else snprintf(b, sizeof(b), "Browser:%s  RAM %uK", screenViewer() ? "on" : "--", (unsigned)(ramFree() / 1024));
+      else snprintf(b, sizeof(b), "Browser: %s   RAM %uK", screenViewer() ? "on" : "--", (unsigned)(ramFree() / 1024));
 #else
-      else snprintf(b, sizeof(b), "Keyboard:%s  Mouse:%s  RAM %uK", inputKeyboards() ? "on" : "--", inputMice() ? "on" : "--",
+      else snprintf(b, sizeof(b), "Keyboard: %s  Mouse: %s   RAM %uK", inputKeyboards() ? "on" : "--", inputMice() ? "on" : "--",
                (unsigned)(ramFree() / 1024));
 #endif
       cv->drawText(&FONT_std_12, 330, by + 4, b);

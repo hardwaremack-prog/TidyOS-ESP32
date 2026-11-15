@@ -10,7 +10,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Bluetooth keyboard and mouse** (Bluetooth LE, VGA edition)
 - **microSD card** for your files (falls back to internal flash with no card)
 - **Wi-Fi** with a clock that sets itself from the internet
-- Apps: **Calculator, Neat Lite** (writing with fonts, sizes, colours and spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Doodle** (MacPaint-style drawing), **Pictures** (JPEG/BMP viewer), **Music** (plays in your browser), **Who's On** (who's on your network), **Messages, Browser, Files, Settings, Task Manager, Ping, Switches**
+- Apps: **Calculator, Neat Lite** (writing with fonts, sizes, colours and spell check), **Tidy Lite** (spreadsheet), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Doodle** (MacPaint-style drawing), **Pictures** (JPEG/BMP viewer), **Music** (plays in your browser), **Nic Sweep** (who's on your network, export to Tidy or Excel), **Messages, Browser, Files, Settings, Task Manager, Ping, Switches**
 - **Printing** to network printers (found automatically), through a Pi with CUPS, or Save as PDF
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
 - **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
@@ -19,7 +19,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
 - **Updates itself from GitHub:** Settings → Check for updates
 
-> Status: version 2.2.4. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
+> Status: version 2.2.5. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -39,7 +39,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 | ![Doodle](docs/previews/18-doodle.png) | **Doodle** – a little MacPaint: pencil, brush, eraser, spray, lines, boxes, ovals, paint fill and text, with undo. Saves black-and-white .bmp pictures. The picture lives on the SD card, not in RAM. |
 | ![Pictures](docs/previews/19-pictures.png) | **Pictures** – JPEG and BMP photos, dithered to the screen's colours like a classic Mac. **Full colour** opens the original in your browser (HTML5 edition). |
 | ![Music](docs/previews/20-music.png) | **Music** – MP3, M4A, WAV and OGG from the SD card, played through your computer's speakers by the browser (HTML5 edition). |
-| ![Who's On](docs/previews/21-whos-on.png) | **Who's On** – sweeps your network and lists every device, even ones that ignore ping, with its maker when it can tell. **Add all to Ping** keeps watching them. |
+| ![Nic Sweep](docs/previews/21-nic-sweep.png) | **Nic Sweep** – sweeps your network and lists every device, even ones that ignore ping, with its maker when it can tell. **Add all to Ping** keeps watching them; **Open in Tidy** or **Save Excel** keeps a copy. |
 | ![Neat Lite word processor](docs/previews/03-neat-word-processor.png) | **Neat Lite word processor** – fonts, a size slider for any word, bold, underline, **text colours**, alignment, paragraph spacing, spell check; saves .rtf that Word and WordPad open. *The text area is drawn by Neat's real layout code with FabGL's fonts.* |
 | ![Task Manager](docs/previews/12-task-manager.png) | **Task Manager** – live CPU and memory graphs. **Test** runs a core flat out to see what it can do. |
 | ![Bricks](docs/previews/22-games-bricks.png) | **Bricks** – Arkanoid-style: break every brick, catch capsules for a wide paddle, a slower ball or an extra life. |
