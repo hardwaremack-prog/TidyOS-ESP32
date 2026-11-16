@@ -99,12 +99,12 @@
   <div class="card html5-only">
     <h2>3. First start</h2>
     <ol>
-      <li>Power the board. On a phone or PC, join the Wi-Fi hotspot <b>TidyOS-Setup</b> (password <code>tidyos123</code>).</li>
+      <li>Power the board. On a phone or PC, join the Wi-Fi hotspot named after the board, <b>TidyOS-xxxxxx</b> (e.g. <code>TidyOS-A93160</code>; password <code>tidyos123</code>). Each board has its own, so several can be set up side by side. (Before 2.6.3 it was called TidyOS-Setup.)</li>
       <li>The desktop pops up, or open <b>http://192.168.4.1</b>.</li>
       <li>Open <b>Settings</b>, find your home Wi-Fi, type the password, then <b>Connect</b> and <b>Save</b>.</li>
       <li>Rejoin your home Wi-Fi and open the address shown at the bottom of the desktop, or <b>http://tidyos-xxxxxx.local</b> (the board ID in small letters).</li>
     </ol>
-    <p class="note">On a phone, tap <b>Keyboard</b> in the top bar to type. <b>Task Manager</b> and <b>Full screen</b> are up there too. One browser at a time: opening TidyOS somewhere else takes over. If it can't join your Wi-Fi it opens the TidyOS-Setup hotspot again, and turns it off once it's on your home Wi-Fi, unless <b>Settings → Run TidyOS Hotspot</b> is on, which keeps it up so devices can join TidyOS directly.</p>
+    <p class="note">On a phone, tap <b>Keyboard</b> in the top bar to type. <b>Task Manager</b> and <b>Full screen</b> are up there too. One browser at a time: opening TidyOS somewhere else takes over. If it can't join your Wi-Fi it opens its TidyOS-xxxxxx hotspot again, and turns it off once it's on your home Wi-Fi, unless <b>Settings → Run TidyOS Hotspot</b> is on, which keeps it up so devices can join TidyOS directly.</p>
     <p class="note"><b>Updating:</b> the start-up screen has an <b>Update</b> button, or use this page with <b>Erase device</b> unticked. The bottom bar shows the version and the board's ID.</p>
   </div>
 
@@ -122,7 +122,7 @@
     <h2>Logging in: addresses</h2>
     <table>
       <tr><th>Where you are</th><th>Join this Wi-Fi</th><th>Open in the browser</th></tr>
-      <tr class="html5-only"><td><b>TidyOS hotspot</b> (first start, when it can't join your Wi-Fi, or with <b>Settings → Run TidyOS Hotspot</b> on)</td><td><b>TidyOS-Setup</b><br>password <code>tidyos123</code></td><td><a href="http://192.168.4.1">http://192.168.4.1</a> (the desktop usually pops up by itself)</td></tr>
+      <tr class="html5-only"><td><b>TidyOS hotspot</b> (first start, when it can't join your Wi-Fi, or with <b>Settings → Run TidyOS Hotspot</b> on)</td><td><b>TidyOS-xxxxxx</b> (the board ID, e.g. TidyOS-A93160)<br>password <code>tidyos123</code></td><td><a href="http://192.168.4.1">http://192.168.4.1</a> (the desktop usually pops up by itself)</td></tr>
       <tr class="html5-only"><td><b>Home Wi-Fi</b> (after Settings → Connect → Save)</td><td>your own Wi-Fi</td><td>the address shown on TidyOS's bottom bar, e.g. <code>http://10.0.0.205</code> or <code>http://192.168.1.40</code><br>or <b>http://tidyos-xxxxxx.local</b>: your board's ID from the bottom bar in small letters, e.g. <code>http://tidyos-a93160.local</code> (most PCs, iPhones and Macs). Every board has its own name, so several can share one Wi-Fi</td></tr>
       <tr class="html5-only"><td><b>File sharing</b> (Settings → Share the SD card)</td><td>same as above</td><td>the same address with <code>:8081</code>, e.g. <code>http://10.0.0.205:8081</code>, <code>http://192.168.4.1:8081</code> or <code>http://tidyos-a93160.local:8081</code></td></tr>
       <tr class="vga-only"><td><b>File sharing</b> (Settings → Share the SD card)</td><td>your own Wi-Fi</td><td>the address shown on TidyOS's bottom bar, e.g. <code>http://192.168.1.40</code>, or <b>http://tidyos-xxxxxx.local</b> (its ID in small letters)</td></tr>

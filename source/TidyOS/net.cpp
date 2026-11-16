@@ -113,7 +113,7 @@ bool netConnected() { return WiFi.status() == WL_CONNECTED; }
 std::string netStatus()
 {
   if (screenApOn() && WiFi.status() != WL_CONNECTED)
-    return "Hotspot " SCREEN_AP_NAME " - " + screenUrl();
+    return "Hotspot " + boardId() + " - " + screenUrl();
   if (!gSet.ssid.length())
     return "Wi-Fi not set up";
   if (WiFi.status() == WL_CONNECTED) {

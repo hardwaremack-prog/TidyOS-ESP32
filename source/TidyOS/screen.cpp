@@ -110,7 +110,7 @@ function connect(){
    else hb.style.display='none';}};
  ws.onclose=function(){st.textContent='Disconnected';if(!kicked){
   var t='Lost connection - trying again...';
-  if(location.hostname=='192.168.4.1')t='Lost the TidyOS-Setup hotspot - trying again...\nIf TidyOS just joined your Wi-Fi, switch this device to '+(home?home.ssid:'that Wi-Fi')+' and open http://'+(home?home.ip:'the address on its screen');
+  if(location.hostname=='192.168.4.1')t='Lost the TidyOS hotspot - trying again...\nIf TidyOS just joined your Wi-Fi, switch this device to '+(home?home.ssid:'that Wi-Fi')+' and open http://'+(home?home.ip:'the address on its screen');
   show(t);setTimeout(connect,2000);}};
 }
 btn.onclick=function(){connect();};
@@ -574,7 +574,8 @@ static void apStart()
   WiFi.mode(WIFI_AP_STA);
   // channel 6, up to 4 devices; lower transmit power so the current peaks don't dip the 3.3 V supply
   // (the hotspot only needs to reach across a room)
-  WiFi.softAP(SCREEN_AP_NAME, SCREEN_AP_PASS, 6, 0, 4);
+  static std::string apName = boardId();
+  WiFi.softAP(apName.c_str(), SCREEN_AP_PASS, 6, 0, 4);
   WiFi.setTxPower(WIFI_POWER_11dBm);
   WiFi.setSleep(false);
   delay(100);

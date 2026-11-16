@@ -2,7 +2,7 @@
 #pragma once
 #include <string>
 
-#define SCREEN_AP_NAME "TidyOS-Setup"
+#define SCREEN_AP_NAME (boardId().c_str())   // each board its own hotspot name, e.g. "TidyOS-A93160"
 #define SCREEN_AP_PASS "tidyos123"
 
 #ifdef TIDYOS_HTML5

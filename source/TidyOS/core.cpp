@@ -1584,7 +1584,7 @@ void setup()
   screenBegin();    // HTML5 edition: the desktop in a web browser
   memLog("web screen");
 #ifdef TIDYOS_HTML5
-  splash(gSet.ssid.length() ? "Joining Wi-Fi" : "Starting the TidyOS-Setup hotspot", 90);
+  splash(gSet.ssid.length() ? "Joining Wi-Fi" : ("Starting the " + boardId() + " hotspot").c_str(), 90);
 #else
   splash(gSet.ssid.length() ? "Joining Wi-Fi and Bluetooth" : "Starting Bluetooth", 90);
 #endif
