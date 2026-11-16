@@ -15,8 +15,14 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
 - **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
 - **Games:** Sammy the Snake (with shuffled MIDI music), Minesweeper, Blocks, 2048, **Bricks** (Arkanoid-style), **Paradrop** (Airborne!-style), **Deep Drill**, **Missile Command** and **StuntCopter**. Arrow keys or WASD
-- **HTML Games / HTML Programs:** put web games and programs (a .html file, or a folder with index.html) in those folders on the SD card; Play opens them in a new browser tab
-- **Desktop panel:** time, date, weather in °F with a 4-day temperature graph (freezing line at 32°), Moscow / Los Angeles / Tokyo times, daily affirmations (>> shows up to 3), up to six news headlines, a world map shaded for day and night with a you-are-here marker, and a drop box: drag files onto the page and TidyOS asks which SD folder they go in
+- **Games:** every game that moves has a **Pause** button next to New game. Sammy's one **Play music / Pause music** button plays your MIDI folder, shuffled
+- **HTML Games / HTML Programs:** put web games in **SD:/games** and web programs in **SD:/programs** (a .html file, or a folder with index.html); Play opens them in a new browser tab
+- **Windows minimize to the bottom bar:** the **–** button next to the X sends a window to the bottom bar (between RAM and the clock); click its button there to bring it back. Games pause while minimized
+- **Bottom bar:** TidyOS, version and this board's ID (e.g. `v2.5.2  A93160`), Wi-Fi and address, free RAM with an **Optimize** button that frees what isn't being used, minimized windows, and the clock
+- **Opens Office files:** .csv and .xlsx open in Tidy; .rtf, .doc and .docx open in Neat
+- **Start-up screen:** an **Update** button (switches to black & white just for the update, then puts your colours back), and a start-up splash where the app icons march in one by one like a classic Mac while each step is ticked off. It waits for the weather and headlines so the desktop opens filled in
+- **Top bar of the web page (HTML5):** Keyboard, Task Manager, **Restart**, **Sleep** (deep sleep), Full screen, Size, and a **volume bar** in Music
+- **Desktop panel:** time, date, weather in °F with a 4-day temperature graph (day letters, a red **freezing** line at 32° with an arrow, and point at the graph to see that hour's temperature), Moscow / Los Angeles / Tokyo times **with their temperatures**, daily affirmations (>> shows up to 3), up to six news headlines, a world map shaded for day and night with a you-are-here marker, and a drop box: drag files onto the page and TidyOS asks which SD folder they go in
 - **Git-Store:** a cloud folder for each board (up to 1 GB, 25 MB a file), kept by a free Cloudflare Worker - see [gitstore/](gitstore/README.md)
 - **Task Manager** (Ctrl+Shift+Esc): live CPU graphs for both cores (with a Test button that runs a core flat out), RAM, open apps, every FreeRTOS task, network, storage and power
 - **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
@@ -33,7 +39,18 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 
 *These are drawn previews made from TidyOS's own layouts, 4-colour palette and FabGL fonts, not photos of a running board. The real screen should look very close.*
 
-### What's new
+### What's new in 2.5
+
+- **Minimize to the bottom bar** (the – button beside X), and an **Optimize** button next to RAM.
+- **Temperature graph:** point at it for the time and temperature; "freezing →" marks the 32° line.
+- **World times show temperatures** for Moscow, Los Angeles and Tokyo.
+- **Games:** a Pause button; Sammy's single Play/Pause music button (and no more lock-up with a big MIDI folder).
+- **Settings → Run TidyOS Hotspot:** keeps the TidyOS-Setup hotspot on so phones and PCs can join the board directly (192.168.4.1), even with home Wi-Fi.
+- **Start-up:** Mac OS 9-style icon parade with a checklist and a smooth bar.
+- **HTML Games / Programs** read **SD:/games** and **SD:/programs**.
+- Fixed: a false "the installer didn't run" note after a successful update.
+
+### Earlier
 
 | | |
 |---|---|
@@ -68,7 +85,9 @@ How it works: TidyOS still draws into its normal 640 × 480 screen memory. A sma
 - One browser at a time. Opening TidyOS somewhere else takes over and the first tab says so.
 - Bluetooth is switched off in this edition, and no VGA signal is generated (the picture is only kept in memory for the browser). With 4 colours that leaves about 85 KB free; pick 8 colours or black & white in the start-up switches.
 - In the top bar, **Size** cycles fit → sharp (crisp whole pixels) → 1:1.
-- If it can't join your Wi-Fi within 25 seconds, the TidyOS-Setup hotspot comes back. It turns itself off 2 minutes after TidyOS is on your home Wi-Fi.
+- If it can't join your Wi-Fi within 25 seconds, the TidyOS-Setup hotspot comes back. It turns itself off a few minutes after TidyOS is on your home Wi-Fi, unless **Settings → Run TidyOS Hotspot** is on: then it stays up for devices to join TidyOS directly.
+- Finding it: the bottom bar shows its address (e.g. `10.0.0.205`); `http://tidyos.local` works on most PCs, iPhones and Macs. A DHCP reservation in your router keeps the address from changing.
+- Weather, news and city temperatures are looked up by **your browser** (free Open-Meteo and NPR/BBC feeds), not by the board, so they need the page open.
 - Wi-Fi file sharing moves to port **8081** (`http://tidyos.local:8081`), because port 80 shows the desktop.
 - No VGA pins are driven in this edition, so the microSD module can use the **in-line wiring** from The Shelf: plugged straight onto GND · 19 · 18 · 5 · 17 (MISO 19, CLK 18, MOSI 5, CS 17), with its 3v3 pin bent up and one jumper to 3V3. The classic wiring (16/17/14/13) works too; TidyOS tries both. Task Manager → Storage shows which one it found.
 - The browser page scales the screen with whole pixels and then smooths it slightly, so text stays even at any window size. **Size** switches to exact 1:1 pixels.

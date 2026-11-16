@@ -103,7 +103,8 @@
       <li>Open <b>Settings</b>, find your home Wi-Fi, type the password, then <b>Connect</b> and <b>Save</b>.</li>
       <li>Rejoin your home Wi-Fi and open <b>http://tidyos.local</b> (or the address shown at the bottom of the desktop).</li>
     </ol>
-    <p class="note">On a phone, tap <b>Keyboard</b> in the top bar to type. <b>Task Manager</b> and <b>Full screen</b> are up there too. One browser at a time: opening TidyOS somewhere else takes over. If it can't join your Wi-Fi it opens the TidyOS-Setup hotspot again, and it turns the hotspot off 2 minutes after it's on your home Wi-Fi.</p>
+    <p class="note">On a phone, tap <b>Keyboard</b> in the top bar to type. <b>Task Manager</b> and <b>Full screen</b> are up there too. One browser at a time: opening TidyOS somewhere else takes over. If it can't join your Wi-Fi it opens the TidyOS-Setup hotspot again, and turns it off once it's on your home Wi-Fi, unless <b>Settings → Run TidyOS Hotspot</b> is on, which keeps it up so devices can join TidyOS directly.</p>
+    <p class="note"><b>Updating:</b> the start-up screen has an <b>Update</b> button, or use this page with <b>Erase device</b> unticked. The bottom bar shows the version and the board's ID.</p>
   </div>
 
   <div class="card vga-only">
@@ -121,7 +122,9 @@
     <p>Calculator · <b>Neat Lite</b> (writing, spell check) · <b>Tidy Lite</b> (spreadsheet) · <b>Ready Lite</b> (to-do) · <b>Steady Lite</b> (bills) · <b>Rugged Lite</b> (grid-down guide) · <b>Messages</b> (The Shelf + Coms mesh) · Browser · Files · Settings · Task Manager</p>
     <p><b>Printing:</b> network printers (found automatically), through a Pi with CUPS, or Save as PDF.</p>
     <p><b>Wi-Fi file sharing:</b> one switch, then copy files to and from the SD card from any browser (port 8081 in the HTML5 edition).</p>
-    <p><b>Games:</b> Sammy the Snake · Minesweeper · Blocks · 2048</p>
+    <p><b>Also:</b> Doodle · Pictures · Music (MP3 + MIDI, shuffle) · Nic Sweep · Screenshot · Clock (alarm, stopwatch, world time) · <b>Latch</b> password safe · Git-Store cloud folder · HTML Games (<code>SD:/games</code>) · HTML Programs (<code>SD:/programs</code>) · Ping · Switches</p>
+    <p><b>Games:</b> Sammy the Snake (with music) · Minesweeper · Blocks · 2048 · Bricks · Paradrop · Deep Drill · Missile Command · StuntCopter, each with a Pause button</p>
+    <p><b>Desktop:</b> weather in °F with a 4-day graph (point at it for each hour), world times with temperatures, affirmations, news headlines, a day/night world map, and a drop box for copying files to the SD card. Windows minimize to the bottom bar, which also has an <b>Optimize</b> button next to RAM.</p>
     <p>For better web pages, run <code>helper/tidyos_proxy.py</code> on a Raspberry Pi and enter its address in Settings → Browser.
        See the <a href="https://github.com/hardwaremack-prog/TidyOS-ESP32#readme">README</a> for everything else.</p>
   </div>
