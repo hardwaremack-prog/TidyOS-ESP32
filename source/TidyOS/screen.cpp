@@ -342,7 +342,7 @@ static bool wsSend(WiFiClient & c, const uint8_t * d, size_t n, uint8_t opcode =
 // ---- outbox: one frame for the browser waits here and drains without ever blocking the server.
 // A fixed buffer reserved at start-up: no memory is asked for while running (on a busy hotspot
 // RAM is too broken up to grow a buffer, even with plenty free in total).
-static uint8_t  s_ob[4 + 4 + 16 * 160];   // ws header + frame header + 16 rows (4 colours) / 10 rows (8 colours)
+alignas(4) static uint8_t  s_ob[4 + 4 + 16 * 160];   // ws header + frame header + 16 rows (4 colours) / 10 rows (8 colours)
 static size_t   s_obLen = 0, s_obPos = 0;
 static uint32_t s_outStuck = 0;          // when the outbox last made no progress
 
@@ -411,9 +411,12 @@ static size_t queueChanges()
     uint8_t * out = s_ob + 8;
     while (y < SCREEN_H && n < maxRows) {
       const uint8_t * r = (const uint8_t *)fabgl::VGAPalettedController::sgetScanline(y);
-      uint32_t hh = rowHash(r, rb);
-      if (hh == s_hash[y]) break;
+      // copy first, then remember the hash of the copy: the other core may be drawing into this row
+      // right now, and the browser must be known to have exactly what was sent (hashing the live row
+      // and copying it a moment later could leave a half-drawn row on the page for good)
       memcpy(out + n * rb, r, rb);
+      uint32_t hh = rowHash(out + n * rb, rb);
+      if (hh == s_hash[y]) break;
       s_hash[y] = hh;
       ++n; ++y;
     }
