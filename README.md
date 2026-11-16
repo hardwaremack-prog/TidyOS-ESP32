@@ -5,7 +5,7 @@
 A tiny general-purpose computer on a NodeMCU ESP32:
 
 - **Two editions, picked with a switch on the flasher:**
-  - **VGA:** a 640 × 480 desktop on a VGA monitor (8 or 4 colours, picked automatically to fit in RAM) with a Bluetooth keyboard and mouse
+  - **VGA** (frozen at 2.6.8, no longer updated): a 640 × 480 desktop on a VGA monitor (8 or 4 colours, picked automatically to fit in RAM) with a Bluetooth keyboard and mouse
   - **HTML5:** the same desktop in a web browser on any phone, tablet or PC on your Wi-Fi. No monitor or resistors; the browser is the keyboard and mouse
 - **Bluetooth keyboard and mouse** (Bluetooth LE, VGA edition)
 - **microSD card** for your files (falls back to internal flash with no card)
