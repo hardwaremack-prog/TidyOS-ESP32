@@ -1,6 +1,7 @@
 // TidyOS desktop: the panel on the right - time, date, weather, world times, a daily affirmation,
 // and a world map shaded for day and night. (included in core.cpp, before the Desktop)
 #include "worldmap.h"
+#include "tzcalc.h"
 
 // weather arrives from the web page (it looks it up: ip-api.com for the place, Open-Meteo for the forecast)
 static struct { int temp = 0, code = -1, hi = 0, lo = 0; float lat = 0, lon = 0; bool haveLoc = false; char city[32] = ""; char err[48] = ""; } s_wx;
@@ -155,12 +156,7 @@ static const int NAFFIRM = sizeof(AFFIRM) / sizeof(AFFIRM[0]);
 
 static void zoneTime(const char * tz, time_t now, struct tm & out)
 {
-  const char * old = getenv("TZ");
-  std::string keep = old ? old : "";
-  setenv("TZ", tz, 1); tzset();
-  localtime_r(&now, &out);
-  if (keep.empty()) unsetenv("TZ"); else setenv("TZ", keep.c_str(), 1);
-  tzset();
+  tzLocal(tz, now, out);                           // (no setenv: it leaked memory every call)
 }
 
 // the >> button: show the next affirmations too (up to 3); back to one each new day

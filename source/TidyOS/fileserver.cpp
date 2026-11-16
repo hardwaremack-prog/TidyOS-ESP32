@@ -8,14 +8,15 @@
 #include "core.h"
 
 static volatile bool s_on = false;
-static bool s_taskStarted = false;
+static volatile bool s_taskStarted = false;
 #ifdef TIDYOS_HTML5
 #define FILES_PORT 8081          // port 80 shows the desktop in the HTML5 edition
 #else
 #define FILES_PORT 80
 #endif
 static WiFiServer s_srv(FILES_PORT);
-static volatile bool s_media = false;     // on for the music player / full-colour pictures
+static volatile bool s_media = false;
+static volatile uint32_t s_lastUse = 0;   // media serving switches itself off after 10 idle minutes     // on for the music player / full-colour pictures
 static bool s_listening = false;
 
 void netMdnsBegin()
@@ -337,14 +338,23 @@ static void handle(WiFiClient & c)
 
 static void serverTask(void *)
 {
+  uint32_t idleSince = 0;
   for (;;) {
     bool wifi = WiFi.status() == WL_CONNECTED;
-    bool want = s_on || s_media;
+    bool want = s_on || (s_media && millis() - s_lastUse < 600000);
+    // not wanted for 20 s: close up and end the task, giving back its 6 KB stack and the socket
+    if (want) idleSince = 0;
+    else if (!idleSince) idleSince = millis();
+    else if (millis() - idleSince > 20000) {
+      if (s_listening) { s_srv.end(); s_listening = false; }
+      s_taskStarted = false;
+      vTaskDelete(nullptr);          // (nothing with a destructor is alive at this point)
+    }
     if (want && wifi && !s_listening) { s_srv.begin(); s_listening = true; netMdnsBegin(); }
     if ((!want || !wifi) && s_listening) { s_srv.end(); s_listening = false; }
     if (s_listening) {
       WiFiClient c = s_srv.available();
-      if (c) { handle(c); continue; }
+      if (c) { s_lastUse = millis(); handle(c); continue; }
     }
     vTaskDelay((s_listening ? 20 : 500) / portTICK_PERIOD_MS);
   }
@@ -365,6 +375,7 @@ bool fileServerOn() { return s_on; }
 void fileServerMedia(bool on)
 {
   s_media = on;
+  if (on) s_lastUse = millis();
   if (on && !s_taskStarted) {
     s_taskStarted = true;
     xTaskCreatePinnedToCore(serverTask, "fileweb", 6144, nullptr, 1, nullptr, 0);

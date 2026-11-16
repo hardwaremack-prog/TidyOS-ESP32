@@ -39,10 +39,10 @@ extern "C" {
 
 static volatile bool s_wanted = false, s_running = false;
 
-static void ledTask(void *)
+static void ledTaskBody(void * arg)
 {
   for (;;) {
-    if (!s_wanted) { ledLevel(0); s_running = false; vTaskDelete(nullptr); }
+    if (!s_wanted) { ledLevel(0); s_running = false; return; }
     uint32_t now = millis();
     uint32_t duty;
     uint32_t sd = gSdActivityMs;
@@ -58,6 +58,10 @@ static void ledTask(void *)
     vTaskDelay(pdMS_TO_TICKS(15));
   }
 }
+
+// runs the task, then ends it - after the body's locals are destroyed (vTaskDelete
+// inside the body would skip their destructors and leak their memory)
+static void ledTask(void * arg) { ledTaskBody(arg); vTaskDelete(nullptr); }
 
 void ledBegin()
 {

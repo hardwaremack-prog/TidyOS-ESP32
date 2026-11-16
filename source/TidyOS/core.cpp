@@ -1155,7 +1155,7 @@ static void drawBar(Canvas & cv, int percent)
   if (w > 0) cv.fillRectangle(BAR_X, BAR_Y, BAR_X + w - 1, BAR_Y + BAR_H - 1);
 }
 
-static void barTask(void *)
+static void barTaskBody(void * arg)
 {
   while (s_barRun) {
     vTaskDelay(pdMS_TO_TICKS(300));
@@ -1169,8 +1169,12 @@ static void barTask(void *)
     xSemaphoreGive(s_barMux);
   }
   s_barAlive = false;
-  vTaskDelete(nullptr);
+  return;
 }
+
+// runs the task, then ends it - after the body's locals are destroyed (vTaskDelete
+// inside the body would skip their destructors and leak their memory)
+static void barTask(void * arg) { barTaskBody(arg); vTaskDelete(nullptr); }
 
 static void barStart()
 {

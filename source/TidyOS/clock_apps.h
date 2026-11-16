@@ -1,3 +1,4 @@
+#include "tzcalc.h"
 // ====================================================================== Screenshot and Clock (alarm + stopwatch)
 // (included at the end of apps.cpp)
 
@@ -141,12 +142,7 @@ static const int NCITIES = sizeof(CITIES) / sizeof(CITIES[0]);
 
 static bool cityTime(int i, time_t now, struct tm & out)
 {
-  const char * old = getenv("TZ");
-  std::string keep = old ? old : "";
-  setenv("TZ", CITIES[i % NCITIES].tz, 1); tzset();
-  localtime_r(&now, &out);
-  if (keep.empty()) unsetenv("TZ"); else setenv("TZ", keep.c_str(), 1);
-  tzset();
+  tzLocal(CITIES[i % NCITIES].tz, now, out);      // (no setenv: it leaked memory every call)
   return true;
 }
 

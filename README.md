@@ -28,7 +28,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
 - **Updates itself from GitHub:** Settings → Check for updates
 
-> Status: version 2.5.2. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
+> Status: version 2.5.3. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -92,6 +92,14 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 4. Back on your home Wi-Fi, open **http://tidyos.local** (or the address at the bottom of the desktop).
 
 No luck with the hotspot? With the board plugged into a computer, open a serial monitor at 115200 and type `!wifi Your network name|your password` then Enter. `!status` shows the address to open.
+
+**Addresses to log in:**
+
+| Where you are | Join this Wi-Fi | Open |
+|---|---|---|
+| TidyOS hotspot (first start, no home Wi-Fi yet, or Settings → Run TidyOS Hotspot) | **TidyOS-Setup**, password `tidyos123` | **http://192.168.4.1** |
+| Home Wi-Fi | your own | the address on the bottom bar (e.g. `http://10.0.0.205`) or **http://tidyos.local** |
+| File sharing | either of the above | same address plus **:8081** (e.g. `http://192.168.4.1:8081`, `http://tidyos.local:8081`) |
 
 How it works: TidyOS still draws into its normal 640 × 480 screen memory. A small web server on port 80 sends only the rows that changed to the browser over a WebSocket (about 20 updates a second), and the browser sends keys, clicks, wheel and touches back. A phone's on-screen keyboard works through the **Keyboard** button in the top bar.
 

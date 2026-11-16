@@ -59,7 +59,7 @@ static const char * macMaker(const uint8_t * m)
   return "";
 }
 
-static void scanTask(void *)
+static void scanTaskBody(void * arg)
 {
   esp_netif_t * en = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
   int nifIdx = en ? esp_netif_get_netif_impl_index(en) : 0;
@@ -115,8 +115,12 @@ static void scanTask(void *)
   s_scanRun = false;
   s_scanAlive = false;
   s_scanVer++;
-  vTaskDelete(nullptr);
+  return;
 }
+
+// runs the task, then ends it - after the body's locals are destroyed (vTaskDelete
+// inside the body would skip their destructors and leak their memory)
+static void scanTask(void * arg) { scanTaskBody(arg); vTaskDelete(nullptr); }
 
 class ScanApp : public AppFrame {
 public:

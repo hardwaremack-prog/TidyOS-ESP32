@@ -908,6 +908,7 @@ void msgAddAddress(const std::string & address)
   struct Job { std::string host; int port; };
   Job * j = new Job{ host, port };
   xTaskCreatePinnedToCore([](void * arg) {
+   {                                    // (locals destroyed before vTaskDelete, so their memory comes back)
     Job * j = (Job *)arg;
     IPAddress ip;
     std::string addr = j->host;
@@ -917,6 +918,7 @@ void msgAddAddress(const std::string & address)
                   : "Nothing answered at " + addr + ":" + std::to_string(j->port) + " - is The Shelf running there?");
     bump();
     delete j;
+   }
     vTaskDelete(nullptr);
   }, "msgadd", 6144, j, 1, nullptr, 0);
 }

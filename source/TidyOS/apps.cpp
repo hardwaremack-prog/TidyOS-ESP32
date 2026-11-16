@@ -2437,7 +2437,7 @@ static volatile bool     s_burn[2] = { false, false };
 static volatile uint32_t s_burnOps[2] = { 0, 0 };
 static volatile bool     s_burnAlive[2] = { false, false };
 static volatile float    s_burnSink;
-static void burnTask(void * arg)
+static void burnTaskBody(void * arg)
 {
   int c = (int)(intptr_t)arg;
   float x = 1.0001f;
@@ -2453,8 +2453,12 @@ static void burnTask(void * arg)
   }
   s_burn[c] = false;
   s_burnAlive[c] = false;
-  vTaskDelete(nullptr);
+  return;
 }
+
+// runs the task, then ends it - after the body's locals are destroyed (vTaskDelete
+// inside the body would skip their destructors and leak their memory)
+static void burnTask(void * arg) { burnTaskBody(arg); vTaskDelete(nullptr); }
 static bool burnStart(int c)
 {
   if (s_burnAlive[c]) return true;
@@ -3050,7 +3054,7 @@ static int pingOnce(int sock, uint32_t ip, uint16_t seq, int timeoutMs)
   }
 }
 
-static void pingTask(void *)
+static void pingTaskBody(void * arg)
 {
   int sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
   uint16_t seq = 1;
@@ -3094,8 +3098,12 @@ static void pingTask(void *)
   else { std::lock_guard<std::mutex> lk(s_pmx); plog("Could not open a ping socket"); s_pChanged++; }
   s_pRun = false;
   s_pTaskAlive = false;
-  vTaskDelete(nullptr);
+  return;
 }
+
+// runs the task, then ends it - after the body's locals are destroyed (vTaskDelete
+// inside the body would skip their destructors and leak their memory)
+static void pingTask(void * arg) { pingTaskBody(arg); vTaskDelete(nullptr); }
 
 class PingApp : public AppFrame {
 public:

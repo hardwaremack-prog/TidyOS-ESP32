@@ -236,7 +236,7 @@ static std::string vaultJson(const LVault & v)
 
 // ---- crypto (the slow part, PBKDF2, runs on its own task so the screen keeps working)
 struct KdfJob { std::string pw; uint8_t salt[16]; size_t saltLen; uint32_t iter; uint8_t key[32]; volatile int done; int err; };
-static void kdfTask(void * arg)
+static void kdfTaskBody(void * arg)
 {
   auto j = (KdfJob *)arg;
   mbedtls_md_context_t md;
@@ -245,8 +245,12 @@ static void kdfTask(void * arg)
   if (!j->err) j->err = mbedtls_pkcs5_pbkdf2_hmac(&md, (const unsigned char *)j->pw.data(), j->pw.size(), j->salt, j->saltLen, j->iter, 32, j->key);
   mbedtls_md_free(&md);
   j->done = 1;
-  vTaskDelete(nullptr);
+  return;
 }
+
+// runs the task, then ends it - after the body's locals are destroyed (vTaskDelete
+// inside the body would skip their destructors and leak their memory)
+static void kdfTask(void * arg) { kdfTaskBody(arg); vTaskDelete(nullptr); }
 
 // derive the key with a small "please wait" window; false if it failed or memory ran out
 static bool deriveKeyUI(const std::string & pw, const uint8_t * salt, size_t saltLen, uint32_t iter, uint8_t * key)

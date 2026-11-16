@@ -484,7 +484,7 @@ static bool httpGet(const std::string & url0, std::function<bool(const char *, s
   return false;
 }
 
-static void fetchTask(void *)
+static void fetchTaskBody(void * arg)
 {
   std::string url = s_url, err, finalUrl;
   std::string out;
@@ -511,8 +511,12 @@ static void fetchTask(void *)
   if (out.empty() && err.empty()) err = "The page was empty.";
   if (err.empty()) s_result = std::move(out); else s_result = err;
   s_state  = err.empty() ? FETCH_DONE : FETCH_ERROR;
-  vTaskDelete(nullptr);
+  return;
 }
+
+// runs the task, then ends it - after the body's locals are destroyed (vTaskDelete
+// inside the body would skip their destructors and leak their memory)
+static void fetchTask(void * arg) { fetchTaskBody(arg); vTaskDelete(nullptr); }
 
 void fetchStart(const std::string & url)
 {

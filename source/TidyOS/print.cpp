@@ -309,7 +309,7 @@ struct FoundPrinter { std::string label, uri; };
 static std::vector<FoundPrinter> s_found;
 static volatile bool s_finding = false;
 
-static void findTask(void *)
+static void findTaskBody(void * arg)
 {
   netMdnsBegin();
   std::vector<FoundPrinter> list;
@@ -326,8 +326,12 @@ static void findTask(void *)
   }
   s_found = list;
   s_finding = false;
-  vTaskDelete(nullptr);
+  return;
 }
+
+// runs the task, then ends it - after the body's locals are destroyed (vTaskDelete
+// inside the body would skip their destructors and leak their memory)
+static void findTask(void * arg) { findTaskBody(arg); vTaskDelete(nullptr); }
 
 // ====================================================================== the print job (runs in the background)
 
@@ -392,7 +396,7 @@ static bool helperPrint(const PrintDoc & doc, std::string & msg)
   return ok;
 }
 
-static void jobTask(void *)
+static void jobTaskBody(void * arg)
 {
   const PrintDoc & doc = *s_doc;
   std::string err, msg;
@@ -423,8 +427,12 @@ static void jobTask(void *)
   }
   setMsg(msg);
   s_jobState = ok ? 2 : 3;
-  vTaskDelete(nullptr);
+  return;
 }
+
+// runs the task, then ends it - after the body's locals are destroyed (vTaskDelete
+// inside the body would skip their destructors and leak their memory)
+static void jobTask(void * arg) { jobTaskBody(arg); vTaskDelete(nullptr); }
 
 static void startJob(int kind)
 {

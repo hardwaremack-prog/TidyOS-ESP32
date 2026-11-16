@@ -119,6 +119,17 @@
   </div>
 
   <div class="card">
+    <h2>Logging in: addresses</h2>
+    <table>
+      <tr><th>Where you are</th><th>Join this Wi-Fi</th><th>Open in the browser</th></tr>
+      <tr class="html5-only"><td><b>TidyOS hotspot</b> (first start, when it can't join your Wi-Fi, or with <b>Settings → Run TidyOS Hotspot</b> on)</td><td><b>TidyOS-Setup</b><br>password <code>tidyos123</code></td><td><a href="http://192.168.4.1">http://192.168.4.1</a> (the desktop usually pops up by itself)</td></tr>
+      <tr class="html5-only"><td><b>Home Wi-Fi</b> (after Settings → Connect → Save)</td><td>your own Wi-Fi</td><td>the address shown on TidyOS's bottom bar, e.g. <code>http://10.0.0.205</code> or <code>http://192.168.1.40</code><br>or <a href="http://tidyos.local">http://tidyos.local</a> (most PCs, iPhones and Macs)</td></tr>
+      <tr class="html5-only"><td><b>File sharing</b> (Settings → Share the SD card)</td><td>same as above</td><td>the same address with <code>:8081</code>, e.g. <code>http://10.0.0.205:8081</code>, <code>http://192.168.4.1:8081</code> or <code>http://tidyos.local:8081</code></td></tr>
+      <tr class="vga-only"><td><b>File sharing</b> (Settings → Share the SD card)</td><td>your own Wi-Fi</td><td>the address shown on TidyOS's bottom bar, e.g. <code>http://192.168.1.40</code>, or <a href="http://tidyos.local">http://tidyos.local</a></td></tr>
+    </table>
+    <p class="note">Can't find the address? It's on the bottom bar of the TidyOS desktop, in Task Manager → Network, or type <code>!status</code> in a serial monitor at 115200. Your router may hand out a different address after a restart; a DHCP reservation for the board keeps it the same. One browser at a time can show the HTML5 desktop.</p>
+  </div>
+  <div class="card">
     <h2>Apps</h2>
     <p>Calculator · <b>Neat Lite</b> (writing, spell check) · <b>Tidy Lite</b> (spreadsheet) · <b>Ready Lite</b> (to-do) · <b>Steady Lite</b> (bills) · <b>Rugged Lite</b> (grid-down guide) · <b>Messages</b> (The Shelf + Coms mesh) · Browser · Files · Settings · Task Manager</p>
     <p><b>Printing:</b> network printers (found automatically), through a Pi with CUPS, or Save as PDF.</p>
