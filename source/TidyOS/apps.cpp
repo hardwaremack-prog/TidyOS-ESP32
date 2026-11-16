@@ -3394,5 +3394,7 @@ void openSwitches()
 #include "netscan_app.h"
 #include "clock_apps.h"
 #include "latch_app.h"
-#include "web_apps.h"
+#ifdef TIDYOS_HTML5
+#include "web_apps.h"          // HTML Games / HTML Programs (browser edition only)
+#endif
 #include "gitstore_app.h"

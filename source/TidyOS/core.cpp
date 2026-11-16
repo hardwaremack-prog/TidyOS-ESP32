@@ -540,8 +540,10 @@ static const DeskIcon ICONS[] = {
   { "Screenshot", ART_SHOT,  nullptr, openShot },
   { "Clock",      ART_CLOCK, nullptr, openClock },
   { "Latch",      ART_LOCK,  nullptr, openLatch },
+#ifdef TIDYOS_HTML5                    // (they open in a web browser: not in the VGA edition)
   { "HTML Games", ART_HTMLG, nullptr, openHtmlGames },
   { "HTML Programs", ART_HTMLP, nullptr, openHtmlPrograms },
+#endif
   { "Git-Store",  ART_CLOUD, nullptr, openGitStore },
   { "Switches",   ART_SD,    nullptr, openSwitches },
 };
