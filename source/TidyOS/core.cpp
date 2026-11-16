@@ -805,7 +805,7 @@ private:
       y += 28;
       cv->drawText(&FONT_std_14, x, y, gSet.ssid.length() ? "Joining your Wi-Fi..." : "Open Settings to join your home Wi-Fi.");
       y += 20;
-      cv->drawText(&FONT_std_14, x, y, "Then open http://tidyos.local");
+      cv->drawText(&FONT_std_14, x, y, ("Then open http://" + boardHost() + ".local").c_str());
       y += 28;
       cv->setBrushColor(T.desk);
       cv->fillRectangle(x, y, SCREEN_W - 1, y + 16);

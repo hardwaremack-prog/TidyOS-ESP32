@@ -43,7 +43,7 @@ static WiFiClient    s_ws;
 static volatile bool s_view = false;
 static uint32_t      s_hash[SCREEN_H];
 static uint32_t      s_apSince = 0, s_connSince = 0;
-static char          s_sentHome[64];      // last "home Wi-Fi" address sent to this browser
+static char          s_sentHome[80];      // last "home Wi-Fi" address sent to this browser
 static char          s_mediaQ[4][300];    // media commands waiting for the page (small ring)
 static volatile uint8_t s_mqW = 0, s_mqR = 0;
 static portMUX_TYPE  s_mqMux = portMUX_INITIALIZER_UNLOCKED;
@@ -104,13 +104,13 @@ function connect(){
   else if(d[0]==8){var t=new TextDecoder().decode(d.subarray(1)).split('\n');ver=t[0];upBase=parseInt(t[1])||0;upAt=Date.now();}
   else if(d[0]==9)media(new TextDecoder().decode(d.subarray(1)));
   else if(d[0]==3){kicked=true;show('TidyOS was opened in another browser.',true);}
-  else if(d[0]==7){var t=new TextDecoder().decode(d.subarray(1)).split('\n');home={ssid:t[0],ip:t[1]};
+  else if(d[0]==7){var t=new TextDecoder().decode(d.subarray(1)).split('\n');home={ssid:t[0],ip:t[1],host:t[2]||''};
    var hb=document.getElementById('home');
-   if(location.hostname!=home.ip&&location.hostname!='tidyos.local'){hb.innerHTML='TidyOS is on <b></b> now. Switch this device to that Wi-Fi, then open <a href="http://'+home.ip+'/">http://'+home.ip+'</a> or <a href="http://tidyos.local/">http://tidyos.local</a>';hb.querySelector('b').textContent=home.ssid;hb.style.display='block';}
+   if(location.hostname!=home.ip&&location.hostname.slice(-6)!='.local'){var hn=(home.host||'')+'.local';hb.innerHTML='TidyOS is on <b></b> now. Switch this device to that Wi-Fi, then open <a href="http://'+home.ip+'/">http://'+home.ip+'</a>'+(home.host?' or <a href="http://'+hn+'/">http://'+hn+'</a>':'');hb.querySelector('b').textContent=home.ssid;hb.style.display='block';}
    else hb.style.display='none';}};
  ws.onclose=function(){st.textContent='Disconnected';if(!kicked){
   var t='Lost connection - trying again...';
-  if(location.hostname=='192.168.4.1')t='Lost the TidyOS-Setup hotspot - trying again...\nIf TidyOS just joined your Wi-Fi, switch this device to '+(home?home.ssid:'that Wi-Fi')+' and open http://'+(home?home.ip:'tidyos.local');
+  if(location.hostname=='192.168.4.1')t='Lost the TidyOS-Setup hotspot - trying again...\nIf TidyOS just joined your Wi-Fi, switch this device to '+(home?home.ssid:'that Wi-Fi')+' and open http://'+(home?home.ip:'the address on its screen');
   show(t);setTimeout(connect,2000);}};
 }
 btn.onclick=function(){connect();};
@@ -678,11 +678,13 @@ static void screenTask(void *)
       else if (now - lastAp == 0 && WiFi.status() == WL_CONNECTED) {
         // tell the page where TidyOS lives on the home Wi-Fi (it shows this if it's on the hotspot)
         // (fixed buffers: nothing is allocated here, it runs every second)
-        static char m[64];
+        static char m[80];
+        static char hn[24] = "";
+        if (!hn[0]) strlcpy(hn, boardHost().c_str(), sizeof(hn));
         IPAddress ip = WiFi.localIP();
         wifi_ap_record_t ap;
         const char * ssid = esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? (const char *)ap.ssid : "";
-        int n = snprintf(m, sizeof(m), "\x07%.32s\n%u.%u.%u.%u", ssid, ip[0], ip[1], ip[2], ip[3]);
+        int n = snprintf(m, sizeof(m), "\x07%.32s\n%u.%u.%u.%u\n%s", ssid, ip[0], ip[1], ip[2], ip[3], hn);
         if (n > 0 && n < (int)sizeof(m) && strcmp(m + 1, s_sentHome) != 0 && wsQueue((const uint8_t *)m, n))
           strncpy(s_sentHome, m + 1, sizeof(s_sentHome) - 1);
       }

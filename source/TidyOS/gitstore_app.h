@@ -25,6 +25,13 @@ std::string boardId()
   return b;
 }
 
+std::string boardHost()                       // "tidyos-a1b2c3": this board's name on the network (.local)
+{
+  std::string h = boardId();
+  for (auto & c : h) c = tolower((unsigned char)c);
+  return h;
+}
+
 // the dashed "drop files to cloud" box
 class CloudDrop : public uiControl {
 public:

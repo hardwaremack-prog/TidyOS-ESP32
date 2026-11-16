@@ -30,8 +30,16 @@ public:
   ~Board() { stopTimer(); }
   bool paused = false;      // the game's Pause button
 
+  // action games redraw the whole field many times a second: the mouse pointer (drawn on top of
+  // the picture, with what was under it saved) then smeared the lines. These hide it over the field.
+  bool hideCursor = false;
   void processEvent(uiEvent * e) override {
     uiControl::processEvent(e);
+    if (hideCursor && (e->id == UIEVT_MOUSEENTER || (e->id == UIEVT_MOUSEMOVE && !m_cursorHidden))) {
+      app()->displayController()->setMouseCursor(nullptr);
+      m_cursorHidden = true;
+    }
+    if (e->id == UIEVT_MOUSELEAVE) m_cursorHidden = false;
     switch (e->id) {
       case UIEVT_PAINT:
         beginPaint(e, clientRect(uiOrigin::Window));
@@ -89,6 +97,7 @@ public:
   void stopTimer() { if (m_timer) { app()->killTimer(m_timer); m_timer = nullptr; } }
 
 protected:
+  bool m_cursorHidden = false;
   uiTimerHandle m_timer = nullptr;
   Rect cr() { return clientRect(uiOrigin::Window); }
   // action games: collect the areas that changed this tick (board coords), then repaint them
@@ -1215,6 +1224,7 @@ public:
       case 9:  board = new CheckersBoard(this, Point(x, y)); break;
       default: board = new Board2048(this, Point(x, y)); break;
     }
+    if (i == 4 || i == 7) board->hideCursor = true;     // Bricks, Missile Command: own paddle / crosshair
     Size bs = board->size();
     int w = imax(bs.width + 12 + o.X * 2, 300), h = bs.height + y + 8;
     w = imax(w, (i == 0 || i == 1 || (i >= 4 && i <= 8)) ? 520 : 446);   // room for the music bar

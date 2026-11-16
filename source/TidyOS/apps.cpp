@@ -1735,7 +1735,7 @@ public:
     passEd->textEditProps().passwordMode = true;
     button("Connect",       cx + 72,  y + 71, 96)->onClick = [this]() {
       if (screenApOn() && !netConnected()) {
-        std::string m = std::string("Next: put this device on ") + ssidEd->text() + ", open tidyos.local";
+        std::string m = std::string("Next: put this device on ") + ssidEd->text() + ", open " + boardHost() + ".local";
         if (gApp->messageBox("Joining your Wi-Fi", m.c_str(), "Join", "Cancel", nullptr, uiMessageBoxIcon::Info) != uiMessageBoxResult::Button1) return;
       }
       netConnect(ssidEd->text(), passEd->text());
@@ -2574,7 +2574,7 @@ static const char * taskInfo(const char * n)
     { "cputest0", "CPU test (core 0)" }, { "cputest1", "CPU test (core 1)" }, { "keyrep", "Key repeat" }, { "serkbd", "Serial keyboard" }, { "wifi", "Wi-Fi driver" }, { "tiT", "TCP/IP network" },
     { "sys_evt", "System events" }, { "esp_timer", "System timers" }, { "Tmr Svc", "Timer service" }, { "ipc0", "Core 0 helper" },
     { "ipc1", "Core 1 helper" }, { "shelfmsg", "Shelf messaging + mesh" }, { "fileweb", "File sharing server" },
-    { "fetch", "Browser download" }, { "led", "Blue status light" }, { "print", "Printing" }, { "findprn", "Printer search" }, { "mdns", "tidyos.local name" },
+    { "fetch", "Browser download" }, { "led", "Blue status light" }, { "print", "Printing" }, { "findprn", "Printer search" }, { "mdns", ".local name" },
     { "ping", "Router ping" }, { "msgadd", "Shelf lookup" }, { "FabGL", "Screen drawing" },
   };
   for (auto & m : map) if (!strcmp(m[0], n)) return m[1];
@@ -2836,7 +2836,7 @@ public:
       snprintf(b, sizeof(b), "  Network     %s", WiFi.SSID().c_str()); l.push_back(b);
       snprintf(b, sizeof(b), "  Signal      %d dBm  %s  %s", rssi, bar(bars / 4.0, 8).c_str(), bars >= 3 ? "good" : bars == 2 ? "fair" : "weak"); l.push_back(b);
       snprintf(b, sizeof(b), "  Channel     %d   (2.4 GHz)    Router %s", (int)WiFi.channel(), WiFi.BSSIDstr().c_str()); l.push_back(b);
-      snprintf(b, sizeof(b), "  Address     %s  (tidyos.local)", WiFi.localIP().toString().c_str()); l.push_back(b);
+      snprintf(b, sizeof(b), "  Address     %s  (%s.local)", WiFi.localIP().toString().c_str(), boardHost().c_str()); l.push_back(b);
       snprintf(b, sizeof(b), "  Subnet      %s    Gateway %s", WiFi.subnetMask().toString().c_str(), WiFi.gatewayIP().toString().c_str()); l.push_back(b);
       snprintf(b, sizeof(b), "  DNS         %s", WiFi.dnsIP().toString().c_str()); l.push_back(b);
       if (s_pingMs >= 0) snprintf(b, sizeof(b), "  Router ping %d ms    lost %d of %d", (int)s_pingMs, (int)s_pingLost, (int)s_pingSent);

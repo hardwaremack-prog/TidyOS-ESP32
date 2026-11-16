@@ -23,7 +23,7 @@ void netMdnsBegin()
 {
   static bool up = false;
   if (!up && WiFi.status() == WL_CONNECTED) {
-    up = MDNS.begin("tidyos");
+    up = MDNS.begin(boardHost().c_str());    // http://tidyos-a1b2c3.local
     if (up) MDNS.addService("http", "tcp", 80);
   }
 }

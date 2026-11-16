@@ -86,7 +86,8 @@ void netBegin()
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.setHostname("tidyos");
+  static std::string host = boardHost();      // unique, so several TidyOS boards can share a Wi-Fi
+  WiFi.setHostname(host.c_str());
 #ifdef TIDYOS_HTML5
   WiFi.setSleep(false);       // power saving makes the hotspot drop joins (and the browser view laggy)
 #endif
