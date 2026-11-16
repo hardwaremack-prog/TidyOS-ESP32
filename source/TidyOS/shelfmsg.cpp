@@ -803,7 +803,8 @@ void msgBegin()
   s_mp.begin("tidymsg", false);
   s_myId   = s_mp.getString("id", "").c_str();
   if (!validId(s_myId)) { s_myId = uuid4(); s_mp.putString("id", s_myId.c_str()); }
-  s_myName = s_mp.getString("name", "TidyOS ESP32").c_str();
+  s_myName = s_mp.getString("name", "").c_str();
+  if (s_myName.empty() || s_myName == "TidyOS ESP32") s_myName = boardId();   // each board its own name, e.g. TidyOS-A93160
   char t[17];
   snprintf(t, sizeof(t), "%08x%08x", (unsigned)esp_random(), (unsigned)esp_random());
   s_instance = t;

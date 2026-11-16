@@ -268,9 +268,11 @@ static void drawTempGraph(Canvas * cv, int gx, int gy, int gw, int gh)
     if (gColors >= 8) for (int k = gx + 1; k < gx + gw; ++k) cv->setPixel(k, y + 1);
     // "freezing ->" to the left of the graph, pointing at the line
     cv->setPenColor(red);
+#ifdef TIDYOS_HTML5                                  // (the VGA edition has no room left for the small font)
     int fw = cv->textExtent(&FONT_5x7, "freezing");
     cv->setBrushColor(T.win);
     cv->drawText(&FONT_5x7, gx - 13 - fw, y - 3, "freezing");
+#endif
     cv->drawLine(gx - 11, y, gx - 2, y);
     cv->drawLine(gx - 5, y - 3, gx - 2, y);
     cv->drawLine(gx - 5, y + 3, gx - 2, y);

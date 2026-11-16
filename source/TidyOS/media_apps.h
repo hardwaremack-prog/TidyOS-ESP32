@@ -494,11 +494,13 @@ static std::string s_qPlaying;
 static bool s_qPaused = false;
 static int  s_qLast = 2;
 
+static float s_qVol = 0.8f;
 static void quickPlayFile(const std::string & p)
 {
   fileServerMedia(true);
   s_qPlaying = p; s_qPaused = false; s_qLast = 2;
-  screenMedia("v 0.80");
+  char v[24]; snprintf(v, sizeof(v), "v %.2f", s_qVol);
+  screenMedia(v);
   screenMedia((isMidiFile(p.c_str()) ? "m " : "a ") + fileServerMediaPath(p));
 }
 
@@ -524,6 +526,47 @@ void musicQuickPause()
 {
   if (MusicApp::inst) { auto m = (MusicApp *)MusicApp::inst; if (!m->playing.empty() && !m->paused) m->playPause(); return; }
   if (!s_qPlaying.empty() && !s_qPaused) { screenMedia("p"); s_qPaused = true; }
+}
+
+// the games' music bar: MP3 / MIDI (play or pause), Next, volume
+std::string musicQuickToggle(bool midi)
+{
+  if (MusicApp::inst) {
+    auto m = (MusicApp *)MusicApp::inst;
+    m->playPause();
+    return m->playing.empty() ? "No music files found." : (m->paused ? "Music paused." : "Music: " + baseName(m->playing));
+  }
+  if (WiFi.status() != WL_CONNECTED && !screenViewer()) return "Music plays in the web browser.";
+  if (!screenViewer()) return "Music plays in the web browser.";
+  bool same = !s_qPlaying.empty() && isMidiFile(s_qPlaying.c_str()) == midi;
+  if (same && !s_qPaused) { screenMedia("p"); s_qPaused = true; return "Music paused."; }
+  if (same && s_qPaused)  { screenMedia("r"); s_qPaused = false; return "Music: " + baseName(s_qPlaying); }
+  std::string p = randomSong(mediaFolder(midi), "", midi);
+  if (p.empty()) return midi ? "No .mid files in the MIDI folder on the card." : "No music in the Music folder on the card.";
+  quickPlayFile(p);
+  return "Music: " + baseName(p);
+}
+
+std::string musicQuickNext()
+{
+  if (MusicApp::inst) { auto m = (MusicApp *)MusicApp::inst; m->skip(1); return m->playing.empty() ? "" : "Music: " + baseName(m->playing); }
+  if (s_qPlaying.empty()) return "Press MP3 or MIDI first.";
+  std::string n = randomSong(dirOf(s_qPlaying), baseName(s_qPlaying), isMidiFile(s_qPlaying.c_str()));
+  if (n.empty()) return "No other songs there.";
+  quickPlayFile(n);
+  return "Music: " + baseName(n);
+}
+
+std::string musicQuickVol(int d)
+{
+  if (MusicApp::inst) { auto m = (MusicApp *)MusicApp::inst; m->setVol(m->vol + d * 0.1f); s_qVol = m->vol; }
+  else {
+    s_qVol = fmaxf(0, fminf(1, s_qVol + d * 0.1f));
+    char v[24]; snprintf(v, sizeof(v), "v %.2f", s_qVol);
+    screenMedia(v);
+  }
+  char b[32]; snprintf(b, sizeof(b), "Volume %d%%", (int)(s_qVol * 100 + 0.5f));
+  return b;
 }
 
 bool musicQuickPlaying()          // for Sammy's one music button

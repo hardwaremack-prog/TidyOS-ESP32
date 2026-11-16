@@ -1139,6 +1139,9 @@ public:
 // ====================================================================== game windows
 
 std::string musicQuickPlay();     // media_apps.h: music while you play
+std::string musicQuickToggle(bool midi);
+std::string musicQuickNext();
+std::string musicQuickVol(int d);
 void musicQuickPause();
 void musicQuickTick();
 void musicQuickStop();
@@ -1146,7 +1149,7 @@ bool musicQuickPlaying();
 
 class GameFrame : public uiFrame {
 public:
-  static GameFrame * open[9];
+  static GameFrame * open[10];
   int idx;
   Board * board;
   uiLabel * info;
@@ -1158,14 +1161,14 @@ public:
     frameProps().hasMaximizeButton = false;
     frameProps().hasMinimizeButton = true;
     frameProps().resizeable = false;
-    static const char * titles[9] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop", "Deep Drill", "Missile Command", "StuntCopter" };
+    static const char * titles[10] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop", "Deep Drill", "Missile Command", "StuntCopter", "Checkers" };
     setTitle(titles[i]);
     Point o = clientOrigin(this);
     int x = o.X + 6, y = o.Y + 6;
     auto nb = S(new uiButton(this, "New game", Point(x, y), Size(90, 22)));
     nb->setFocusIndex(-1);
     int infoX = x + 98;
-    if (i != 1 && i != 3) {                         // games that move: a Pause button
+    if (i != 1 && i != 3 && i != 9) {               // games that move: a Pause button
       pauseBtn = S(new uiButton(this, "Pause", Point(infoX, y), Size(64, 22)));
       pauseBtn->setFocusIndex(-1);
       pauseBtn->onClick = [this]() {
@@ -1176,23 +1179,30 @@ public:
       };
       infoX += 70;
     }
-    if (i == 0) {                                   // Sammy: music while you play (one button: play / pause)
-      musicBtn = S(new uiButton(this, musicQuickPlaying() ? "Pause music" : "Play music", Point(infoX, y), Size(96, 22)));
-      musicBtn->setFocusIndex(-1);
-      musicBtn->onClick = [this]() {
-        std::string m;
-        if (musicQuickPlaying()) { musicQuickPause(); m = "Music paused."; }
-        else { info->setText("Finding a song..."); info->repaint(); m = musicQuickPlay(); }
-        info->setText(m.c_str()); info->repaint();
-        musicBtn->setText(musicQuickPlaying() ? "Pause music" : "Play music"); musicBtn->repaint();
-        gApp->setFocusedWindow(board);
-      };
-      m_musicTimer = gApp->setTimer(this, 1000);
-      infoX += 102;
+    // music while you play (every game): MP3 / MIDI play-pause, Next, volume
+    {
+      int mx = x + 98 + 70 + 6;
+      struct MB { const char * t; int w; int what; };
+      static const MB mb[5] = { { "MP3", 48, 0 }, { "MIDI", 48, 1 }, { "Next", 48, 2 }, { "Vol-", 40, 3 }, { "Vol+", 40, 4 } };
+      for (auto & d : mb) {
+        auto b = S(new uiButton(this, d.t, Point(mx, y), Size(d.w, 22)));
+        b->setFocusIndex(-1);
+        int what = d.what;
+        b->onClick = [this, what]() {
+          if (what <= 1) { info->setText("Finding a song..."); info->repaint(); }
+          std::string m = what <= 1 ? musicQuickToggle(what == 1) : what == 2 ? musicQuickNext() : musicQuickVol(what == 3 ? -1 : 1);
+          info->setText(m.c_str()); info->repaint();
+          gApp->setFocusedWindow(board);
+        };
+        mx += d.w + 4;
+      }
+      m_musicTimer = gApp->setTimer(this, 1000);     // next song when one ends
     }
-    info = S(new uiLabel(this, "", Point(infoX, y + 3), Size(400, 18)));
+    infoX = x;
+    y += 26;
+    info = S(new uiLabel(this, "", Point(infoX, y), Size(400, 16)));
     info->labelStyle().textFont = &FONT_std_12;
-    y += 30;
+    y += 20;
     switch (i) {
       case 0:  board = new SnakeBoard(this, Point(x, y)); break;
       case 1:  board = new MinesBoard(this, Point(x, y)); break;
@@ -1202,11 +1212,12 @@ public:
       case 6:  board = new DrillBoard(this, Point(x, y)); break;
       case 7:  board = new MissileBoard(this, Point(x, y)); break;
       case 8:  board = new CopterBoard(this, Point(x, y)); break;
+      case 9:  board = new CheckersBoard(this, Point(x, y)); break;
       default: board = new Board2048(this, Point(x, y)); break;
     }
     Size bs = board->size();
     int w = imax(bs.width + 12 + o.X * 2, 300), h = bs.height + y + 8;
-    if (i == 0 || i == 1 || i >= 4) w = imax(w, 520);
+    w = imax(w, (i == 0 || i == 1 || (i >= 4 && i <= 8)) ? 520 : 446);   // room for the music bar
     info->labelStyle().textAlign = uiHAlign::Left;
     gApp->resizeWindow(info, Size(imax(60, w - 24 - (infoX - x)), 18));
     gApp->reshapeWindow(this, Rect((SCREEN_W - w) / 2, imax(0, (SCREEN_H - 22 - h) / 2), (SCREEN_W - w) / 2 + w - 1, imax(0, (SCREEN_H - 22 - h) / 2) + h - 1));
@@ -1260,7 +1271,7 @@ public:
     if (e->id == UIEVT_ACTIVATE) gApp->setFocusedWindow(board);
   }
 };
-GameFrame * GameFrame::open[9] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+GameFrame * GameFrame::open[10] = {};
 
 static void openGame(int i)
 {
@@ -1280,11 +1291,11 @@ public:
     frameProps().hasMinimizeButton = true;
     frameProps().resizeable = false;
     Point o = clientOrigin(this);
-    static const char * names[9] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop", "Deep Drill", "Missile Command", "StuntCopter" };
-    static const char * about[9] = { "Eat apples, don't bite your tail", "Find the 40 mines", "Stack and clear lines", "Slide tiles to make 2048",
+    static const char * names[10] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop", "Deep Drill", "Missile Command", "StuntCopter", "Checkers" };
+    static const char * about[10] = { "Eat apples, don't bite your tail", "Find the 40 mines", "Stack and clear lines", "Slide tiles to make 2048",
                                      "Arkanoid-style: break every brick", "Airborne!-style: guard the gun", "Dig for ore, upgrade your rig",
-                                     "Save the cities from missiles", "Drop the stuntman in the hay" };
-    for (int i = 0; i < 9; ++i) {
+                                     "Save the cities from missiles", "Drop the stuntman in the hay", "Play checkers against TidyOS" };
+    for (int i = 0; i < 10; ++i) {
       int col = i / 5, row = i % 5;
       auto b = S(new uiButton(this, names[i], Point(o.X + 10 + col * 272, o.Y + 10 + row * 60), Size(260, 30)));
       b->buttonStyle().textFont = &FONT_std_16;

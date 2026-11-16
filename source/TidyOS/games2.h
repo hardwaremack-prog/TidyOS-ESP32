@@ -710,3 +710,194 @@ public:
     if (over) { cv->drawText(&FONT_std_24, ox + W / 2 - 64, oy + 110, "GAME OVER"); cv->drawText(&FONT_std_14, ox + W / 2 - 74, oy + 144, "Click to play again"); }
   }
 };
+
+// ====================================================================== Checkers (you: white, from the bottom; TidyOS: black)
+class CheckersBoard : public Board {
+public:
+  static const int CS = 46;
+  CheckersBoard(uiWindow * p, Point pos) : Board(p, pos, Size(8 * CS + 2, 8 * CS + 2)) { newGame(); }
+
+  // 0 empty, 1 your man, 2 your king, 3 my man, 4 my king
+  struct Pos { int8_t b[64]; };
+  struct Move { int8_t from, n; int8_t to[10]; int8_t cap[10]; };
+  Pos pos;
+  int sel = -1, nPath = 0;
+  int8_t path[10];
+  bool myTurn = false, over = false;
+  std::vector<Move> legal;
+
+  static bool mine(int v, bool cpu) { return cpu ? (v == 3 || v == 4) : (v == 1 || v == 2); }
+  static bool king(int v) { return v == 2 || v == 4; }
+
+  void newGame() override {
+    memset(pos.b, 0, 64);
+    for (int s = 0; s < 64; ++s) {
+      int x = s % 8, y = s / 8;
+      if ((x + y) % 2 == 0) continue;
+      if (y < 3) pos.b[s] = 3; else if (y > 4) pos.b[s] = 1;
+    }
+    sel = -1; nPath = 0; myTurn = false; over = false;
+    stopTimer();
+    gen(pos, false, legal);
+    repaint();
+    say("Your move (white). Click a piece, then where it goes. Jumps are a must.");
+  }
+  void say(const char * m) { if (onScore) onScore(0, m); }
+
+  // jumps (with every continuation) for one piece
+  static void jumps(const Pos & p, int s, bool cpu, Move & m, std::vector<Move> & out) {
+    int v = p.b[s], x = s % 8, y = s / 8;
+    bool any = false;
+    for (int dy = -1; dy <= 1; dy += 2) {
+      if (!king(v) && (cpu ? dy < 0 : dy > 0)) continue;
+      for (int dx = -1; dx <= 1; dx += 2) {
+        int mx = x + dx, my = y + dy, lx = x + 2 * dx, ly = y + 2 * dy;
+        if (lx < 0 || lx > 7 || ly < 0 || ly > 7) continue;
+        int ms = my * 8 + mx, ls = ly * 8 + lx;
+        int mv = p.b[ms];
+        if (!mv || mine(mv, cpu) || p.b[ls] || m.n >= 9) continue;
+        Pos q = p;
+        q.b[ls] = v; q.b[s] = 0; q.b[ms] = 0;
+        bool crowned = false;
+        if (!king(v) && (cpu ? ly == 7 : ly == 0)) { q.b[ls] = cpu ? 4 : 2; crowned = true; }
+        m.to[m.n] = ls; m.cap[m.n] = ms; m.n++;
+        any = true;
+        if (crowned) out.push_back(m);              // being crowned ends the move
+        else jumps(q, ls, cpu, m, out);
+        m.n--;
+      }
+    }
+    if (!any && m.n > 0) out.push_back(m);
+  }
+  static void gen(const Pos & p, bool cpu, std::vector<Move> & out) {
+    out.clear();
+    for (int s = 0; s < 64; ++s) if (mine(p.b[s], cpu)) { Move m; m.from = s; m.n = 0; jumps(p, s, cpu, m, out); }
+    if (!out.empty()) return;                      // a jump is there: it must be taken
+    for (int s = 0; s < 64; ++s) {
+      int v = p.b[s];
+      if (!mine(v, cpu)) continue;
+      int x = s % 8, y = s / 8;
+      for (int dy = -1; dy <= 1; dy += 2) {
+        if (!king(v) && (cpu ? dy < 0 : dy > 0)) continue;
+        for (int dx = -1; dx <= 1; dx += 2) {
+          int nx = x + dx, ny = y + dy;
+          if (nx < 0 || nx > 7 || ny < 0 || ny > 7 || p.b[ny * 8 + nx]) continue;
+          Move m; m.from = s; m.n = 1; m.to[0] = ny * 8 + nx; m.cap[0] = -1;
+          out.push_back(m);
+        }
+      }
+    }
+  }
+  static void apply(Pos & p, const Move & m) {
+    int v = p.b[m.from];
+    p.b[m.from] = 0;
+    for (int i = 0; i < m.n; ++i) if (m.cap[i] >= 0) p.b[m.cap[i]] = 0;
+    int t = m.to[m.n - 1];
+    if (v == 1 && t / 8 == 0) v = 2;
+    if (v == 3 && t / 8 == 7) v = 4;
+    p.b[t] = v;
+  }
+  static int eval(const Pos & p) {                  // good for the computer = positive
+    int e = 0;
+    for (int s = 0; s < 64; ++s) {
+      switch (p.b[s]) {
+        case 1: e -= 100 + (7 - s / 8) * 3; break;
+        case 2: e -= 165; break;
+        case 3: e += 100 + (s / 8) * 3; break;
+        case 4: e += 165; break;
+      }
+    }
+    return e;
+  }
+  static int search(const Pos & p, int depth, bool cpu, int a, int b) {
+    std::vector<Move> ms;
+    gen(p, cpu, ms);
+    if (ms.empty()) return cpu ? -100000 : 100000;     // no moves: that side has lost
+    if (depth == 0) return eval(p);
+    for (auto & m : ms) {
+      Pos q = p; apply(q, m);
+      int v = search(q, depth - 1, !cpu, a, b);
+      if (cpu) { if (v > a) a = v; } else { if (v < b) b = v; }
+      if (a >= b) break;
+    }
+    return cpu ? a : b;
+  }
+  void cpuMove() {
+    std::vector<Move> ms;
+    gen(pos, true, ms);
+    if (ms.empty()) { over = true; say("You win! I'm out of moves. New game to play again."); repaint(); return; }
+    int best = -1000000, pick = 0;
+    for (size_t i = 0; i < ms.size(); ++i) {
+      Pos q = pos; apply(q, ms[i]);
+      int v = search(q, 3, false, -1000000, 1000000) + (int)(esp_random() % 7);   // a little variety
+      if (v > best) { best = v; pick = i; }
+    }
+    apply(pos, ms[pick]);
+    myTurn = false;
+    gen(pos, false, legal);
+    repaint();
+    if (legal.empty()) { over = true; say("I win this one. New game to try again."); }
+    else say(legal[0].cap[0] >= 0 ? "Your move - you have a jump to take." : "Your move.");
+  }
+
+  void tick() override { stopTimer(); if (myTurn && !over) cpuMove(); }
+
+  void click(int px, int py, int) override {
+    if (over || myTurn) return;
+    int x = (px - 1) / CS, y = (py - 1) / CS;
+    if (x < 0 || x > 7 || y < 0 || y > 7) return;
+    int s = y * 8 + x;
+    if (mine(pos.b[s], false)) {                     // pick (or re-pick) a piece
+      bool can = false;
+      for (auto & m : legal) if (m.from == s) can = true;
+      if (!can) { say(legal.empty() ? "No moves." : "That piece can't move now (a jump elsewhere is a must)."); return; }
+      sel = s; nPath = 0; repaint(); return;
+    }
+    if (sel < 0) return;
+    path[nPath] = s;
+    const Move * done = nullptr; bool prefix = false;
+    for (auto & m : legal) {
+      if (m.from != sel || m.n < nPath + 1) continue;
+      bool ok = true;
+      for (int i = 0; i <= nPath; ++i) if (m.to[i] != path[i]) ok = false;
+      if (!ok) continue;
+      if (m.n == nPath + 1) done = &m; else prefix = true;
+    }
+    if (done) {
+      apply(pos, *done);
+      sel = -1; nPath = 0; myTurn = true;
+      repaint();
+      say("Thinking...");
+      startTimer(350);                               // let the move show first
+    } else if (prefix) { ++nPath; repaint(); say("Keep jumping: click the next square."); }
+  }
+
+  void paint(Rect const & clip) override {
+    auto cv = canvas();
+    Rect r = cr();
+    for (int s = 0; s < 64; ++s) {
+      int x = s % 8, y = s / 8;
+      int px = r.X1 + 1 + x * CS, py = r.Y1 + 1 + y * CS;
+      bool dark = (x + y) % 2;
+      cv->setBrushColor(dark ? T.accent : T.win);
+      cv->fillRectangle(px, py, px + CS - 1, py + CS - 1);
+      bool hl = s == sel;
+      for (int i = 0; i < nPath; ++i) if (path[i] == s) hl = true;
+      if (hl) { cv->setPenColor(T.warn); cv->drawRectangle(px + 1, py + 1, px + CS - 2, py + CS - 2); cv->drawRectangle(px + 2, py + 2, px + CS - 3, py + CS - 3); }
+      int v = pos.b[s];
+      if (!v) continue;
+      int cx = px + CS / 2, cy = py + CS / 2, d = CS - 12;
+      cv->setBrushColor(T.text);
+      cv->fillEllipse(cx + 1, cy + 2, d, d);         // edge / shadow
+      cv->setBrushColor(v <= 2 ? T.win : T.text);
+      cv->fillEllipse(cx, cy, d - 2, d - 2);
+      cv->setPenColor(v <= 2 ? T.text : T.face);
+      cv->drawEllipse(cx, cy, d - 12, d - 12);
+      if (king(v)) {                                  // a little crown
+        cv->setBrushColor(v <= 2 ? T.text : T.win);
+        cv->fillRectangle(cx - 8, cy, cx + 8, cy + 3);
+        for (int k = -8; k <= 8; k += 8) cv->fillRectangle(cx + k - 1, cy - 6, cx + k + 1, cy);
+      }
+    }
+  }
+};

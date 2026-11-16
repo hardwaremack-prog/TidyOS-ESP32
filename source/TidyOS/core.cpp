@@ -749,7 +749,7 @@ private:
 
   bool showingHint() {
 #ifdef TIDYOS_HTML5
-    return !gSet.ssid.length() || !netConnected();
+    return false;            // the panel always shows; without Wi-Fi it says what needs Wi-Fi
 #else
     return inputKeyboards() == 0 || inputMice() == 0 || !gSet.ssid.length();
 #endif
@@ -793,7 +793,7 @@ private:
     // welcome / pairing hint - or, once everything is set up, the panel on the right
     if (!showingHint()) { Rect p = deskPanelRect(); if (p.intersects(clip)) drawDeskPanel(cv); }
 #ifdef TIDYOS_HTML5
-    if (!gSet.ssid.length() || !netConnected()) {
+    if (false) {
       int x = CELL_W * COLS + 24, y = 150;
       cv->setPenColor(T.deskText);
       cv->setBrushColor(T.desk);
