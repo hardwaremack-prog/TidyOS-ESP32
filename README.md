@@ -58,7 +58,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Temperature graph:** point at it for the time and temperature; "freezing →" marks the 32° line.
 - **World times show temperatures** for Moscow, Los Angeles and Tokyo.
 - **Games:** a Pause button; Sammy's single Play/Pause music button (and no more lock-up with a big MIDI folder).
-- **Settings → Run TidyOS Hotspot:** keeps the board's TidyOS-xxxxxx hotspot on so phones and PCs can join the board directly (192.168.4.1), even with home Wi-Fi.
+- **Settings → Run TidyOS Hotspot:** switches TidyOS to its own network only (it leaves your home Wi-Fi): phones and PCs join TidyOS-xxxxxx and open 192.168.4.1. No internet while it's on; turn it off to go back to your Wi-Fi.
 - **Start-up:** Mac OS 9-style icon parade with a checklist and a smooth bar.
 - **HTML Games / Programs** read **SD:/games** and **SD:/programs**.
 - Fixed: a false "the installer didn't run" note after a successful update.
@@ -106,7 +106,7 @@ How it works: TidyOS still draws into its normal 640 × 480 screen memory. A sma
 - One browser at a time. Opening TidyOS somewhere else takes over and the first tab says so.
 - Bluetooth is switched off in this edition, and no VGA signal is generated (the picture is only kept in memory for the browser). With 4 colours that leaves about 85 KB free; pick 8 colours or black & white in the start-up switches.
 - In the top bar, **Size** cycles fit → sharp (crisp whole pixels) → 1:1.
-- If it can't join your Wi-Fi within 25 seconds, the board's TidyOS-xxxxxx hotspot comes back. It turns itself off a few minutes after TidyOS is on your home Wi-Fi, unless **Settings → Run TidyOS Hotspot** is on: then it stays up for devices to join TidyOS directly.
+- If it can't join your Wi-Fi within 25 seconds, the board's TidyOS-xxxxxx hotspot comes back. It turns itself off a few minutes after TidyOS is on your home Wi-Fi, unless **Settings → Run TidyOS Hotspot** is on: then TidyOS stays on its own network only and doesn't join your Wi-Fi.
 - Finding it: the bottom bar shows its address (e.g. `10.0.0.205`); `http://tidyos-xxxxxx.local` (the board ID in small letters, e.g. `tidyos-a93160.local`) works on most PCs, iPhones and Macs; each board has its own name, so several can share a Wi-Fi. A DHCP reservation in your router keeps the address from changing.
 - Weather, news and city temperatures are looked up by **your browser** (free Open-Meteo and NPR/BBC feeds), not by the board, so they need the page open.
 - Wi-Fi file sharing moves to port **8081** (`http://tidyos-a93160.local:8081`), because port 80 shows the desktop.
