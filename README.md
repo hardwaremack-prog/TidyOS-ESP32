@@ -35,9 +35,22 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 
 ## What it looks like
 
+*Real screenshots of version 2.5.2 running on a NodeMCU-32S (HTML5 edition, 4 colours), taken from the browser page.*
+
+| | |
+|---|---|
+| ![Desktop](docs/screens/01-desktop.png) | **Desktop** – apps on the left; on the right the time, weather with a 4-day graph (the mouse is over it, showing Sat 11pm 41°, with "freezing →" marking 32°), world times with their temperatures, an affirmation, six headlines and a day/night map. The bottom bar shows the version, board ID, Wi-Fi, RAM and the **Optimize** button. |
+| ![Games](docs/screens/02-games.png) | **Games** – nine games. Every window has **–** (minimize to the bottom bar) next to **X**. |
+| ![Sammy the Snake](docs/screens/03-sammy-paused.png) | **Sammy the Snake** – New game, **Pause / Resume**, and one **Play music / Pause music** button. |
+| ![Clock](docs/screens/04-clock.png) | **Clock** – watch face, world time, alarm with presets, stopwatch. Sammy is minimized on the bottom bar. |
+| ![Music](docs/screens/05-music.png) | **Music** – MP3 and MIDI tabs, volume bar, shuffle. Plays through the browser. |
+| ![Settings](docs/screens/06-settings.png) | **Settings** – Wi-Fi with **Run TidyOS Hotspot**, Bluetooth (VGA edition), browser helper, clock, colours, file sharing and updates. |
+
+### Drawn previews of the other apps
+
 ![TidyOS previews](docs/previews/TidyOS-previews.png)
 
-*These are drawn previews made from TidyOS's own layouts, 4-colour palette and FabGL fonts, not photos of a running board. The real screen should look very close.*
+*These are drawn previews made from TidyOS's own layouts, 4-colour palette and FabGL fonts.*
 
 ### What's new in 2.5
 
