@@ -732,6 +732,11 @@ void screenMedia(const std::string & cmd)
 
 void screenMediaState(int & state, int & pos, int & dur) { state = s_mState; pos = s_mPos; dur = s_mDur; }
 bool screenApOn()   { return s_ap; }
+void screenTrim()            // the Optimize button: let go of what isn't being used
+{
+  if (s_ap && !gSet.hotspot && WiFi.status() == WL_CONNECTED && WiFi.softAPgetStationNum() == 0) apStop();
+  for (auto & p : s_pend) if (!p.used) { p.c.stop(); std::string().swap(p.buf); }
+}
 void screenHotspot(bool on) { gSet.hotspot = on; if (on) apStart(); else if (WiFi.status() == WL_CONNECTED) apStop(); }
 
 std::string screenUrl()

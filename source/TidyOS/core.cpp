@@ -247,6 +247,22 @@ void setSavedLight(uiLabel * l, bool saved)
 static std::vector<uiFrame *> s_minimized;
 static uiControl * s_deskCtl = nullptr;
 static int s_ramX = 330;          // where the RAM text starts on the taskbar
+static Rect s_optBtn;             // the Optimize button after it
+static std::string s_optMsg;      // what Optimize did (shown for a few seconds)
+static uint32_t s_optUntil = 0;
+static void optimizeRam()
+{
+  size_t before = ramFree();
+  WiFi.scanDelete();              // old network lists
+  screenTrim();                   // idle web connections; the setup hotspot when it's not needed
+  vTaskDelay(pdMS_TO_TICKS(400)); // closed connections hand their memory back
+  int freed = ((int)ramFree() - (int)before) / 1024;
+  char b[64];
+  if (freed > 0) snprintf(b, sizeof(b), "Optimized: %dK freed - RAM %uK", freed, (unsigned)(ramFree() / 1024));
+  else snprintf(b, sizeof(b), "Already tidy - RAM %uK (close apps to free more)", (unsigned)(ramFree() / 1024));
+  s_optMsg = b;
+  s_optUntil = millis() + 5000;
+}
 static void taskbarRepaint() { if (s_deskCtl) s_deskCtl->repaint(Rect(0, SCREEN_H - 20, SCREEN_W - 1, SCREEN_H - 1)); }
 void taskbarMinimize(uiFrame * f)
 {
@@ -556,6 +572,11 @@ public:
       case UIEVT_MOUSEBUTTONDOWN:
         if (event->params.mouse.changedButton == 1) {
           int mx = event->params.mouse.status.X, my = event->params.mouse.status.Y;
+          if (my >= SCREEN_H - BAR_H && mx >= s_optBtn.X1 && mx <= s_optBtn.X2 && s_optBtn.X2 > 0) {
+            optimizeRam();
+            repaint(Rect(0, SCREEN_H - BAR_H, SCREEN_W - 1, SCREEN_H - 1));
+            break;
+          }
           if (my >= SCREEN_H - BAR_H && !s_minimized.empty()) {          // a minimized window's button
             Canvas cv(s_dc);
             int x1, x2; std::vector<Rect> slots;
@@ -740,7 +761,7 @@ private:
   // where the minimized windows' buttons go: after the RAM text, before the clock
   void taskSlots(Canvas * cv, const char * ramText, int & x1, int & x2, std::vector<Rect> & out) {
     int by = SCREEN_H - BAR_H;
-    x1 = s_ramX + cv->textExtent(&FONT_std_12, ramText) + 10;
+    x1 = s_optBtn.X2 > 0 ? s_optBtn.X2 + 8 : s_ramX + cv->textExtent(&FONT_std_12, ramText) + 10;
     x2 = SCREEN_W - cv->textExtent(&FONT_std_14, "12:00 PM") - 16;
     int n = s_minimized.size();
     if (!n || x2 - x1 < 30) return;
@@ -749,10 +770,11 @@ private:
   }
   std::string ramText() {
     char b[96];
+    if (s_optUntil && (int32_t)(millis() - s_optUntil) < 0) return s_optMsg;
     std::string notice = msgLastNotice();
     if (!notice.empty()) snprintf(b, sizeof(b), "%s", notice.substr(0, 40).c_str());
 #ifdef TIDYOS_HTML5
-    else snprintf(b, sizeof(b), "Browser: %s   RAM %uK", screenViewer() ? "on" : "--", (unsigned)(ramFree() / 1024));
+    else snprintf(b, sizeof(b), "RAM %uK", (unsigned)(ramFree() / 1024));     // (you're looking at it in the browser)
 #else
     else snprintf(b, sizeof(b), "Keyboard: %s  Mouse: %s   RAM %uK", inputKeyboards() ? "on" : "--", inputMice() ? "on" : "--", (unsigned)(ramFree() / 1024));
 #endif
@@ -848,6 +870,17 @@ private:
       s_ramX = x;
       strlcpy(b, ramText().c_str(), sizeof(b));
       cv->drawText(&FONT_std_12, x, ty(&FONT_std_12), b);
+      {                                                   // Optimize button
+        int ox = x + cv->textExtent(&FONT_std_12, b) + 8, ow = cv->textExtent(&FONT_std_12, "Optimize") + 10;
+        s_optBtn = Rect(ox, by + 3, ox + ow, SCREEN_H - 3);
+        cv->setBrushColor(T.win);
+        cv->fillRectangle(s_optBtn.X1, s_optBtn.Y1, s_optBtn.X2, s_optBtn.Y2);
+        cv->setPenColor(T.shadow);
+        cv->drawRectangle(s_optBtn.X1, s_optBtn.Y1, s_optBtn.X2, s_optBtn.Y2);
+        cv->setPenColor(T.text);
+        cv->drawText(&FONT_std_12, ox + 5, ty(&FONT_std_12), "Optimize");
+        cv->setBrushColor(T.face);
+      }
       // minimized windows
       {
         int x1, x2; std::vector<Rect> slots;

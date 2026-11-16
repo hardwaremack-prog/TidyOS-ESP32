@@ -33,19 +33,24 @@ static bool isMidiFile(const char * n) { const char * e = fileExt(n); return !st
 // a random song in dir (not cur); midiOnly: just .mid files. "" if there are none
 static std::string randomSong(const std::string & dir, const std::string & cur, bool midiOnly)
 {
-  std::vector<std::string> all;
+  // one pass, keeping just one name (a big MIDI folder can hold thousands: listing them all ran out of memory)
   DIR * dd = opendir(dir.c_str());
   if (!dd) return "";
   struct dirent * e;
-  while ((e = readdir(dd)) != nullptr) {
+  char pick[128] = "", any[128] = "";
+  uint32_t n = 0, scanned = 0, t0 = millis();
+  while ((e = readdir(dd)) != nullptr && scanned < 4000 && millis() - t0 < 1500) {
+    ++scanned;
     if (e->d_name[0] == '.' || !isMusicFile(e->d_name) || (midiOnly && !isMidiFile(e->d_name))) continue;
-    all.push_back(e->d_name);
+    if (!any[0]) strlcpy(any, e->d_name, sizeof(any));
+    if (cur == e->d_name) continue;
+    if (esp_random() % ++n == 0) strlcpy(pick, e->d_name, sizeof(pick));
+    if ((scanned & 63) == 0) vTaskDelay(1);
   }
   closedir(dd);
-  if (all.empty()) return "";
-  std::string pick;
-  for (int t = 0; t < 4; ++t) { pick = all[esp_random() % all.size()]; if (all.size() == 1 || pick != cur) break; }
-  return joinPath(dir.c_str(), pick.c_str());
+  if (!pick[0]) strlcpy(pick, any, sizeof(pick));
+  if (!pick[0]) return "";
+  return joinPath(dir.c_str(), pick);
 }
 
 // the card's Music or MIDI folder (any capitalisation), or Documents
@@ -519,6 +524,12 @@ void musicQuickPause()
 {
   if (MusicApp::inst) { auto m = (MusicApp *)MusicApp::inst; if (!m->playing.empty() && !m->paused) m->playPause(); return; }
   if (!s_qPlaying.empty() && !s_qPaused) { screenMedia("p"); s_qPaused = true; }
+}
+
+bool musicQuickPlaying()          // for Sammy's one music button
+{
+  if (MusicApp::inst) { auto m = (MusicApp *)MusicApp::inst; return !m->playing.empty() && !m->paused; }
+  return !s_qPlaying.empty() && !s_qPaused;
 }
 
 void musicQuickTick()             // once a second: on to the next song when one ends

@@ -28,6 +28,7 @@ public:
     windowProps().focusable = true;   // needed to get keyboard focus
   }
   ~Board() { stopTimer(); }
+  bool paused = false;      // the game's Pause button
 
   void processEvent(uiEvent * e) override {
     uiControl::processEvent(e);
@@ -54,7 +55,7 @@ public:
         break;
       }
       case UIEVT_TIMER:
-        tick();
+        if (!paused) tick();
         break;
       default:
         break;
@@ -1141,6 +1142,7 @@ std::string musicQuickPlay();     // media_apps.h: music while you play
 void musicQuickPause();
 void musicQuickTick();
 void musicQuickStop();
+bool musicQuickPlaying();
 
 class GameFrame : public uiFrame {
 public:
@@ -1149,11 +1151,12 @@ public:
   Board * board;
   uiLabel * info;
   uiTimerHandle m_musicTimer = nullptr;
+  uiButton * pauseBtn = nullptr, * musicBtn = nullptr;
 
   GameFrame(int i) : uiFrame(gApp->rootWindow(), "", Point(0, 0), Size(100, 100), false), idx(i) {
     applyStyle(this);
     frameProps().hasMaximizeButton = false;
-    frameProps().hasMinimizeButton = false;
+    frameProps().hasMinimizeButton = true;
     frameProps().resizeable = false;
     static const char * titles[9] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop", "Deep Drill", "Missile Command", "StuntCopter" };
     setTitle(titles[i]);
@@ -1162,14 +1165,30 @@ public:
     auto nb = S(new uiButton(this, "New game", Point(x, y), Size(90, 22)));
     nb->setFocusIndex(-1);
     int infoX = x + 98;
-    if (i == 0) {                                   // Sammy: music while you play
-      auto pb = S(new uiButton(this, "Play music", Point(x + 98, y), Size(84, 22)));
-      auto ps = S(new uiButton(this, "Pause", Point(x + 186, y), Size(56, 22)));
-      pb->setFocusIndex(-1); ps->setFocusIndex(-1);
-      pb->onClick = [this]() { std::string m = musicQuickPlay(); info->setText(m.c_str()); info->repaint(); gApp->setFocusedWindow(board); };
-      ps->onClick = [this]() { musicQuickPause(); info->setText("Music paused."); info->repaint(); gApp->setFocusedWindow(board); };
+    if (i != 1 && i != 3) {                         // games that move: a Pause button
+      pauseBtn = S(new uiButton(this, "Pause", Point(infoX, y), Size(64, 22)));
+      pauseBtn->setFocusIndex(-1);
+      pauseBtn->onClick = [this]() {
+        board->paused = !board->paused;
+        pauseBtn->setText(board->paused ? "Resume" : "Pause"); pauseBtn->repaint();
+        info->setText(board->paused ? "Paused - press Resume to carry on." : ""); info->repaint();
+        gApp->setFocusedWindow(board);
+      };
+      infoX += 70;
+    }
+    if (i == 0) {                                   // Sammy: music while you play (one button: play / pause)
+      musicBtn = S(new uiButton(this, musicQuickPlaying() ? "Pause music" : "Play music", Point(infoX, y), Size(96, 22)));
+      musicBtn->setFocusIndex(-1);
+      musicBtn->onClick = [this]() {
+        std::string m;
+        if (musicQuickPlaying()) { musicQuickPause(); m = "Music paused."; }
+        else { info->setText("Finding a song..."); info->repaint(); m = musicQuickPlay(); }
+        info->setText(m.c_str()); info->repaint();
+        musicBtn->setText(musicQuickPlaying() ? "Pause music" : "Play music"); musicBtn->repaint();
+        gApp->setFocusedWindow(board);
+      };
       m_musicTimer = gApp->setTimer(this, 1000);
-      infoX = x + 250;
+      infoX += 102;
     }
     info = S(new uiLabel(this, "", Point(infoX, y + 3), Size(400, 18)));
     info->labelStyle().textFont = &FONT_std_12;
@@ -1189,7 +1208,7 @@ public:
     int w = imax(bs.width + 12 + o.X * 2, 300), h = bs.height + y + 8;
     if (i == 0 || i == 1 || i >= 4) w = imax(w, 520);
     info->labelStyle().textAlign = uiHAlign::Left;
-    gApp->resizeWindow(info, Size(w - 120 - (infoX - x - 98), 18));
+    gApp->resizeWindow(info, Size(imax(60, w - 24 - (infoX - x)), 18));
     gApp->reshapeWindow(this, Rect((SCREEN_W - w) / 2, imax(0, (SCREEN_H - 22 - h) / 2), (SCREEN_W - w) / 2 + w - 1, imax(0, (SCREEN_H - 22 - h) / 2) + h - 1));
     board->onScore = [this](int, const char * m) {
       if (m && *m) { info->setText(m); info->repaint(); }
@@ -1202,14 +1221,28 @@ public:
         info->setText(b); info->repaint();
       }
     };
-    nb->onClick = [this]() { board->newGame(); gApp->setFocusedWindow(board); };
+    nb->onClick = [this]() {
+      board->paused = false;
+      if (pauseBtn) { pauseBtn->setText("Pause"); pauseBtn->repaint(); }
+      board->newGame(); gApp->setFocusedWindow(board);
+    };
     board->newGame();
   }
 
   void processEvent(uiEvent * e) override {
-    if (e->id == UIEVT_TIMER && e->params.timerHandle == m_musicTimer) { musicQuickTick(); return; }
+    if (e->id == UIEVT_TIMER && e->params.timerHandle == m_musicTimer) {
+      musicQuickTick();
+      if (musicBtn) { const char * t = musicQuickPlaying() ? "Pause music" : "Play music"; if (strcmp(musicBtn->text(), t)) { musicBtn->setText(t); musicBtn->repaint(); } }
+      return;
+    }
+    if (e->id == UIEVT_MINIMIZE) {           // to the taskbar, paused
+      if (pauseBtn && !board->paused) pauseBtn->onClick();
+      taskbarMinimize(this);
+      return;
+    }
     if (e->id == UIEVT_CLOSE) {
       if (open[idx] != this) return;         // already closing
+      taskbarForget(this);
       board->stopTimer();
       if (m_musicTimer) { gApp->killTimer(m_musicTimer); m_musicTimer = nullptr; musicQuickStop(); }
       open[idx] = nullptr;
@@ -1244,7 +1277,7 @@ public:
   GamesFrame() : uiFrame(gApp->rootWindow(), "Games", Point(40, 40), Size(560, 360), false) {
     applyStyle(this);
     frameProps().hasMaximizeButton = false;
-    frameProps().hasMinimizeButton = false;
+    frameProps().hasMinimizeButton = true;
     frameProps().resizeable = false;
     Point o = clientOrigin(this);
     static const char * names[9] = { "Sammy the Snake", "Minesweeper", "Blocks", "2048", "Bricks", "Paradrop", "Deep Drill", "Missile Command", "StuntCopter" };
@@ -1266,7 +1299,8 @@ public:
     }
   }
   void processEvent(uiEvent * e) override {
-    if (e->id == UIEVT_CLOSE) { if (inst != this) return; inst = nullptr; gApp->destroyWindow(this); return; }
+    if (e->id == UIEVT_MINIMIZE) { taskbarMinimize(this); return; }
+    if (e->id == UIEVT_CLOSE) { if (inst != this) return; inst = nullptr; taskbarForget(this); gApp->destroyWindow(this); return; }
     uiFrame::processEvent(e);
   }
 };
