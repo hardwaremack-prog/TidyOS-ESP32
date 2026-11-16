@@ -49,33 +49,41 @@ std::string netStatus()
   return std::string("Connecting to ") + gSet.ssid.c_str() + "...";
 }
 
-// The radio refuses to scan while it's busy (joining Wi-Fi, a reconnect, the hotspot changing
-// channel...): a refused or failed scan is retried a few times instead of saying "no networks".
+// Scanning with the TidyOS hotspot up is slow: the radio keeps hopping back to the hotspot's
+// channel between channels, so a scan can take over 6 s - and the Wi-Fi library then reports it
+// as "failed" (its own 6 s limit) even though the results arrive a moment later. So: wait up to
+// 20 s for them, and only start over when the radio refused to start the scan at all.
 static int s_scanTries = 0;
-static uint32_t s_scanRetryAt = 0;
-void netScanStart()
+static uint32_t s_scanAt = 0, s_scanRetryAt = 0;
+static bool s_scanRunning = false;
+static void scanKick()
 {
   WiFi.scanDelete();
-  s_scanTries = 1;
   int r = WiFi.scanNetworks(true, true);           // async, include hidden ones
-  s_scanRetryAt = r == WIFI_SCAN_FAILED ? millis() + 600 : 0;
+  s_scanRunning = r != WIFI_SCAN_FAILED;
+  s_scanAt = millis();
+  s_scanRetryAt = s_scanRunning ? 0 : millis() + 700;
+}
+void netScanStart()
+{
+  s_scanTries = 1;
+  scanKick();
 }
 
 int netScanResults(std::vector<std::string> & out)
 {
   int n = WiFi.scanComplete();
   if (n == WIFI_SCAN_RUNNING) return -1;
-  if (n < 0 || (n == 0 && s_scanTries < 4)) {      // failed or came back empty: try again
-    if (s_scanTries >= 4) return 0;
-    if (!s_scanRetryAt) s_scanRetryAt = millis() + 600;
+  if (n < 0) {
+    if (s_scanRunning && millis() - s_scanAt < 20000) return -1;        // started: the results are still coming
+    if (s_scanTries >= 4) { s_scanRunning = false; Serial.println("[TidyOS] Wi-Fi scan: the radio wouldn't scan"); return 0; }
+    if (!s_scanRetryAt) s_scanRetryAt = millis() + 700;
     if ((int32_t)(millis() - s_scanRetryAt) < 0) return -1;
     ++s_scanTries;
-    WiFi.scanDelete();
-    if (WiFi.getMode() == WIFI_OFF || WiFi.getMode() == WIFI_AP) WiFi.mode(WiFi.getMode() == WIFI_AP ? WIFI_AP_STA : WIFI_STA);
-    int r = WiFi.scanNetworks(true, true);
-    s_scanRetryAt = r == WIFI_SCAN_FAILED ? millis() + 600 : 0;
+    scanKick();                                                          // the radio was busy: try again
     return -1;
   }
+  s_scanRunning = false;
   out.clear();
   for (int i = 0; i < n; ++i) {
     String s = WiFi.SSID(i);
@@ -85,6 +93,7 @@ int netScanResults(std::vector<std::string> & out)
     if (!dup) out.push_back(s.c_str());
   }
   WiFi.scanDelete();
+  Serial.printf("[TidyOS] Wi-Fi scan: %d network(s) after %u ms, %d tr%s\n", (int)out.size(), (unsigned)(millis() - s_scanAt), s_scanTries, s_scanTries == 1 ? "y" : "ies");
   return out.size();
 }
 
