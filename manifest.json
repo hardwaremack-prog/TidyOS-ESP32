@@ -1,6 +1,6 @@
 {
   "name": "TidyOS for ESP32 (VGA)",
-  "version": "2.5.5",
+  "version": "2.5.6",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -30,9 +30,9 @@
     }
   ],
   "tidyos": {
-    "version": "2.5.5",
+    "version": "2.5.6",
     "app": "firmware/parts-vga/tidyos.bin",
-    "size": 3070704,
-    "sha256": "80df56e33cfc0d96fb12d7a5cbcef820c18c4b9d22fd0fb7480e02a0b986bd4f"
+    "size": 3075232,
+    "sha256": "82d558e44a129c01b7dc22bb10876b7b4c1bd6171fe594f33e0653450df27037"
   }
 }

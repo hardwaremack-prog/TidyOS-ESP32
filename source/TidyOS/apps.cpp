@@ -1713,6 +1713,14 @@ public:
   uiButton   * colorsBtn;
   std::vector<std::string> scan;
   bool scanning = false;
+  // the network list: saved ones marked with *
+  void fillNets() {
+    nets->items().clear();
+    std::string pw;
+    for (auto & s : scan) nets->items().append(((netSavedPassword(s, pw) ? "* " : "   ") + s).c_str());
+    nets->repaint();
+  }
+  void showSaved() { netSavedList(scan); fillNets(); }
   int  devCount = -1;
   int  colors;
 
@@ -1753,9 +1761,24 @@ public:
     nets->items().takeStrings();
     nets->onChange = [this]() {
       int i = nets->firstSelectedItem();
-      if (i >= 0 && i < (int)scan.size()) { ssidEd->setText(scan[i].c_str()); ssidEd->repaint(); gApp->setFocusedWindow(passEd); }
+      if (i >= 0 && i < (int)scan.size()) {
+        ssidEd->setText(scan[i].c_str()); ssidEd->repaint();
+        std::string pw;
+        if (netSavedPassword(scan[i], pw)) { passEd->setText(pw.c_str()); passEd->repaint(); setWifiText("Saved - press Connect"); }
+        else gApp->setFocusedWindow(passEd);
+      }
     };
-    wifiLbl = label("", cx + 176, y + 74, 110, 18);
+    // remembered networks (up to 5): TidyOS joins whichever one it finds
+    button("Forget", cx + 176, y + 71, 70)->onClick = [this]() {
+      std::string n = ssidEd->text();
+      std::string pw;
+      if (n.empty() || !netSavedPassword(n, pw)) { setWifiText("Pick a saved (*) network first"); return; }
+      netForget(n);
+      showSaved();
+      setWifiText(("Forgot " + n).substr(0, 40).c_str());
+    };
+    showSaved();
+    wifiLbl = label("", cx + 72, y + 97, 216, 16);
     wifiLbl->labelStyle().textFont = &FONT_std_12;
 
     y += 116;
@@ -1860,9 +1883,7 @@ public:
       int n = netScanResults(scan);
       if (n >= 0) {
         scanning = false;
-        nets->items().clear();
-        for (auto & s : scan) nets->items().append(s.c_str());
-        nets->repaint();
+        fillNets();
         setWifiText(n ? "Pick your network" : "No networks found");
       }
     } else {

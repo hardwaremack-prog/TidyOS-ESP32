@@ -10,8 +10,79 @@
 
 // ============================================================ Wi-Fi
 
+// ---- saved networks: up to 5, most recently used first. TidyOS joins whichever one it can.
+#include <Preferences.h>
+struct SavedNet { String ssid, pass; };
+static std::vector<SavedNet> s_nets;
+static const int MAX_NETS = 5;
+static int s_tryIdx = 0;
+static uint32_t s_tryAt = 0;
+
+static void netsLoad()
+{
+  s_nets.clear();
+  Preferences p;
+  if (p.begin("tidynets", true)) {
+    int n = p.getInt("n", 0);
+    for (int i = 0; i < n && i < MAX_NETS; ++i) {
+      char k[8];
+      snprintf(k, sizeof(k), "s%d", i); String s = p.getString(k, "");
+      snprintf(k, sizeof(k), "p%d", i); String w = p.getString(k, "");
+      if (s.length()) s_nets.push_back({ s, w });
+    }
+    p.end();
+  }
+  // the one network older versions remembered
+  if (gSet.ssid.length()) {
+    bool have = false;
+    for (auto & e : s_nets) if (e.ssid == gSet.ssid) have = true;
+    if (!have) s_nets.insert(s_nets.begin(), { gSet.ssid, gSet.pass });
+  }
+}
+
+static void netsSave()
+{
+  Preferences p;
+  if (!p.begin("tidynets", false)) return;
+  p.putInt("n", (int)s_nets.size());
+  for (size_t i = 0; i < s_nets.size(); ++i) {
+    char k[8];
+    snprintf(k, sizeof(k), "s%d", (int)i); p.putString(k, s_nets[i].ssid);
+    snprintf(k, sizeof(k), "p%d", (int)i); p.putString(k, s_nets[i].pass);
+  }
+  p.end();
+}
+
+static void netsRemember(const String & ssid, const String & pass)     // to the front of the list
+{
+  for (size_t i = 0; i < s_nets.size(); ++i) if (s_nets[i].ssid == ssid) { s_nets.erase(s_nets.begin() + i); break; }
+  s_nets.insert(s_nets.begin(), { ssid, pass });
+  if ((int)s_nets.size() > MAX_NETS) s_nets.resize(MAX_NETS);
+  netsSave();
+}
+
+void netSavedList(std::vector<std::string> & out) { out.clear(); for (auto & e : s_nets) out.push_back(e.ssid.c_str()); }
+
+bool netSavedPassword(const std::string & ssid, std::string & pass)
+{
+  for (auto & e : s_nets) if (ssid == e.ssid.c_str()) { pass = e.pass.c_str(); return true; }
+  return false;
+}
+
+void netForget(const std::string & ssid)
+{
+  for (size_t i = 0; i < s_nets.size(); ++i) if (ssid == s_nets[i].ssid.c_str()) { s_nets.erase(s_nets.begin() + i); break; }
+  netsSave();
+  if (gSet.ssid == ssid.c_str()) {
+    gSet.ssid = s_nets.empty() ? "" : s_nets[0].ssid;
+    gSet.pass = s_nets.empty() ? "" : s_nets[0].pass;
+    settingsSave();
+  }
+}
+
 void netBegin()
 {
+  netsLoad();
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -29,6 +100,8 @@ void netConnect(const char * ssid, const char * pass)
   gSet.ssid = ssid;
   gSet.pass = pass;
   settingsSave();
+  netsRemember(ssid, pass);
+  s_tryIdx = 0; s_tryAt = millis();
   WiFi.disconnect();
   delay(50);
   WiFi.begin(ssid, pass);
@@ -46,7 +119,8 @@ std::string netStatus()
     String s = WiFi.SSID() + "  " + WiFi.localIP().toString();
     return s.c_str();
   }
-  return std::string("Connecting to ") + gSet.ssid.c_str() + "...";
+  const char * trying = s_nets.empty() ? gSet.ssid.c_str() : s_nets[s_tryIdx % s_nets.size()].ssid.c_str();
+  return std::string("Connecting to ") + trying + "...";
 }
 
 // Scanning with the TidyOS hotspot up is slow: the radio keeps hopping back to the hotspot's
@@ -135,7 +209,28 @@ void netTick()
   static bool was = false;
   static uint32_t lastTry = 0;
   bool now = WiFi.status() == WL_CONNECTED;
-  if (now && !was) { netFixDns(); netApplyClock(); lastTry = millis(); if (msgWanted()) msgBegin(); }
+  // not connected: every 20 s try the next saved network (home, work, phone...)
+  if (now) s_tryAt = millis();
+  else if (s_nets.size() > 1 && millis() - s_tryAt > 20000) {
+    s_tryIdx = (s_tryIdx + 1) % s_nets.size();
+    s_tryAt = millis();
+    Serial.printf("[TidyOS] trying saved Wi-Fi \"%s\"\n", s_nets[s_tryIdx].ssid.c_str());
+    WiFi.disconnect(false);
+    delay(20);
+    WiFi.begin(s_nets[s_tryIdx].ssid.c_str(), s_nets[s_tryIdx].pass.c_str());
+  }
+  if (now && !was) {
+    // joined: this network goes first next time
+    String cur = WiFi.SSID();
+    if (cur.length() && cur != gSet.ssid) {
+      for (auto & e : s_nets) if (e.ssid == cur) {
+        SavedNet c = e;                          // (a copy: netsRemember reorders the list)
+        gSet.ssid = c.ssid; gSet.pass = c.pass; settingsSave();
+        netsRemember(c.ssid, c.pass);
+        s_tryIdx = 0;
+        break;
+      }
+    } netFixDns(); netApplyClock(); lastTry = millis(); if (msgWanted()) msgBegin(); }
   else if (now && !netClockSet() && millis() - lastTry > 30000) { netFixDns(); netApplyClock(); lastTry = millis(); }
   was = now;
 }

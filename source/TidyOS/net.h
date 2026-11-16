@@ -4,7 +4,10 @@
 #include <vector>
 
 void netBegin();                                  // radio on + connect to saved network
-void netConnect(const char * ssid, const char * pass);
+void netConnect(const char * ssid, const char * pass);   // also remembers it (up to 5 networks)
+void netSavedList(std::vector<std::string> & out);      // remembered networks, most recent first
+bool netSavedPassword(const std::string & ssid, std::string & pass);
+void netForget(const std::string & ssid);
 bool netConnected();
 bool netClockSet();                 // true once the clock has a real time
 void netFixDns();                   // repair DNS servers after the hotspot changes Wi-Fi mode

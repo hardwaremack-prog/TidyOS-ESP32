@@ -2,6 +2,7 @@
 // and a world map shaded for day and night. (included in core.cpp, before the Desktop)
 #include "worldmap.h"
 #include "tzcalc.h"
+#include "net.h"
 
 // weather arrives from the web page (it looks it up: ip-api.com for the place, Open-Meteo for the forecast)
 static struct { int temp = 0, code = -1, hi = 0, lo = 0; float lat = 0, lon = 0; bool haveLoc = false; char city[32] = ""; char err[48] = ""; } s_wx;
@@ -354,6 +355,12 @@ static void drawDeskPanel(Canvas * cv)
     y += 42;
   } else {
 #ifdef TIDYOS_HTML5
+    if (!netConnected()) {              // on the hotspot only: nothing to look things up with
+      cv->drawText(&FONT_std_14, x, y, "No Wi-Fi internet yet");
+      cv->drawText(&FONT_std_12, x, y + 18, "Weather, temperatures and headlines need Wi-Fi:");
+      cv->drawText(&FONT_std_12, x, y + 31, "Settings > Find networks > Connect.");
+      y += 4;
+    } else
     cv->drawText(&FONT_std_14, x, y, screenViewer() ? "Weather: looking it up..." : "Weather: shows with the browser open");
 #else
     cv->drawText(&FONT_std_14, x, y, "Weather shows in the browser edition.");
