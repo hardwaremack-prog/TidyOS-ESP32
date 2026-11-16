@@ -950,8 +950,12 @@ static BitmappedDisplayController * tryMode(size_t fbBytes, size_t margin = 6000
   return nullptr;
 }
 
+namespace fabgl { extern bool fabglNoMouseSprite; }
 static void startDisplay()
 {
+#ifdef TIDYOS_HTML5
+  fabgl::fabglNoMouseSprite = true;   // the browser shows its own mouse pointer: none drawn into the picture
+#endif
   // FabGL queues drawing commands; its default 1024-entry queue is ~15 KB of RAM. 256 is plenty
   // (when it fills, the app just waits a moment for drawing to catch up).
   BitmappedDisplayController::queueSize = 256;

@@ -1,3 +1,21 @@
+diff --git a/src/displaycontroller.cpp b/src/displaycontroller.cpp
+index 7f53c13..3dca242 100644
+--- a/src/displaycontroller.cpp
++++ b/src/displaycontroller.cpp
+@@ -677,8 +677,13 @@ void IRAM_ATTR BitmappedDisplayController::showSprites(Rect & updateRect)
+ 
+ 
+ // cursor = nullptr -> disable mouse
++// (TidyOS) HTML5 edition: the browser shows its own pointer, so none is drawn into the picture -
++// a drawn pointer saves and restores what's under it, which smeared fast-redrawing games
++bool fabglNoMouseSprite = false;
++
+ void BitmappedDisplayController::setMouseCursor(Cursor * cursor)
+ {
++  if (fabglNoMouseSprite) cursor = nullptr;
+   if (cursor == nullptr || &cursor->bitmap != m_mouseCursor.getFrame()) {
+     m_mouseCursor.visible = false;
+     m_mouseCursor.clearBitmaps();
 diff --git a/src/fabui.cpp b/src/fabui.cpp
 index 480579f..18b4b49 100644
 --- a/src/fabui.cpp
