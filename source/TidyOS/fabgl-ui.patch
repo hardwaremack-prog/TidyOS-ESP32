@@ -17,7 +17,7 @@ index 7f53c13..3dca242 100644
      m_mouseCursor.visible = false;
      m_mouseCursor.clearBitmaps();
 diff --git a/src/fabui.cpp b/src/fabui.cpp
-index 480579f..18b4b49 100644
+index 480579f..87bff82 100644
 --- a/src/fabui.cpp
 +++ b/src/fabui.cpp
 @@ -174,10 +174,21 @@ uiObject::~uiObject()
@@ -89,7 +89,22 @@ index 480579f..18b4b49 100644
    return xQueueReceive(m_eventsQueue, event,  msToTicks(timeOutMS)) == pdTRUE;
  }
  
-@@ -859,6 +887,9 @@ bool uiApp::processModalWindowEvents(ModalWindowState * state, int timeout)
+@@ -795,7 +823,13 @@ void uiApp::repaintRect(Rect const & rect)
+ {
+   uiEvent evt = uiEvent(m_rootWindow, UIEVT_GENPAINTEVENTS);
+   evt.params.rect = rect;
+-  postEvent(&evt);
++  if (!postEvent(&evt)) {
++    // (TidyOS) the queue is full (a flood of mouse moves from the browser): don't lose the repaint -
++    // keep it and send it once there's room, merged with any other waiting repaint
++    for (int i = 0; i < s_pendDestroyN; ++i)
++      if (s_pendDestroy[i].id == UIEVT_GENPAINTEVENTS) { s_pendDestroy[i].params.rect = s_pendDestroy[i].params.rect.merge(rect); return; }
++    if (s_pendDestroyN < 48) s_pendDestroy[s_pendDestroyN++] = evt;
++  }
+ }
+ 
+ 
+@@ -859,6 +893,9 @@ bool uiApp::processModalWindowEvents(ModalWindowState * state, int timeout)
    uiEvent event;
    while (getEvent(&event, timeout)) {
  
@@ -99,7 +114,7 @@ index 480579f..18b4b49 100644
      if (m_modalWindow != state->window && event.dest == state->window) {
        // becomes modal when first message arrives
        m_modalWindow = state->window;
-@@ -1042,7 +1073,8 @@ void uiApp::blinkCaret(bool forceOFF)
+@@ -1042,7 +1079,8 @@ void uiApp::blinkCaret(bool forceOFF)
  // this is the unique way to manually destroy a window
  void uiApp::destroyWindow(uiWindow * window)
  {
@@ -109,7 +124,7 @@ index 480579f..18b4b49 100644
      // first destroy children
      for (auto child = window->lastChild(); child; child = child->prev())
        destroyWindow(child);
-@@ -1057,7 +1089,7 @@ void uiApp::destroyWindow(uiWindow * window)
+@@ -1057,7 +1095,7 @@ void uiApp::destroyWindow(uiWindow * window)
      showWindow(window, false);
      // to actualy detach from parent and destroy the object
      uiEvent evt = uiEvent(window, UIEVT_DESTROY);
@@ -118,7 +133,7 @@ index 480579f..18b4b49 100644
    }
  }
  
-@@ -1076,6 +1108,10 @@ void uiApp::cleanWindowReferences(uiWindow * window)
+@@ -1076,6 +1114,10 @@ void uiApp::cleanWindowReferences(uiWindow * window)
      m_modalWindow = nullptr;
    if (m_caretWindow == window)
      m_caretWindow = nullptr;
@@ -129,7 +144,7 @@ index 480579f..18b4b49 100644
  }
  
  
-@@ -2025,7 +2061,12 @@ Rect uiFrame::getBtnRect(int buttonIndex)
+@@ -2025,7 +2067,12 @@ Rect uiFrame::getBtnRect(int buttonIndex)
    Rect barRect = titleBarRect();
    Rect btnRect = Rect(barRect.X2 - btnSize - CORNERSENSE / 2, barRect.Y1,
                        barRect.X2 - CORNERSENSE / 2, barRect.Y2);
