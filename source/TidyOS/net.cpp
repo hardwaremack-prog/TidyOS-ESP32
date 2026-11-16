@@ -49,17 +49,33 @@ std::string netStatus()
   return std::string("Connecting to ") + gSet.ssid.c_str() + "...";
 }
 
+// The radio refuses to scan while it's busy (joining Wi-Fi, a reconnect, the hotspot changing
+// channel...): a refused or failed scan is retried a few times instead of saying "no networks".
+static int s_scanTries = 0;
+static uint32_t s_scanRetryAt = 0;
 void netScanStart()
 {
   WiFi.scanDelete();
-  WiFi.scanNetworks(true);
+  s_scanTries = 1;
+  int r = WiFi.scanNetworks(true, true);           // async, include hidden ones
+  s_scanRetryAt = r == WIFI_SCAN_FAILED ? millis() + 600 : 0;
 }
 
 int netScanResults(std::vector<std::string> & out)
 {
   int n = WiFi.scanComplete();
   if (n == WIFI_SCAN_RUNNING) return -1;
-  if (n < 0) return 0;
+  if (n < 0 || (n == 0 && s_scanTries < 4)) {      // failed or came back empty: try again
+    if (s_scanTries >= 4) return 0;
+    if (!s_scanRetryAt) s_scanRetryAt = millis() + 600;
+    if ((int32_t)(millis() - s_scanRetryAt) < 0) return -1;
+    ++s_scanTries;
+    WiFi.scanDelete();
+    if (WiFi.getMode() == WIFI_OFF || WiFi.getMode() == WIFI_AP) WiFi.mode(WiFi.getMode() == WIFI_AP ? WIFI_AP_STA : WIFI_STA);
+    int r = WiFi.scanNetworks(true, true);
+    s_scanRetryAt = r == WIFI_SCAN_FAILED ? millis() + 600 : 0;
+    return -1;
+  }
   out.clear();
   for (int i = 0; i < n; ++i) {
     String s = WiFi.SSID(i);

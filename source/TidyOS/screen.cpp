@@ -151,13 +151,13 @@ function midiNote(m,e,at){var c=m.ctx,g=c.createGain();g.connect(m.out);
   var n=e.n;if(n==35||n==36){var o=c.createOscillator();o.frequency.setValueAtTime(150,at);o.frequency.exponentialRampToValueAtTime(40,at+0.15);o.connect(g);g.gain.setValueAtTime(0.9*e.v/127,at);g.gain.exponentialRampToValueAtTime(0.001,at+0.2);o.start(at);o.stop(at+0.22);return;}
   var s=c.createBufferSource(),f=c.createBiquadFilter();s.buffer=noiseBuf;s.connect(f);f.connect(g);var hat=n==42||n==44||n==46||n>=49;f.type=hat?'highpass':'bandpass';f.frequency.value=hat?7000:1800;
   var len=n==46||n>=49?0.3:hat?0.05:0.15;g.gain.setValueAtTime(0.5*e.v/127,at);g.gain.exponentialRampToValueAtTime(0.001,at+len);s.start(at);s.stop(at+len+0.02);return;}
- var key=e.c*128+e.n;if(m.on[key])midiOff(m,key,at);if(m.count>40)return;
+ var key=e.c*128+e.n;if(m.on[key])midiOff(m,key,at);if(m.count>24)return;
  var o=c.createOscillator();o.type=e.n<48?'sawtooth':(m.prog[e.c]>=40&&m.prog[e.c]<80?'square':'triangle');o.frequency.value=440*Math.pow(2,(e.n-69)/12);o.connect(g);
  var vol=(o.type=='triangle'?0.22:0.07)*e.v/127;g.gain.setValueAtTime(0,at);g.gain.linearRampToValueAtTime(vol,at+0.01);g.gain.setTargetAtTime(vol*0.6,at+0.05,0.3);
  o.start(at);m.on[key]={o:o,g:g};m.count++;}
 function midiOff(m,key,at){var x=m.on[key];if(!x)return;x.g.gain.cancelScheduledValues(at);x.g.gain.setTargetAtTime(0,at,0.05);x.o.stop(at+0.3);delete m.on[key];m.count--;}
 function midiPump(){var m=midiCur;if(!m||m.paused)return;var now=m.ctx.currentTime;
- while(m.i<m.ev.length&&m.ev[m.i].t+m.t0<now+0.4){var e=m.ev[m.i++],at=Math.max(now,e.t+m.t0);
+ while(m.i<m.ev.length&&m.ev[m.i].t+m.t0<now+0.7){var e=m.ev[m.i++],at=Math.max(now,e.t+m.t0);
   if(e.y==1)midiNote(m,e,at);else if(e.y==0)midiOff(m,e.c*128+e.n,at);else if(e.y==3)m.prog[e.c]=e.n;}
  if(m.i>=m.ev.length&&now>m.t0+m.dur+0.5){m.ended=true;midiReport();clearInterval(m.timer);}}
 function midiReport(){var m=midiCur;if(!m)return;var t=m.ended?m.dur:Math.max(0,m.ctx.currentTime-m.t0);t=t|0;var u=m.dur|0;send([8,m.ended?2:m.paused?0:1,t&255,t>>8&255,u&255,u>>8&255]);}
@@ -166,7 +166,7 @@ function midiPlay(url,vol){midiStop();if(au){au.pause();}
  fetch(url).then(function(r){return r.arrayBuffer();}).then(function(b){var ev=midiParse(new Uint8Array(b)),C=window.AudioContext||window.webkitAudioContext,ctx=new C();
   var m={ctx:ctx,ev:ev,i:0,on:{},count:0,prog:[],paused:false,ended:false,out:ctx.createGain()};m.out.gain.value=vol;m.out.connect(ctx.destination);
   m.dur=ev.length?ev[ev.length-1].t:0;m.t0=ctx.currentTime+0.15;midiCur=m;if(ctx.state=='suspended'){ctx.resume();auBlocked=true;}
-  m.timer=setInterval(midiPump,50);m.rep=setInterval(midiReport,1000);midiPump();}).catch(function(){send([8,2,0,0,0,0]);});}
+  m.timer=setInterval(midiPump,150);m.rep=setInterval(midiReport,1000);midiPump();}).catch(function(){send([8,2,0,0,0,0]);});}
 
 function openBanner(u,n){var w=null;try{w=window.open(u,'_blank');}catch(e){}if(w)return;
  var e=document.getElementById('ob');if(!e){e=document.createElement('div');e.id='ob';e.style.cssText='position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:21;background:#0055aa;color:#fff;font:bold 18px sans-serif;padding:10px 14px;border-radius:8px;display:none;gap:10px;align-items:center;box-shadow:0 4px 16px #0008';document.body.appendChild(e);}
