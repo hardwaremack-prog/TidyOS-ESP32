@@ -111,6 +111,7 @@ function connect(){
  ws.onclose=function(){st.textContent='Disconnected';if(!kicked){
   var t='Lost connection - trying again...';
   if(location.hostname=='192.168.4.1')t='Lost the TidyOS hotspot - trying again...\nIf TidyOS just joined your Wi-Fi, switch this device to '+(home?home.ssid:'that Wi-Fi')+' and open http://'+(home?home.ip:'the address on its screen');
+  else if(home&&home.host)t+='\nIf you turned on the TidyOS hotspot: join Wi-Fi '+('TidyOS-'+home.host.slice(7).toUpperCase())+' (password tidyos123) and open http://192.168.4.1';
   show(t);setTimeout(connect,2000);}};
 }
 btn.onclick=function(){connect();};
@@ -740,7 +741,20 @@ void screenTrim()            // the Optimize button: let go of what isn't being 
   if (s_ap && !gSet.hotspot && WiFi.status() == WL_CONNECTED && WiFi.softAPgetStationNum() == 0) apStop();
   for (auto & p : s_pend) if (!p.used) { p.c.stop(); std::string().swap(p.buf); }
 }
-void screenHotspot(bool on) { gSet.hotspot = on; if (on) apStart(); else if (WiFi.status() == WL_CONNECTED) apStop(); }
+// "Run TidyOS Hotspot": TidyOS leaves the home Wi-Fi and runs only its own network (devices join it
+// directly). Off again: back to the saved Wi-Fi; the hotspot closes once that's joined.
+void screenHotspot(bool on)
+{
+  gSet.hotspot = on;
+  if (on) {
+    apStart();
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(false);              // (false: keep the hotspot up)
+  } else {
+    WiFi.setAutoReconnect(true);
+    if (gSet.ssid.length()) WiFi.begin(gSet.ssid.c_str(), gSet.pass.c_str());
+  }
+}
 
 std::string screenUrl()
 {

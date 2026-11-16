@@ -91,7 +91,7 @@ void netBegin()
 #ifdef TIDYOS_HTML5
   WiFi.setSleep(false);       // power saving makes the hotspot drop joins (and the browser view laggy)
 #endif
-  if (gSet.ssid.length())
+  if (gSet.ssid.length() && !gSet.hotspot)          // (hotspot mode: TidyOS's own network only)
     WiFi.begin(gSet.ssid.c_str(), gSet.pass.c_str());
   netApplyClock();
 }
@@ -212,7 +212,7 @@ void netTick()
   bool now = WiFi.status() == WL_CONNECTED;
   // not connected: every 20 s try the next saved network (home, work, phone...)
   if (now) s_tryAt = millis();
-  else if (s_nets.size() > 1 && millis() - s_tryAt > 20000) {
+  else if (s_nets.size() > 1 && !gSet.hotspot && millis() - s_tryAt > 20000) {
     s_tryIdx = (s_tryIdx + 1) % s_nets.size();
     s_tryAt = millis();
     Serial.printf("[TidyOS] trying saved Wi-Fi \"%s\"\n", s_nets[s_tryIdx].ssid.c_str());
