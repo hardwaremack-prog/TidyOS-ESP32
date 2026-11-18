@@ -552,6 +552,7 @@ static const int NICONS = sizeof(ICONS) / sizeof(ICONS[0]);
 static std::string s_bootNote;              // shown once on the desktop (update result)
 
 #include "desk_panel.h"
+#include "oled.h"
 
 class Desktop : public uiControl {
 public:
@@ -658,6 +659,7 @@ public:
         }
         if (++m_tick % 10) break;                   // the rest once a second (timer: 100 ms)
         netTick();
+        oledTick();
         gHeapSnap = ramFree(); gMinHeapSnap = ramLowest();
         if (m_tick % 300 == 0) Serial.printf("[TidyOS] still running: up %us, free RAM %uK\n", (unsigned)(millis() / 1000), (unsigned)(gHeapSnap / 1024));
         repaint(Rect(0, SCREEN_H - BAR_H, SCREEN_W - 1, SCREEN_H - 1));
@@ -1224,6 +1226,7 @@ static void paradeIcon(Canvas & cv, int i)
 
 static void splash(const char * msg, int percent)
 {
+  oledSplash(msg, percent);
   if (s_barMux) xSemaphoreTake(s_barMux, portMAX_DELAY);
   Canvas cv(s_dc);
   cv.setBrushColor(T.desk);
@@ -1558,6 +1561,7 @@ void setup()
 #ifdef TIDYOS_HTML5
   startDisplay();
   releaseVgaPins();     // no monitor in this edition: free GPIO 19/18/5/... (the in-line SD wiring uses them)
+  oledBegin();          // a little OLED on GPIO 21/22, if there is one
   bootChooser();        // start-up switches (SD card, mesh, blue light) before they take any RAM
   if (gSet.sdOn) gSDMounted = mountAnySD();
 #else

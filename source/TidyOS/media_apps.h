@@ -569,6 +569,12 @@ std::string musicQuickVol(int d)
   return b;
 }
 
+std::string musicNowPlaying()     // for the little OLED screen
+{
+  if (MusicApp::inst) { auto m = (MusicApp *)MusicApp::inst; return (m->playing.empty() || m->paused) ? "" : baseName(m->playing); }
+  return (s_qPlaying.empty() || s_qPaused) ? "" : baseName(s_qPlaying);
+}
+
 bool musicQuickPlaying()          // for Sammy's one music button
 {
   if (MusicApp::inst) { auto m = (MusicApp *)MusicApp::inst; return !m->playing.empty() && !m->paused; }
