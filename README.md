@@ -59,7 +59,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Temperature graph:** point at it for the time and temperature; "freezing →" marks the 32° line.
 - **World times show temperatures** for Moscow, Los Angeles and Tokyo.
 - **Games:** a Pause button; Sammy's single Play/Pause music button (and no more lock-up with a big MIDI folder).
-- **Settings → Run TidyOS Hotspot:** switches TidyOS to its own network only (it leaves your home Wi-Fi): phones and PCs join TidyOS-xxxxxx and open 192.168.4.1. No internet while it's on; turn it off to go back to your Wi-Fi.
+- **Settings → Run TidyOS Hotspot:** switches TidyOS to its own network only (it leaves your home Wi-Fi): phones and PCs join TidyOS-xxxxxx and open 10.1.1.250. No internet while it's on; turn it off to go back to your Wi-Fi.
 - **Start-up:** Mac OS 9-style icon parade with a checklist and a smooth bar.
 - **HTML Games / Programs** read **SD:/games** and **SD:/programs**.
 - Fixed: a false "the installer didn't run" note after a successful update.
@@ -88,7 +88,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 *Drawn desktop, real browser page: this is the HTML5 page running against a simulated board.*
 
 1. On the flasher page, flip the switch to **HTML5** and click **Install TidyOS (HTML5)**. The only wiring you need is the optional microSD module.
-2. Power the board. On a phone or PC, join the Wi-Fi hotspot named after the board, **TidyOS-xxxxxx** (e.g. `TidyOS-A93160`, password `tidyos123`; each board has its own; before 2.6.3 it was TidyOS-Setup). The desktop pops up, or open **http://192.168.4.1**.
+2. Power the board. On a phone or PC, join the Wi-Fi hotspot named after the board, **TidyOS-xxxxxx** (e.g. `TidyOS-A93160`, password `tidyos123`; each board has its own; before 2.6.3 it was TidyOS-Setup). The desktop pops up, or open **http://10.1.1.250**.
 3. Open **Settings**, join your home Wi-Fi, **Save**.
 4. Back on your home Wi-Fi, open the address at the bottom of the desktop, or **http://tidyos-xxxxxx.local** (the board ID in small letters).
 
@@ -98,9 +98,9 @@ No luck with the hotspot? With the board plugged into a computer, open a serial 
 
 | Where you are | Join this Wi-Fi | Open |
 |---|---|---|
-| TidyOS hotspot (first start, no home Wi-Fi yet, or Settings → Run TidyOS Hotspot) | **TidyOS-xxxxxx** (the board ID, e.g. TidyOS-A93160), password `tidyos123` | **http://192.168.4.1** |
+| TidyOS hotspot (first start, no home Wi-Fi yet, or Settings → Run TidyOS Hotspot) | **TidyOS-xxxxxx** (the board ID, e.g. TidyOS-A93160), password `tidyos123` | **http://10.1.1.250** |
 | Home Wi-Fi | your own | the address on the bottom bar (e.g. `http://10.0.0.205`) or **http://tidyos-xxxxxx.local** (the board ID from the bottom bar in small letters, e.g. `tidyos-a93160.local`; every board has its own name) |
-| File sharing | either of the above | same address plus **:8081** (e.g. `http://192.168.4.1:8081`, `http://tidyos-a93160.local:8081`) |
+| File sharing | either of the above | same address plus **:8081** (e.g. `http://10.1.1.250:8081`, `http://tidyos-a93160.local:8081`) |
 
 How it works: TidyOS still draws into its normal 640 × 480 screen memory. A small web server on port 80 sends only the rows that changed to the browser over a WebSocket (about 20 updates a second), and the browser sends keys, clicks, wheel and touches back. A phone's on-screen keyboard works through the **Keyboard** button in the top bar.
 
