@@ -6,7 +6,7 @@
 // back into TidyOS. One browser at a time; opening it somewhere else takes over.
 //
 // With no Wi-Fi set up (or if it can't connect) TidyOS starts a "TidyOS-Setup" hotspot,
-// so a phone or PC can join it, open http://192.168.4.1 and use Settings to join home Wi-Fi.
+// so a phone or PC can join it, open http://10.1.1.250 and use Settings to join home Wi-Fi.
 
 #include "config.h"
 #ifdef TIDYOS_HTML5
@@ -110,8 +110,8 @@ function connect(){
    else hb.style.display='none';}};
  ws.onclose=function(){st.textContent='Disconnected';if(!kicked){
   var t='Lost connection - trying again...';
-  if(location.hostname=='192.168.4.1')t='Lost the TidyOS hotspot - trying again...\nIf TidyOS just joined your Wi-Fi, switch this device to '+(home?home.ssid:'that Wi-Fi')+' and open http://'+(home?home.ip:'the address on its screen');
-  else if(home&&home.host)t+='\nIf you turned on the TidyOS hotspot: join Wi-Fi '+('TidyOS-'+home.host.slice(7).toUpperCase())+' (password tidyos123) and open http://192.168.4.1';
+  if(location.hostname=='10.1.1.250')t='Lost the TidyOS hotspot - trying again...\nIf TidyOS just joined your Wi-Fi, switch this device to '+(home?home.ssid:'that Wi-Fi')+' and open http://'+(home?home.ip:'the address on its screen');
+  else if(home&&home.host)t+='\nIf you turned on the TidyOS hotspot: join Wi-Fi '+('TidyOS-'+home.host.slice(7).toUpperCase())+' (password tidyos123) and open http://10.1.1.250';
   show(t);setTimeout(connect,2000);}};
 }
 btn.onclick=function(){connect();};
@@ -579,6 +579,8 @@ static void apStart()
   // channel 6, up to 4 devices; lower transmit power so the current peaks don't dip the 3.3 V supply
   // (the hotspot only needs to reach across a room)
   static std::string apName = boardId();
+  // the hotspot's own address: http://10.1.1.250 (devices that join get 10.1.1.x)
+  WiFi.softAPConfig(IPAddress(10, 1, 1, 250), IPAddress(10, 1, 1, 250), IPAddress(255, 255, 255, 0), IPAddress(10, 1, 1, 100));
   WiFi.softAP(apName.c_str(), SCREEN_AP_PASS, 6, 0, 4);
   WiFi.setTxPower(WIFI_POWER_11dBm);
   WiFi.setSleep(false);

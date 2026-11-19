@@ -100,7 +100,7 @@ static void pageAccess()
     std::string id = boardId();
     snprintf(b, sizeof(b), "Wi-Fi %s", id.c_str());  fit(&FONT_std_12, 0, 0, b);
     text(&FONT_std_12, 0, 15, "Password tidyos123");
-    text(&FONT_std_14, 0, 31, "192.168.4.1");
+    text(&FONT_std_14, 0, 31, "10.1.1.250");
     band(home ? "Hotspot - also on home Wi-Fi" : "How to get in: hotspot");
   } else if (home) {
     snprintf(b, sizeof(b), "%s", WiFi.SSID().c_str()); fit(&FONT_std_12, 0, 0, b);

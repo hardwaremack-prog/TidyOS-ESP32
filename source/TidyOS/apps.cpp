@@ -1747,7 +1747,7 @@ public:
     hotBtn->onClick = [this]() {
       if (!gSet.hotspot) {
         char m[160];
-        snprintf(m, sizeof(m), "TidyOS leaves your Wi-Fi and runs its own. Join \"%s\" (password %s), open 192.168.4.1. No internet meanwhile.", SCREEN_AP_NAME, SCREEN_AP_PASS);
+        snprintf(m, sizeof(m), "TidyOS leaves your Wi-Fi and runs its own. Join \"%s\" (password %s), open 10.1.1.250. No internet meanwhile.", SCREEN_AP_NAME, SCREEN_AP_PASS);
         if (gApp->messageBox("TidyOS Hotspot", m, "Start", "Cancel", nullptr, uiMessageBoxIcon::Info) != uiMessageBoxResult::Button1) return;
       }
       screenHotspot(!gSet.hotspot);

@@ -192,7 +192,7 @@ void netFixDns()
   if (WiFi.status() != WL_CONNECTED) return;
   const ip_addr_t * d = dns_getserver(0);
   uint32_t a = (d && IP_IS_V4(d)) ? ip4_addr_get_u32(ip_2_ip4(d)) : 0;
-  bool bad = a == 0 || (a & 0x00FFFFFF) == 0x0004A8C0;      // 0.0.0.0 or 192.168.4.x (our own hotspot)
+  bool bad = a == 0 || (a & 0x00FFFFFF) == 0x0004A8C0 || (a & 0x00FFFFFF) == 0x0001010A;   // 0.0.0.0, or our own hotspot (192.168.4.x before 2.7.1, now 10.1.1.x)
   if (bad) {
     ip_addr_t gw, g8;
     IPAddress r = WiFi.gatewayIP();
