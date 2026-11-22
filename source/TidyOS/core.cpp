@@ -1537,6 +1537,7 @@ void setup()
 #ifdef TIDYOS_HTML5
   esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);   // no Bluetooth in this edition: give its RAM to apps
 #endif
+  Serial.setRxBufferSize(2048);     // room for a whole block from the web flasher's file manager
   Serial.begin(115200);
   delay(200);
   crashBegin();     // did the last run crash? (Task Manager shows it)

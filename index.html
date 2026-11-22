@@ -31,6 +31,27 @@
   .switch small { display:block; font-size:.78rem; font-weight:400; opacity:.85; }
   .edition { background:#eef6ff; border-left:4px solid var(--accent); padding:10px 14px; margin:0 0 14px; }
   body.html5 .vga-only, body.vga .html5-only { display:none; }
+  /* USB file manager */
+  .fm-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0; }
+  .fm-btn { font:inherit; padding:8px 14px; background:#fff; color:#111; border:2px solid #000; box-shadow:3px 3px 0 #000; cursor:pointer; }
+  .fm-btn.main { background:var(--accent); color:#fff; }
+  .fm-btn:disabled { opacity:.45; cursor:default; }
+  .fm-drive.on { background:var(--accent); color:#fff; }
+  .fm-status { font-size:.92rem; color:#333; }
+  .fm-path { font-family:ui-monospace, Consolas, monospace; background:#eef; padding:4px 8px; word-break:break-all; flex:1 1 200px; }
+  .fm-list { border:2px solid #000; max-height:360px; overflow:auto; background:#fff; }
+  .fm-row { display:flex; align-items:center; gap:10px; padding:7px 10px; border-bottom:1px solid #ddd; }
+  .fm-row:last-child { border-bottom:0; }
+  .fm-row .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fm-row .nm.dir { cursor:pointer; color:var(--accent); font-weight:600; }
+  .fm-row .sz { color:#666; font-size:.85rem; white-space:nowrap; }
+  .fm-row button { font:inherit; font-size:.82rem; padding:3px 8px; border:1px solid #000; background:#fff; cursor:pointer; }
+  .fm-empty { padding:16px; color:#666; text-align:center; }
+  .fm-drop { border:2px dashed #0055aa; background:#eef6ff; padding:14px; text-align:center; margin-top:10px; }
+  .fm-drop.over { background:#cfe3ff; }
+  .fm-prog { height:14px; border:2px solid #000; background:#fff; margin-top:8px; }
+  .fm-prog i { display:block; height:100%; width:0; background:var(--accent); }
+  .fm-off { color:#555; }
 </style>
 </head>
 <body class="vga">
@@ -60,6 +81,33 @@
       <br><span class="note">Need this every time? A 10 µF capacitor from <b>EN</b> to <b>GND</b> usually fixes the board's automatic install mode for good (+ side to EN).</span></div>
     <p class="note"><b>From 1.8 on you can also update inside TidyOS:</b> Settings → Check for updates (needs the SD card).</p>
     <p class="note"><b>Updating?</b> When the installer asks, leave <b>Erase device</b> unticked: your Wi-Fi and settings stay. Tick it for a fresh start, or when switching between VGA and HTML5.</p>
+  </div>
+
+  <div class="card html5-only" id="files">
+    <h2>Copy files over USB</h2>
+    <p>Put music, pictures, games and documents on the board's <b>SD card</b> or its <b>internal flash</b> through the USB cable. No Wi-Fi needed. The board must be running TidyOS <b>2.7.3 or newer</b>.</p>
+    <div class="fm-bar">
+      <button class="fm-btn main" id="fmConnect">Connect to TidyOS</button>
+      <span class="fm-status" id="fmStatus">Not connected. Close the installer first: only one can use the USB port at a time.</span>
+    </div>
+    <div id="fmUi" hidden>
+      <div class="fm-bar" id="fmDrives"></div>
+      <div class="fm-bar">
+        <button class="fm-btn" id="fmUp" title="Up one folder">&#8593; Up</button>
+        <span class="fm-path" id="fmPath">/SD</span>
+        <button class="fm-btn" id="fmMusic">Music folder</button>
+        <button class="fm-btn" id="fmMkdir">New folder</button>
+        <button class="fm-btn" id="fmRefresh">Refresh</button>
+      </div>
+      <div class="fm-list" id="fmList"></div>
+      <div class="fm-drop" id="fmDrop">Drop files here, or <button class="fm-btn main" id="fmPick">Choose files…</button>
+        <input type="file" id="fmFile" multiple hidden>
+        <div class="fm-status" id="fmXfer"></div>
+        <div class="fm-prog" id="fmProg" hidden><i></i></div>
+      </div>
+      <p class="note">The internal flash is small (about 550 KB), so it fits a few short songs at most. Music goes best in the SD card's <b>Music</b> folder, where the Music app looks first. Copying runs at up to about 50 KB a second, so a 4 MB song takes a couple of minutes.</p>
+    </div>
+    <p class="note fm-off" id="fmNoSerial" hidden>Your browser can't talk to USB devices. Please use Chrome or Edge on a computer.</p>
   </div>
 
   <div class="card">
@@ -164,6 +212,272 @@
   document.getElementById('ed-vga').onclick = () => setEdition('vga');
   document.getElementById('ed-html5').onclick = () => setEdition('html5');
   setEdition(location.hash === '#html5' ? 'html5' : 'vga');
+</script>
+<script>
+// ---- Copy files over USB: talks to TidyOS's "!fs" serial commands (serialfs.cpp) with Web Serial
+(() => {
+  const $ = id => document.getElementById(id);
+  if (!('serial' in navigator)) { $('fmConnect').disabled = true; $('fmNoSerial').hidden = false; return; }
+
+  let port = null, reader = null, writer = null, readLoop = null;
+  let buf = '', waiters = [], pending = [], lineHook = null;
+  let drive = '/SD', path = '/SD', busy = false;
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const status = t => { $('fmStatus').textContent = t; };
+
+  const CRC = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC[n] = c >>> 0; }
+  function crc32(bytes, crc = 0) { crc = ~crc >>> 0; for (let i = 0; i < bytes.length; i++) crc = CRC[(crc ^ bytes[i]) & 255] ^ (crc >>> 8); return ~crc >>> 0; }
+
+  function onLine(l) {
+    if (!l.startsWith('@')) return;                  // ordinary log lines from TidyOS
+    if (lineHook && lineHook(l)) return;
+    const w = waiters.shift();
+    if (w) w(l); else pending.push(l);       // several lines can arrive in one piece
+  }
+  async function open(baud) {
+    await port.open({ baudRate: baud, bufferSize: 65536 });
+    try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (e) {}
+    writer = port.writable.getWriter();
+    reader = port.readable.getReader();
+    readLoop = (async () => {
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i).replace(/\r$/, ''); buf = buf.slice(i + 1); onLine(l); }
+          if (buf.length > 8192) buf = buf.slice(-1024);
+        }
+      } catch (e) {}
+    })();
+  }
+  async function close() {
+    try { reader && await reader.cancel(); } catch (e) {}
+    try { reader && reader.releaseLock(); } catch (e) {}
+    try { writer && writer.releaseLock(); } catch (e) {}
+    try { await readLoop; } catch (e) {}
+    try { await port.close(); } catch (e) {}
+    reader = writer = null; buf = ''; waiters = []; pending = []; lineHook = null;
+  }
+  const send = t => writer.write(enc.encode(t));
+  function nextLine(ms = 4000) {
+    if (pending.length) return Promise.resolve(pending.shift());
+    return new Promise((res, rej) => {
+      const w = l => { clearTimeout(t); res(l); };
+      const t = setTimeout(() => { const i = waiters.indexOf(w); if (i >= 0) waiters.splice(i, 1); rej(new Error('The board did not answer')); }, ms);
+      waiters.push(w);
+    });
+  }
+  // run one command; collect the lines before @ok / @err
+  async function cmd(c, ms = 6000) {
+    const lines = [];
+    pending = [];
+    await send('\n!fs ' + c + '\n');
+    for (;;) {
+      const l = await nextLine(ms);
+      if (l.startsWith('@ok')) return { lines, ok: l };
+      if (l.startsWith('@err')) throw new Error(l.slice(5));
+      lines.push(l);
+    }
+  }
+  async function hello(ms) {
+    await send('\n!fs hello\n');
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      try { const l = await nextLine(end - Date.now()); if (l.startsWith('@hello')) return l.slice(7); } catch (e) { break; }
+    }
+    return null;
+  }
+
+  async function connect() {
+    if (port) { try { if (!busy) { await send('\n!fs slow\n'); await sleep(150); } } catch (e) {} await close(); port = null; $('fmUi').hidden = true; $('fmConnect').textContent = 'Connect to TidyOS'; status('Disconnected.'); return; }
+    try { port = await navigator.serial.requestPort(); } catch (e) { return; }
+    try {
+      status('Connecting…');
+      await open(115200);
+      let who = await hello(2500);
+      if (!who) { status('Waiting for TidyOS to start…'); who = await hello(12000); }
+      if (!who) throw new Error('No answer. Is TidyOS 2.7.3 or newer running on this board? (Update it from its start-up screen.)');
+      // ask for the fast link (921600); fall back to normal speed if it doesn't come up
+      let fast = false;
+      try {
+        await send('\n!fs fast\n');
+        const l = await nextLine(2000);
+        if (l.startsWith('@fast')) {
+          await close(); await sleep(100); await open(921600);
+          fast = !!(await hello(1500));
+          if (!fast) { await close(); status('Fast link failed; back to normal speed in a few seconds…'); await sleep(5000); await open(115200); await hello(3000); }
+        }
+      } catch (e) {}
+      status('Connected: ' + who + (fast ? ' (fast link)' : ''));
+      $('fmConnect').textContent = 'Disconnect';
+      $('fmUi').hidden = false;
+      await showDrives();
+    } catch (e) {
+      status(e.message || 'Could not open the port. Close the installer or any serial monitor and try again.');
+      try { await close(); } catch (x) {}
+      port = null;
+    }
+  }
+
+  const human = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+  async function showDrives() {
+    const r = await cmd('drives');
+    const box = $('fmDrives'); box.innerHTML = '';
+    const ds = r.lines.filter(l => l.startsWith('@drive ')).map(l => { const [, n, t, f] = l.split(' '); return { n, t: +t, f: +f }; });
+    if (!ds.length) { box.textContent = 'No SD card or flash storage found.'; return; }
+    if (!ds.find(d => '/' + d.n === drive)) drive = '/' + ds[0].n;
+    for (const d of ds) {
+      const b = document.createElement('button');
+      b.className = 'fm-btn fm-drive' + ('/' + d.n === drive ? ' on' : '');
+      b.textContent = (d.n === 'SD' ? 'SD card' : 'Internal flash') + ' · ' + human(d.f) + ' free of ' + human(d.t);
+      b.onclick = () => { drive = '/' + d.n; go(drive); showDrives(); };
+      box.appendChild(b);
+    }
+    if (!path.startsWith(drive)) path = drive;
+    await go(path);
+  }
+  async function go(p) {
+    if (busy) return;
+    busy = true;
+    try {
+      const r = await cmd('ls ' + p);
+      path = p; $('fmPath').textContent = p;
+      const items = r.lines.map(l => l.startsWith('@d ') ? { d: 1, n: l.slice(3) } : l.startsWith('@f ') ? (m => ({ d: 0, s: +m[1], n: m[2] }))(l.match(/^@f (\d+) (.*)$/)) : null).filter(Boolean);
+      items.sort((a, b) => b.d - a.d || a.n.localeCompare(b.n, undefined, { sensitivity: 'base' }));
+      const list = $('fmList'); list.innerHTML = '';
+      if (!items.length) list.innerHTML = '<div class="fm-empty">This folder is empty.</div>';
+      for (const it of items) {
+        const row = document.createElement('div'); row.className = 'fm-row';
+        const nm = document.createElement('span'); nm.className = 'nm' + (it.d ? ' dir' : ''); nm.textContent = (it.d ? '📁 ' : '') + it.n;
+        if (it.d) nm.onclick = () => go(p + '/' + it.n);
+        row.appendChild(nm);
+        if (!it.d) {
+          const sz = document.createElement('span'); sz.className = 'sz'; sz.textContent = human(it.s); row.appendChild(sz);
+          const dl = document.createElement('button'); dl.textContent = 'Save'; dl.onclick = () => download(p + '/' + it.n, it.n, it.s); row.appendChild(dl);
+        }
+        const rm = document.createElement('button'); rm.textContent = 'Delete';
+        rm.onclick = async () => {
+          if (!confirm('Delete ' + it.n + ' from the board? This can\'t be undone.')) return;
+          try { await cmd('rm ' + p + '/' + it.n); } catch (e) { alert(e.message); }
+          busy = false; go(p);
+        };
+        row.appendChild(rm);
+        list.appendChild(row);
+      }
+      $('fmUp').disabled = p === drive;
+    } catch (e) { status(e.message); }
+    busy = false;
+  }
+
+  function progress(frac, text) {
+    $('fmProg').hidden = frac == null; $('fmProg').firstElementChild.style.width = ((frac || 0) * 100).toFixed(1) + '%';
+    $('fmXfer').textContent = text || '';
+  }
+  async function upload(files) {
+    if (!port || busy) return;
+    busy = true;
+    let done = 0;
+    try {
+      for (const f of files) {
+        const data = new Uint8Array(await f.arrayBuffer());
+        const crc = crc32(data);
+        const dest = path + '/' + f.name.replace(/[\\/:*?"<>|]/g, '_');
+        progress(0, 'Copying ' + f.name + '…');
+        pending = [];
+        await send('\n!fs put ' + data.length + ' ' + crc.toString(16) + ' ' + dest + '\n');
+        const first = await nextLine(8000);
+        if (first.startsWith('@err')) throw new Error(f.name + ': ' + first.slice(5));
+        if (!first.startsWith('@go')) throw new Error('Unexpected answer: ' + first);
+        // two 1 KB blocks in flight: the board writes one while the next arrives
+        const B = 1024, t0 = performance.now();
+        let sent = 0, acked = 0;
+        let ackWait = null, failed = null;
+        lineHook = l => {
+          if (l.startsWith('@ack ')) acked = +l.slice(5);
+          else if (l.startsWith('@err')) failed = l.slice(5);
+          else return false;
+          if (ackWait) { const w = ackWait; ackWait = null; w(); }
+          return true;
+        };
+        while (sent < data.length) {
+          while (sent - acked >= 2 * B) {
+            await new Promise((res, rej) => { ackWait = res; setTimeout(() => { if (ackWait === res) { ackWait = null; rej(new Error('The board stopped answering')); } }, 8000); });
+          }
+          if (failed) throw new Error(f.name + ': ' + failed);
+          const n = Math.min(B, data.length - sent);
+          await writer.write(data.subarray(sent, sent + n));
+          sent += n;
+          const s = (performance.now() - t0) / 1000;
+          progress(acked / data.length, 'Copying ' + f.name + ' · ' + human(acked) + ' of ' + human(data.length) + (s > 1 ? ' · ' + human(acked / s) + '/s' : ''));
+        }
+        lineHook = l => l.startsWith('@ack ');      // swallow the last acks
+        const end = await nextLine(15000);
+        lineHook = null;
+        if (!end.startsWith('@ok')) throw new Error(f.name + ': ' + (end.startsWith('@err') ? end.slice(5) : end));
+        done++;
+      }
+      progress(null, 'Copied ' + done + ' file' + (done === 1 ? '' : 's') + '.');
+    } catch (e) {
+      lineHook = null;
+      progress(null, e.message);
+      await sleep(5500);                // let the board give up on the half-sent file
+    }
+    busy = false;
+    await go(path);
+    showDrives();
+  }
+  async function download(p, name, size) {
+    if (busy) return;
+    busy = true;
+    const parts = []; let got = 0, crc = 0;
+    try {
+      lineHook = l => {
+        if (!l.startsWith('@b ')) return false;
+        const bin = atob(l.slice(3)); const u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        parts.push(u); got += u.length; crc = crc32(u, crc);
+        progress(size ? got / size : 0, 'Saving ' + name + ' · ' + human(got) + ' of ' + human(size));
+        return true;
+      };
+      const r = await cmd('get ' + p, 10000);
+      lineHook = null;
+      const want = parseInt(r.ok.slice(4), 16);
+      if (want !== crc) throw new Error(name + ' came through damaged; try again.');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(parts)); a.download = name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      progress(null, 'Saved ' + name + '.');
+    } catch (e) { lineHook = null; progress(null, e.message); }
+    busy = false;
+  }
+
+  // keep the fast link alive (the board drops back to normal speed after a minute of quiet)
+  setInterval(async () => { if (port && writer && !busy) { busy = true; try { await hello(2000); } catch (e) {} busy = false; } }, 25000);
+  $('fmConnect').onclick = connect;
+  $('fmUp').onclick = () => { if (path !== drive) go(path.slice(0, path.lastIndexOf('/')) || drive); };
+  $('fmRefresh').onclick = () => showDrives();
+  $('fmMkdir').onclick = async () => {
+    const n = prompt('New folder name:'); if (!n) return;
+    try { await cmd('mkdir ' + path + '/' + n.replace(/[\\/:*?"<>|]/g, '_')); } catch (e) { alert(e.message + (drive === '/flash' ? ' (the internal flash has no folders)' : '')); }
+    go(path);
+  };
+  $('fmMusic').onclick = async () => {
+    if (drive !== '/SD') { alert('The Music folder is on the SD card.'); return; }
+    for (const m of ['Music', 'music', 'MUSIC']) { try { await cmd('ls /SD/' + m); go('/SD/' + m); return; } catch (e) {} }
+    try { await cmd('mkdir /SD/Music'); } catch (e) {}
+    go('/SD/Music');
+  };
+  $('fmPick').onclick = () => $('fmFile').click();
+  $('fmFile').onchange = e => { upload([...e.target.files]); e.target.value = ''; };
+  const drop = $('fmDrop');
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); upload([...e.dataTransfer.files]); };
+})();
 </script>
 </body>
 </html>

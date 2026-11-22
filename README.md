@@ -13,6 +13,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - Apps: **Calculator, Neat Lite** (writing with fonts, sizes, colours and spell check), **Tidy Lite** (spreadsheet: opens and saves .csv and .xlsx, with drag-select, right-click insert/delete rows and columns, resizable sizes, left/center/right, Auto sum, check boxes, row shading and a frozen top row), **Ready Lite** (to-do), **Steady Lite** (bills), **Rugged Lite** (grid-down guide), **Doodle** (MacPaint-style drawing), **Pictures** (JPEG/BMP viewer), **Music** (MP3 and MIDI with shuffle, plays in your browser), **Nic Sweep** (who's on your network, export to Tidy or Excel), **Screenshot** (also the Print Screen key), **Clock** (watch face, alarm, presets, world time, stopwatch), **Latch** (password safe - opens the same .latch vaults as the Latch web app), **Messages, Browser, Files, Settings, Task Manager, Ping, Switches**
 - **Printing** to network printers (found automatically), through a Pi with CUPS, or Save as PDF
 - **Messages** with The Shelf: chat with every Shelf on your Wi-Fi, and join the Shelf boards' 2.4 GHz Coms mesh
+- **Copy files over USB** (HTML5 edition, 2.7.3 on): the [web flasher page](https://hardwaremack-prog.github.io/TidyOS-ESP32/#html5) has a file manager that copies music and other files to the SD card or internal flash through the USB cable, no Wi-Fi needed (Chrome or Edge)
 - **Wi-Fi file sharing** (like Shelf Lite): one switch turns on a web page for copying files to and from the SD card
 - **Games:** Sammy the Snake (with shuffled MIDI music), Minesweeper, Blocks, 2048, **Bricks** (Arkanoid-style), **Paradrop** (Airborne!-style), **Deep Drill**, **Missile Command** and **StuntCopter**. Arrow keys or WASD
 - **Games:** every game that moves has a **Pause** button next to New game. Sammy's one **Play music / Pause music** button plays your MIDI folder, shuffled
@@ -29,7 +30,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
 - **Updates itself from GitHub:** Settings → Check for updates
 
-> Status: version 2.7.2. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
+> Status: version 2.7.3. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
