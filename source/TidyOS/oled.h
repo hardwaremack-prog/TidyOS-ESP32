@@ -121,10 +121,12 @@ static void pageClock(time_t now)
   struct tm t; localtime_r(&now, &t);
   char b[24];
   hm(t, b, sizeof(b), false);
-  int w = textW(&FONT_std_24, b), w2 = textW(&FONT_std_12, t.tm_hour < 12 ? "AM" : "PM");
+  char sec[6]; snprintf(sec, sizeof(sec), ":%02d", t.tm_sec);       // the seconds, ticking every second
+  int w = textW(&FONT_std_24, b), w2 = textW(&FONT_std_12, ":00");
   int x = (128 - w - w2 - 3) / 2;
   text(&FONT_std_24, x, 2, b);
-  text(&FONT_std_12, x + w + 3, 12, t.tm_hour < 12 ? "AM" : "PM");
+  text(&FONT_std_12, x + w + 3, 2, sec);
+  text(&FONT_std_12, x + w + 3, 14, t.tm_hour < 12 ? "AM" : "PM");
   static const char * DN[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
   static const char * MN[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
   char d[40]; snprintf(d, sizeof(d), "%s %s %d", DN[t.tm_wday % 7], MN[t.tm_mon % 12], t.tm_mday);
@@ -229,7 +231,12 @@ void oledSplash(const char * msg, int percent)
   fit(&FONT_std_12, 0, 26, msg);
   hline(0, 127, 52); hline(0, 127, 61);
   for (int y = 52; y <= 61; ++y) { px(0, y); px(127, y); }
-  if (percent > 0) box(2, 54, 2 + (123 * (percent > 100 ? 100 : percent)) / 100, 59);
+  if (percent > 100) percent = 100;
+  if (percent > 0) {
+    box(2, 54, 1 + (124 * percent) / 100, 59);                  // 2..125 inside the frame at 100%
+    char p[8]; snprintf(p, sizeof(p), "%d%%", percent);
+    text(&FONT_std_12, 127 - textW(&FONT_std_12, p), 38, p);    // the number, so bar and figure agree
+  }
   push();
 }
 
