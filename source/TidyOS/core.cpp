@@ -908,9 +908,9 @@ private:
       localtime_r(&now, &tmv);
       if (tmv.tm_year > 100) {
         int h = tmv.tm_hour % 12; if (h == 0) h = 12;
-        snprintf(b, sizeof(b), "%d:%02d:%02d %s", h, tmv.tm_min, tmv.tm_sec, tmv.tm_hour < 12 ? "AM" : "PM");   // (repainted every second)
+        snprintf(b, sizeof(b), "%d:%02d %s", h, tmv.tm_min, tmv.tm_hour < 12 ? "AM" : "PM");
       } else {
-        snprintf(b, sizeof(b), "--:--:--");
+        snprintf(b, sizeof(b), "--:--");
       }
       int w = cv->textExtent(&FONT_std_14, b);
       cv->drawText(&FONT_std_14, SCREEN_W - w - 8, by + 3, b);
@@ -1151,7 +1151,6 @@ static void splashLogo()
 static SemaphoreHandle_t s_barMux = nullptr;
 static volatile int  s_barShown = 0, s_barCeil = 0;
 static volatile bool s_barRun = false, s_barAlive = false;
-static volatile uint32_t s_barReal = 0;          // when a step last said how far along it really is
 
 static void drawBar(Canvas & cv, int percent)
 {
@@ -1162,12 +1161,6 @@ static void drawBar(Canvas & cv, int percent)
   if (percent > 100) percent = 100;
   int w = BAR_W * percent / 100;
   if (w > 0) cv.fillRectangle(BAR_X, BAR_Y, BAR_X + w - 1, BAR_Y + BAR_H - 1);
-  // the figure beside it, so the bar and the number always agree
-  char p[8]; snprintf(p, sizeof(p), "%d%%", percent);
-  cv.setBrushColor(T.desk);
-  cv.fillRectangle(BAR_X + BAR_W + 6, BAR_Y - 2, BAR_X + BAR_W + 52, BAR_Y + BAR_H + 1);
-  cv.setPenColor(T.deskText);
-  cv.drawText(&FONT_std_12, BAR_X + BAR_W + 8, BAR_Y + 1, p);
 }
 
 static void barTaskBody(void * arg)
@@ -1175,9 +1168,7 @@ static void barTaskBody(void * arg)
   while (s_barRun) {
     vTaskDelay(pdMS_TO_TICKS(300));
     if (xSemaphoreTake(s_barMux, pdMS_TO_TICKS(100)) != pdTRUE) continue;
-    // creep only while a step has gone quiet (joining Wi-Fi, waiting on GitHub): while it
-    // reports real progress (the download), the bar shows exactly that
-    if (s_barRun && s_barShown < s_barCeil && millis() - s_barReal > 2500) {
+    if (s_barRun && s_barShown < s_barCeil) {
       s_barShown = s_barShown + 1;
       Canvas cv(s_dc);
       drawBar(cv, s_barShown);
@@ -1258,8 +1249,7 @@ static void splash(const char * msg, int percent)
     if (percent > 100) percent = 100;
     if (percent > shown) shown = percent;
     s_barShown = shown;
-    s_barCeil  = percent >= 100 ? 100 : (shown + 4 > 97 ? 97 : shown + 4);   // (a little creep while a step is quiet)
-    s_barReal  = millis();
+    s_barCeil  = percent >= 100 ? 100 : (shown + 15 > 97 ? 97 : shown + 15);
   } else {
     s_barCeil = shown;
   }
@@ -1537,7 +1527,6 @@ void setup()
 #ifdef TIDYOS_HTML5
   esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);   // no Bluetooth in this edition: give its RAM to apps
 #endif
-  Serial.setRxBufferSize(2048);     // room for a whole block from the web flasher's file manager
   Serial.begin(115200);
   delay(200);
   crashBegin();     // did the last run crash? (Task Manager shows it)
