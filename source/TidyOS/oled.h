@@ -20,6 +20,10 @@ static uint8_t  s_tx[1024];                   // being sent (I2C task)
 static volatile bool s_dirty = false;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 static int      s_page = 0, s_pageAge = 0;
+static SemaphoreHandle_t s_drawMx = nullptr;     // the desktop's once-a-second pages and the news ticker share s_buf
+static volatile bool s_newsMode = false;         // the news page: the send task redraws it ~25 times a second
+static uint32_t s_newsAt = 0;
+static void drawNews();
 
 static void cmds(std::initializer_list<uint8_t> list)
 {
@@ -32,7 +36,11 @@ static void cmds(std::initializer_list<uint8_t> list)
 static void sendTask(void *)
 {
   for (;;) {
-    if (!s_dirty) { vTaskDelay(pdMS_TO_TICKS(40)); continue; }
+    if (s_newsMode && s_drawMx && xSemaphoreTake(s_drawMx, pdMS_TO_TICKS(20)) == pdTRUE) {
+      if (s_newsMode) drawNews();                  // (draws and pushes the next frame of the ticker)
+      xSemaphoreGive(s_drawMx);
+    }
+    if (!s_dirty) { vTaskDelay(pdMS_TO_TICKS(s_newsMode ? 10 : 40)); continue; }
     portENTER_CRITICAL(&s_mux);
     memcpy(s_tx, s_buf, sizeof(s_tx));
     s_dirty = false;
@@ -52,6 +60,20 @@ static void clear() { memset(s_buf, 0, sizeof(s_buf)); }
 static inline void px(int x, int y) { if ((unsigned)x < 128 && (unsigned)y < 64) s_buf[x + (y >> 3) * 128] |= 1 << (y & 7); }
 static void hline(int x0, int x1, int y) { for (int x = x0; x <= x1; ++x) px(x, y); }
 static void box(int x0, int y0, int x1, int y1) { for (int y = y0; y <= y1; ++y) hline(x0, x1, y); }
+static void line(int x0, int y0, int x1, int y1)
+{
+  int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1, e = dx + dy;
+  for (;;) { px(x0, y0); if (x0 == x1 && y0 == y1) break; int e2 = 2 * e; if (e2 >= dy) { e += dy; x0 += sx; } if (e2 <= dx) { e += dx; y0 += sy; } }
+}
+static void circle(int cx, int cy, int r)
+{
+  int x = r, y = 0, e = 1 - r;
+  while (x >= y) {
+    px(cx + x, cy + y); px(cx + y, cy + x); px(cx - y, cy + x); px(cx - x, cy + y);
+    px(cx - x, cy - y); px(cx - y, cy - x); px(cx + y, cy - x); px(cx + x, cy - y);
+    ++y; if (e < 0) e += 2 * y + 1; else { --x; e += 2 * (y - x) + 1; }
+  }
+}
 
 static int glyphW(const fabgl::FontInfo * f, uint8_t c)
 {
@@ -197,6 +219,100 @@ static void pageMessages(int n)
   band("Open Messages to read them");
 }
 
+
+// the last 4 days of temperatures (every 3 hours), with a dotted freezing line
+static void pageTemps()
+{
+  int lo = 999, hi = -999;
+  for (int i = 0; i < s_tempsN; ++i) { if (s_temps[i] < lo) lo = s_temps[i]; if (s_temps[i] > hi) hi = s_temps[i]; }
+  char b[48];
+  int glo = lo - 2, ghi = hi + 2;
+  const int gx = 0, gy = 0, gw = 128, gh = 46;
+  hline(gx, gx + gw - 1, gy); hline(gx, gx + gw - 1, gy + gh - 1);
+  for (int y = gy; y < gy + gh; ++y) { px(gx, y); px(gx + gw - 1, y); }
+  auto Y = [&](int v) { return gy + gh - 3 - (v - glo) * (gh - 5) / (ghi - glo > 0 ? ghi - glo : 1); };
+  auto X = [&](int i) { return gx + 2 + i * (gw - 5) / (s_tempsN > 1 ? s_tempsN - 1 : 1); };
+  if (32 > glo && 32 < ghi) { for (int x = gx + 2; x < gx + gw - 2; x += 3) px(x, Y(32)); text(&FONT_std_12, gx + 3, Y(32) - 12 < gy + 1 ? Y(32) + 2 : Y(32) - 12, "32"); }
+  for (int d = 1; d < 4; ++d) { int x = gx + d * gw / 4; for (int y = gy + gh - 4; y < gy + gh - 1; ++y) px(x, y); }   // day marks
+  for (int i = 1; i < s_tempsN; ++i) { line(X(i - 1), Y(s_temps[i - 1]), X(i), Y(s_temps[i])); line(X(i - 1), Y(s_temps[i - 1]) + 1, X(i), Y(s_temps[i]) + 1); }
+  snprintf(b, sizeof(b), "4 days  %d\xB0 to %d\xB0  now %d\xB0", lo, hi, s_wx.code >= 0 ? s_wx.temp : s_temps[s_tempsN - 1]);
+  band(b);
+}
+
+// a watch face, with the time and date beside it
+static void pageAnalog(time_t now)
+{
+  struct tm t; localtime_r(&now, &t);
+  const int cx = 23, cy = 23, r = 22;
+  circle(cx, cy, r); circle(cx, cy, r - 1);
+  for (int k = 0; k < 12; ++k) {
+    float a = k * (float)M_PI / 6;
+    int in = k % 3 == 0 ? r - 6 : r - 4;
+    line(cx + (int)lroundf(sinf(a) * in), cy - (int)lroundf(cosf(a) * in), cx + (int)lroundf(sinf(a) * (r - 2)), cy - (int)lroundf(cosf(a) * (r - 2)));
+  }
+  auto hand = [&](float turns, int len, bool thick) {
+    float a = turns * 2 * (float)M_PI;
+    int x = cx + (int)lroundf(sinf(a) * len), y = cy - (int)lroundf(cosf(a) * len);
+    line(cx, cy, x, y);
+    if (thick) { line(cx + 1, cy, x + 1, y); line(cx, cy + 1, x, y + 1); }
+  };
+  hand(((t.tm_hour % 12) + t.tm_min / 60.0f) / 12, 11, true);
+  hand((t.tm_min + t.tm_sec / 60.0f) / 60, 17, true);
+  hand(t.tm_sec / 60.0f, 19, false);
+  box(cx - 1, cy - 1, cx + 1, cy + 1);
+  char b[32];
+  hm(t, b, sizeof(b), false);
+  text(&FONT_std_16, 54, 2, b);
+  text(&FONT_std_12, 54 + textW(&FONT_std_16, b) + 2, 6, t.tm_hour < 12 ? "AM" : "PM");
+  static const char * DN[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+  static const char * MN[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+  fit(&FONT_std_12, 54, 20, DN[t.tm_wday % 7]);
+  snprintf(b, sizeof(b), "%s %d", MN[t.tm_mon % 12], t.tm_mday); text(&FONT_std_12, 54, 33, b);
+  if (s_wx.code >= 0) { snprintf(b, sizeof(b), "%d\xB0" "F  %s", s_wx.temp, wxText(s_wx.code)); band(b); }
+  else band(netClockSet() ? "TidyOS" : "Clock not set yet");
+}
+
+// news: each headline scrolls across, one after another (drawn by the send task, ~25 frames a second)
+static void drawNews()
+{
+  static uint32_t last = 0;
+  uint32_t now = millis();
+  if (now - last < 38) return;
+  last = now;
+  int n = s_newsCount;
+  clear();
+  if (n <= 0) { center(&FONT_std_12, 16, "No headlines yet"); band("News"); push(); return; }
+  // which headline, and how far along: each one enters from the right and leaves on the left
+  static char cur[120]; static int curW = -1, idx = 0; static uint32_t startAt = 0, seenAt = 1;
+  if (seenAt != s_newsAt) { seenAt = s_newsAt; idx = 0; startAt = now; curW = -1; }   // the page just came round: from the top
+  if (curW < 0 || (int)((now - startAt) * 60 / 1000) > curW + 128) {      // 60 pixels a second
+    if (curW >= 0) idx = (idx + 1) % n;
+    startAt = now;
+    size_t o = 0;
+    for (const unsigned char * p = (const unsigned char *)s_news[idx % n]; *p && o < sizeof(cur) - 1; ++p) {
+      if (*p < 0x80) cur[o++] = *p;
+      else if (*p == 0xE2 && p[1] == 0x80) { char c = (p[2] == 0x98 || p[2] == 0x99) ? '\'' : (p[2] == 0x9C || p[2] == 0x9D) ? '"' : '-'; cur[o++] = c; p += 2; }
+      else if ((*p & 0xC0) == 0xC0) cur[o++] = ' ';
+    }
+    cur[o] = 0;
+    curW = textW(&FONT_std_16, cur);
+  }
+  int x = 128 - (int)((now - startAt) * 60 / 1000);
+  char b[24];
+  snprintf(b, sizeof(b), "NEWS  %d/%d", idx % n + 1, n);
+  text(&FONT_std_12, 0, 0, b);
+  hline(0, 127, 14);
+  text(&FONT_std_16, x, 22, cur);
+  time_t tn = time(nullptr);
+  if (tn > 1600000000) {
+    struct tm tt; localtime_r(&tn, &tt);
+    hm(tt, b, sizeof(b));
+    if (s_wx.code >= 0) { size_t l = strlen(b); snprintf(b + l, sizeof(b) - l, "   %d\xB0" "F", s_wx.temp); }
+    band(b);
+  } else band("Headlines");
+  push();
+}
+
 }  // namespace oled
 
 // found it? (called once at start-up)
@@ -234,7 +350,6 @@ void oledBegin()
   Serial.printf("[TidyOS] OLED screen found at 0x%02X\n", s_addr);
 }
 
-// start-up progress
 // before deep sleep: power an in-line screen down (GPIO 12 must be low when the board starts again)
 void oledOff()
 {
@@ -244,6 +359,7 @@ void oledOff()
   if (s_inline) { digitalWrite(12, LOW); pinMode(12, INPUT_PULLDOWN); }
 }
 
+// start-up progress
 void oledSplash(const char * msg, int percent)
 {
   using namespace oled;
@@ -257,7 +373,7 @@ void oledSplash(const char * msg, int percent)
   push();
 }
 
-// once a second from the desktop: the next screen every 5 s
+// once a second from the desktop: the next screen every 5 s (the news ticker gets 25 s)
 void oledTick()
 {
   using namespace oled;
@@ -265,13 +381,25 @@ void oledTick()
   time_t now = time(nullptr);
   std::string song = musicNowPlaying();
   int unread = msgStarted() ? msgUnreadTotal() : 0;
-  // the screens to go round: 0 access, 1 clock, 2 weather, 3 world, 4 system, 5 music, 6 messages
-  bool have[7] = { true, true, s_wx.code >= 0, true, true, !song.empty(), unread > 0 };
-  if (++s_pageAge >= 5) {
+  // 0 access, 1 clock, 2 weather, 3 world, 4 system, 5 music, 6 messages, 7 watch face, 8 temperatures, 9 news
+  static const int ORDER[10] = { 0, 1, 7, 2, 8, 9, 3, 4, 5, 6 };
+  bool timeOk = netClockSet();
+  bool have[10] = { true, true, s_wx.code >= 0, true, true, !song.empty(), unread > 0, timeOk, s_tempsN > 1, s_newsCount > 0 };
+  static int pos = 1;
+  if (++s_pageAge >= (ORDER[pos] == 9 ? 25 : 5)) {
     s_pageAge = 0;
-    for (int k = 0; k < 7; ++k) { s_page = (s_page + 1) % 7; if (have[s_page]) break; }
+    for (int k = 0; k < 10; ++k) { pos = (pos + 1) % 10; if (have[ORDER[pos]]) break; }
   }
-  if (!have[s_page]) s_page = 1;
+  if (!have[ORDER[pos]]) pos = 1;
+  s_page = ORDER[pos];
+  if (!s_drawMx) s_drawMx = xSemaphoreCreateMutex();
+  xSemaphoreTake(s_drawMx, portMAX_DELAY);
+  if (s_page == 9) {
+    if (!s_newsMode) { s_newsAt = millis(); s_newsMode = true; }   // the send task draws it from here on
+    xSemaphoreGive(s_drawMx);
+    return;
+  }
+  s_newsMode = false;
   clear();
   switch (s_page) {
     case 0: pageAccess(); break;
@@ -280,10 +408,12 @@ void oledTick()
     case 3: pageWorld(now); break;
     case 4: pageSystem(); break;
     case 5: pageMusic(song); break;
+    case 7: pageAnalog(now); break;
+    case 8: pageTemps(); break;
     default: pageMessages(unread); break;
   }
-  // which screen of how many: little dots up the right of the band
   push();
+  xSemaphoreGive(s_drawMx);
 }
 #else
 void oledBegin() {}
