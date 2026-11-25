@@ -605,10 +605,104 @@ static bool httpGet(const std::string & url0, std::function<bool(const char *, s
   return false;
 }
 
+#ifdef TIDYOS_HTML5
+// ---- pages through the web browser: when TidyOS can't get online itself, the page showing the
+// desktop fetches the address (straight, or through a public reader when the site doesn't allow
+// that), trims it down and sends it back with POST /relay on the desktop's own address.
+static SemaphoreHandle_t s_relayMx = nullptr;
+static HtmlText * s_relayH = nullptr;
+static volatile int s_relayState = 0;      // 0 idle, 1 waiting for the page, 2 got it, 3 the page couldn't
+static std::string s_relayErr;
+
+static std::string relayQ(const std::string & q, const char * key)
+{
+  std::string k = std::string(key) + "=";
+  size_t p = q.find(k);
+  if (p == std::string::npos || (p && q[p - 1] != '&')) return "";
+  std::string raw = q.substr(p + k.size(), q.find('&', p) == std::string::npos ? std::string::npos : q.find('&', p) - p - k.size()), v;
+  for (size_t i = 0; i < raw.size(); ++i) {
+    if (raw[i] == '+') v += ' ';
+    else if (raw[i] == '%' && i + 2 < raw.size()) { v += (char)strtol(raw.substr(i + 1, 2).c_str(), nullptr, 16); i += 2; }
+    else v += raw[i];
+  }
+  return v;
+}
+
+void netRelayHttp(WiFiClient & c, const std::string & query, const std::string & early, long len)
+{
+  const char * ans = "ok";
+  if (s_relayMx && xSemaphoreTake(s_relayMx, pdMS_TO_TICKS(2000)) == pdTRUE) {
+    if (s_relayState != 1 || !s_relayH) ans = "not waiting";
+    else {
+      std::string e = relayQ(query, "err");
+      if (!e.empty()) { s_relayErr = e; s_relayState = 3; }
+      else {
+        std::string u = relayQ(query, "url");
+        if (!u.empty()) s_relayH->base = u;
+        long got = std::min((long)early.size(), len);
+        if (got > 0) s_relayH->feed(early.data(), got);
+        char buf[512];
+        uint32_t last = millis();
+        while (got < len) {
+          int a = c.available();
+          if (a <= 0) { if (!c.connected() || millis() - last > 8000) break; delay(2); continue; }
+          int r = c.read((uint8_t *)buf, std::min((long)sizeof(buf), std::min((long)a, len - got)));
+          if (r <= 0) continue;
+          last = millis();
+          got += r;
+          gNetRx += r;
+          if (s_relayH->text.size() < s_relayH->maxText) s_relayH->feed(buf, r);
+        }
+        s_relayState = 2;
+      }
+    }
+    xSemaphoreGive(s_relayMx);
+  } else ans = "busy";
+  char h[160];
+  snprintf(h, sizeof(h), "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %u\r\nConnection: close\r\n\r\n%s", (unsigned)strlen(ans), ans);
+  c.write((const uint8_t *)h, strlen(h));
+}
+
+// asks the page; true with the page's text in `out`, or false with `err`
+static bool relayFetch(const std::string & url, std::string & out, std::string & err)
+{
+  if (!s_relayMx) s_relayMx = xSemaphoreCreateMutex();
+  if (!screenViewer()) return false;
+  HtmlText * h = new (std::nothrow) HtmlText;
+  if (!h) { err = "Out of memory"; return false; }
+  h->base = url;
+  xSemaphoreTake(s_relayMx, portMAX_DELAY);
+  s_relayH = h; s_relayErr.clear(); s_relayState = 1;
+  xSemaphoreGive(s_relayMx);
+  screenMedia("f " + url);
+  uint32_t t0 = millis();
+  while (s_relayState == 1 && millis() - t0 < 50000 && screenViewer()) delay(50);
+  xSemaphoreTake(s_relayMx, portMAX_DELAY);
+  int st = s_relayState;
+  s_relayState = 0; s_relayH = nullptr;
+  xSemaphoreGive(s_relayMx);
+  bool ok = false;
+  if (st == 2) { out = h->result(); ok = !out.empty(); if (!ok) err = "The page was empty."; }
+  else err = st == 3 ? "Your web browser couldn't get it either: " + s_relayErr : "No answer from your web browser.";
+  delete h;
+  return ok;
+}
+#endif
+
 static void fetchTaskBody(void * arg)
 {
   std::string url = s_url, err, finalUrl;
   std::string out;
+#ifdef TIDYOS_HTML5
+  // no internet here, but the browser showing the desktop may have some
+  if (!netConnected() && screenViewer()) {
+    if (!relayFetch(url, out, err) && err.empty()) err = "Not connected to Wi-Fi. Open Settings to connect.";
+    if (out.empty() && err.empty()) err = "The page was empty.";
+    if (err.empty()) s_result = std::move(out); else s_result = err;
+    s_state = err.empty() ? FETCH_DONE : FETCH_ERROR;
+    return;
+  }
+#endif
   if (!netConnected()) {
     err = "Not connected to Wi-Fi. Open Settings to connect.";
   } else if (gSet.proxy.length()) {
@@ -629,6 +723,13 @@ static void fetchTaskBody(void * arg)
     if (ok) out = h->result();
     delete h;
   }
+#ifdef TIDYOS_HTML5
+  // TidyOS couldn't reach the site (Wi-Fi without internet, say): try through the browser
+  if (!err.empty() && err.find("error ") == std::string::npos && !gSet.proxy.length() && screenViewer()) {
+    std::string e2;
+    if (relayFetch(url, out, e2)) err.clear();
+  }
+#endif
   if (out.empty() && err.empty()) err = "The page was empty.";
   if (err.empty()) s_result = std::move(out); else s_result = err;
   s_state  = err.empty() ? FETCH_DONE : FETCH_ERROR;

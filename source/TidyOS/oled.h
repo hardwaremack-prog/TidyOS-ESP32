@@ -13,6 +13,7 @@ std::string musicNowPlaying();                // media_apps.h: the song playing 
 namespace oled {
 
 static bool     s_on = false;
+static bool     s_inline = false;            // plugged straight onto 27 · 14 · 12 · GND, powered from GPIO 12
 static uint8_t  s_addr = 0x3C;
 static uint8_t  s_buf[1024];                  // drawn here (UI side)
 static uint8_t  s_tx[1024];                   // being sent (I2C task)
@@ -202,12 +203,26 @@ static void pageMessages(int n)
 void oledBegin()
 {
   using namespace oled;
-  Wire.begin(21, 22, 400000);
-  for (uint8_t a : { (uint8_t)0x3C, (uint8_t)0x3D }) {
-    Wire.beginTransmission(a);
-    if (Wire.endTransmission() == 0) { s_addr = a; s_on = true; break; }
+  auto probe = [](int sda, int scl) {
+    Wire.begin(sda, scl, 400000);
+    for (uint8_t a : { (uint8_t)0x3C, (uint8_t)0x3D }) {
+      Wire.beginTransmission(a);
+      if (Wire.endTransmission() == 0) { s_addr = a; s_on = true; return true; }
+    }
+    Wire.end();
+    return false;
+  };
+  if (!probe(21, 22)) {
+    // In line, as on The Shelf: the screen plugged straight onto 27 · 14 · 12 · GND (turned around),
+    // powered from GPIO 12 (a screen draws ~10-20 mA, well within what a pin gives). It's turned the
+    // same way as on 21/22, so the picture needs no change.
+    gpio_set_drive_capability(GPIO_NUM_12, GPIO_DRIVE_CAP_3);
+    pinMode(12, OUTPUT); digitalWrite(12, HIGH);
+    delay(120);
+    if (probe(27, 14)) { s_inline = true; Serial.println("[TidyOS] OLED screen found in line (SDA 27, SCL 14, power 12)"); }
+    else { digitalWrite(12, LOW); pinMode(12, INPUT); }
   }
-  if (!s_on) { Wire.end(); Serial.println("[TidyOS] no OLED screen on GPIO 21/22"); return; }
+  if (!s_on) { Serial.println("[TidyOS] no OLED screen (looked on 21/22 and in line on 27/14)"); return; }
   // SSD1306 128x64, turned around (A0 / C0), charge pump on
   cmds({ 0xAE, 0xD5, 0x80, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA0, 0xC0,
          0xDA, 0x12, 0x81, 0xCF, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0x2E, 0xAF });
@@ -220,6 +235,15 @@ void oledBegin()
 }
 
 // start-up progress
+// before deep sleep: power an in-line screen down (GPIO 12 must be low when the board starts again)
+void oledOff()
+{
+  using namespace oled;
+  if (!s_on) return;
+  cmds({ 0xAE });
+  if (s_inline) { digitalWrite(12, LOW); pinMode(12, INPUT_PULLDOWN); }
+}
+
 void oledSplash(const char * msg, int percent)
 {
   using namespace oled;
@@ -263,6 +287,7 @@ void oledTick()
 }
 #else
 void oledBegin() {}
+void oledOff() {}
 void oledSplash(const char *, int) {}
 void oledTick() {}
 #endif

@@ -640,6 +640,7 @@ public:
           gSleepReq = false;
           Serial.println("[TidyOS] deep sleep - press BOOT (or EN) to wake");
           ledSetOn(false);
+          oledOff();
           delay(400);                               // let the page get the last frame
           WiFi.disconnect(true);
           esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);   // the BOOT button wakes it
@@ -1561,7 +1562,7 @@ void setup()
 #ifdef TIDYOS_HTML5
   startDisplay();
   releaseVgaPins();     // no monitor in this edition: free GPIO 19/18/5/... (the in-line SD wiring uses them)
-  oledBegin();          // a little OLED on GPIO 21/22, if there is one
+  oledBegin();          // a little OLED on GPIO 21/22 (or plugged on in line at 27/14/12), if there is one
   bootChooser();        // start-up switches (SD card, mesh, blue light) before they take any RAM
   if (gSet.sdOn) gSDMounted = mountAnySD();
 #else

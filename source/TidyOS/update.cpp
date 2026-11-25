@@ -300,6 +300,165 @@ static void finish(void (*status)(const char *, int), const char * msg, int pct,
   ESP.restart();
 }
 
+
+
+// the file is on the card and checked: note what it is and restart into the loader
+static void saveAndHandOver(void (*status)(const char *, int), const std::string & ver, const std::string & sha)
+{
+  char b[96];
+  FILE * f = fopen(SD_MOUNT "/tidyos/update.sha", "w");
+  if (f) { fputs(sha.c_str(), f); fclose(f); }
+  f = fopen(SD_MOUNT "/tidyos/update.ver", "w");      // which version this is: at the next start TidyOS can tell if it went in
+  if (f) { fputs(ver.c_str(), f); fclose(f); }
+
+  // hand over to the loader
+  const esp_partition_t * loader = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, nullptr);
+  esp_err_t er = loader ? esp_ota_set_boot_partition(loader) : ESP_ERR_NOT_FOUND;
+  if (er != ESP_OK) {
+    snprintf(b, sizeof(b), "Couldn't start the installer (%s) - reinstall from the web flasher", esp_err_to_name(er));
+    remove(SD_MOUNT "/tidyos/update.bin");
+    finish(status, b, 0, 9000);
+  }
+  snprintf(b, sizeof(b), "Installing %s - TidyOS restarts in about 30 s", ver.c_str());
+  finish(status, b, 100, 2500);
+}
+
+#ifdef TIDYOS_HTML5
+// ---------------------------------------------------------------- update through the web browser
+// When TidyOS itself can't reach GitHub (no Wi-Fi, or Wi-Fi without internet) but the browser
+// showing the desktop can, the page downloads the update and sends it here (POST /tidyos-update
+// on the desktop's own address). The file goes to the SD card and is checked exactly as before.
+#include "screen.h"
+static volatile int s_bu = 0;        // 0 off, 1 waiting for the page, 2 receiving, 3 received OK, 4 failed, 5 already newest
+static volatile int s_buDl = -1;     // the page's own download progress, 0-100
+static volatile uint32_t s_buGot = 0, s_buTotal = 0;
+static char s_buMsg[80];
+static std::string s_buVer, s_buSha;
+
+static std::string qget(const std::string & q, const char * key)
+{
+  std::string k = std::string(key) + "=";
+  size_t p = 0;
+  while (p < q.size()) {
+    size_t e = q.find('&', p);
+    if (e == std::string::npos) e = q.size();
+    if (q.compare(p, k.size(), k) == 0) {
+      std::string v, raw = q.substr(p + k.size(), e - p - k.size());
+      for (size_t i = 0; i < raw.size(); ++i) {
+        if (raw[i] == '+') v += ' ';
+        else if (raw[i] == '%' && i + 2 < raw.size()) { v += (char)strtol(raw.substr(i + 1, 2).c_str(), nullptr, 16); i += 2; }
+        else v += raw[i];
+      }
+      return v;
+    }
+    p = e + 1;
+  }
+  return "";
+}
+
+static void relayReply(WiFiClient & c, int code, const char * msg)
+{
+  char h[240];
+  snprintf(h, sizeof(h), "HTTP/1.0 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %u\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n%s",
+           code, code == 200 ? "OK" : "Error", (unsigned)strlen(msg), msg);
+  c.write((const uint8_t *)h, strlen(h));
+}
+
+void updateRelayProgress(int pct) { s_buDl = pct; }
+
+// POST /tidyos-update?ver=..&size=..&sha256=..  body = tidyos.bin   (or ?err=message / ?newest=version)
+void updateRelayHttp(WiFiClient & c, const std::string & query, const std::string & early, long len)
+{
+  if (s_bu != 1) { relayReply(c, 409, "TidyOS isn't waiting for an update. Use Check for updates first."); return; }
+  std::string e = qget(query, "err");
+  if (!e.empty()) { strlcpy(s_buMsg, e.c_str(), sizeof(s_buMsg)); s_bu = 4; relayReply(c, 200, "ok"); return; }
+  std::string nw = qget(query, "newest");
+  if (!nw.empty()) { s_buVer = nw; s_bu = 5; relayReply(c, 200, "ok"); return; }
+  std::string ver = qget(query, "ver"), sha = qget(query, "sha256");
+  long size = atol(qget(query, "size").c_str());
+  for (auto & ch : sha) ch = tolower(ch);
+  if (ver.empty() || sha.size() != 64 || size < 100000 || size != len) { relayReply(c, 400, "That isn't a TidyOS update."); return; }
+  if (versionCmp(ver, TIDYOS_VERSION) <= 0) { s_buVer = ver; s_bu = 5; relayReply(c, 200, "ok"); return; }
+  FILE * f = fopen(SD_MOUNT "/tidyos/update.bin", "wb");
+  if (!f) { strlcpy(s_buMsg, "can't write to the SD card", sizeof(s_buMsg)); s_bu = 4; relayReply(c, 500, s_buMsg); return; }
+  s_buTotal = len; s_buGot = 0; s_bu = 2;
+  mbedtls_sha256_context ctx;
+  mbedtls_sha256_init(&ctx);
+  mbedtls_sha256_starts_ret(&ctx, 0);
+  bool ok = true;
+  size_t first = std::min((size_t)len, early.size());
+  if (first) {
+    ok = fwrite(early.data(), 1, first, f) == first;
+    mbedtls_sha256_update_ret(&ctx, (const uint8_t *)early.data(), first);
+    s_buGot = first;
+  }
+  static uint8_t buf[1460];
+  uint32_t last = millis();
+  while (ok && (long)s_buGot < len) {
+    int a = c.available();
+    if (a <= 0) {
+      if (!c.connected() || millis() - last > 20000) { ok = false; strlcpy(s_buMsg, "the browser stopped sending", sizeof(s_buMsg)); break; }
+      delay(2);
+      continue;
+    }
+    int r = c.read(buf, std::min((long)sizeof(buf), std::min((long)a, len - (long)s_buGot)));
+    if (r <= 0) continue;
+    last = millis();
+    if (fwrite(buf, 1, r, f) != (size_t)r) { ok = false; strlcpy(s_buMsg, "SD card write failed", sizeof(s_buMsg)); break; }
+    mbedtls_sha256_update_ret(&ctx, buf, r);
+    s_buGot += r;
+  }
+  fclose(f);
+  uint8_t h[32];
+  mbedtls_sha256_finish_ret(&ctx, h);
+  if (ok && hexOf(h) != sha) { ok = false; strlcpy(s_buMsg, "the download was damaged", sizeof(s_buMsg)); }
+  if (!ok) { remove(SD_MOUNT "/tidyos/update.bin"); relayReply(c, 400, s_buMsg); s_bu = 4; return; }
+  s_buVer = ver; s_buSha = sha;
+  relayReply(c, 200, "ok");
+  s_bu = 3;
+}
+
+static void browserUpdate(void (*status)(const char *, int), const char * why)
+{
+  char b[96];
+  Serial.printf("[update] %s - asking the web browser\n", why);
+  status("No internet here - asking your web browser...", 8);
+  uint32_t t0 = millis();
+  while (!screenViewer() && millis() - t0 < 90000) delay(200);
+  if (!screenViewer()) { snprintf(b, sizeof(b), "%.40s - open TidyOS in a browser with internet", why); finish(status, b, 0, 9000); }
+  if (!sdMountForUpdate()) finish(status, "Updating needs the SD card - please put it in", 0, 7000);
+  mkdir(SD_MOUNT "/tidyos", 0777);
+  s_buDl = -1; s_bu = 1;
+  screenMedia("U " TIDYOS_VERSION);
+  status("Your web browser is checking GitHub...", 10);
+  t0 = millis();
+  int shown = -1;
+  uint32_t lastGot = 0, lastMove = millis();
+  for (;;) {
+    int st = s_bu;
+    if (st == 3) { s_bu = 0; status("Update checked", 95); saveAndHandOver(status, s_buVer, s_buSha); }
+    if (st == 5) { s_bu = 0; snprintf(b, sizeof(b), "You have the newest TidyOS (%s)", TIDYOS_VERSION); finish(status, b, 100, 5000); }
+    if (st == 4) { s_bu = 0; snprintf(b, sizeof(b), "Browser update failed: %.60s", s_buMsg); finish(status, b, 0, 9000); }
+    if (st == 1 && s_buDl >= 0 && s_buDl != shown) {
+      shown = s_buDl; lastMove = millis();
+      snprintf(b, sizeof(b), "Your web browser is downloading TidyOS... %d%%", shown);
+      status(b, 10 + shown * 40 / 100);
+    }
+    if (st == 2 && s_buGot != lastGot) {
+      lastGot = s_buGot; lastMove = millis();
+      int pct = 50 + (int)((uint64_t)lastGot * 45 / (s_buTotal ? s_buTotal : 1));
+      snprintf(b, sizeof(b), "Getting TidyOS from your browser... %u KB", (unsigned)(lastGot / 1024));
+      status(b, pct);
+    }
+    if (st == 1 && millis() - lastMove > 120000 && millis() - t0 > 120000) {
+      s_bu = 0;
+      finish(status, "Your web browser couldn't get the update either - try later", 0, 9000);
+    }
+    delay(100);
+  }
+}
+#endif
+
 void updateRun(void (*status)(const char * msg, int percent))
 {
   char b[96];
@@ -308,7 +467,10 @@ void updateRun(void (*status)(const char * msg, int percent))
 
   status("Joining Wi-Fi...", 5);
   uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) delay(200);
+  while (gSet.ssid.length() && WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) delay(200);
+#ifdef TIDYOS_HTML5
+  if (WiFi.status() != WL_CONNECTED) browserUpdate(status, gSet.ssid.length() ? "Can't join the Wi-Fi" : "No Wi-Fi set up");
+#endif
   if (WiFi.status() != WL_CONNECTED) finish(status, "No Wi-Fi - set it up in Settings first", 0, 6000);
 
   status("Checking GitHub for a new version...", 10);
@@ -318,6 +480,13 @@ void updateRun(void (*status)(const char * msg, int percent))
     js.append((const char *)d, n);
     return true;
   });
+#ifdef TIDYOS_HTML5
+  if (code == -1) {           // couldn't connect at all: this Wi-Fi may have no internet, the browser may
+    char why[90];
+    snprintf(why, sizeof(why), "GitHub: %.70s", s_lastErr[0] ? s_lastErr : "unreachable");
+    browserUpdate(status, why);
+  }
+#endif
   if (code != 200) {
     if (code == -1 && s_lastErr[0]) snprintf(b, sizeof(b), "GitHub: %.80s", s_lastErr);
     else snprintf(b, sizeof(b), "Couldn't reach GitHub (%d) - try later", code);
@@ -366,19 +535,5 @@ void updateRun(void (*status)(const char * msg, int percent))
     else snprintf(b, sizeof(b), code != 200 ? "Download failed (%d) - nothing changed" : !writeOk ? "SD card write failed - nothing changed" : "Download was damaged - nothing changed", code);
     finish(status, b, 0, 7000);
   }
-  f = fopen(SD_MOUNT "/tidyos/update.sha", "w");
-  if (f) { fputs(sha.c_str(), f); fclose(f); }
-  f = fopen(SD_MOUNT "/tidyos/update.ver", "w");      // which version this is: at the next start TidyOS can tell if it went in
-  if (f) { fputs(ver.c_str(), f); fclose(f); }
-
-  // hand over to the loader
-  const esp_partition_t * loader = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, nullptr);
-  esp_err_t er = loader ? esp_ota_set_boot_partition(loader) : ESP_ERR_NOT_FOUND;
-  if (er != ESP_OK) {
-    snprintf(b, sizeof(b), "Couldn't start the installer (%s) - reinstall from the web flasher", esp_err_to_name(er));
-    remove(SD_MOUNT "/tidyos/update.bin");
-    finish(status, b, 0, 9000);
-  }
-  snprintf(b, sizeof(b), "Installing %s - TidyOS restarts in about 30 s", ver.c_str());
-  finish(status, b, 100, 2500);
+  saveAndHandOver(status, ver, sha);
 }

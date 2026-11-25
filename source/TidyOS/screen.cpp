@@ -14,6 +14,8 @@
 #include <WiFi.h>
 #include "esp_wifi.h"
 #include <DNSServer.h>
+#include <esp_netif.h>
+#include <dhcpserver/dhcpserver.h>
 #include "lwip/sockets.h"
 #include "mbedtls/sha1.h"
 #include "mbedtls/base64.h"
@@ -22,6 +24,7 @@
 #include "screen.h"
 #include "fileserver.h"
 #include "net.h"
+#include "update.h"
 
 void inputWebKey(uint8_t usage, uint8_t mods, bool down);
 void inputWebMouse(int x, int y, int wheel, uint8_t buttons);
@@ -238,7 +241,32 @@ function dropNext(){var f=dropQ.shift();if(!f){return;}var nm=f.name.replace(/[\
    send([16].concat(Array.from(new TextEncoder().encode(nm))));note('Sent '+nm+' - pick a folder on TidyOS.',dropQ.length?0:5000);dropNext();})
   .catch(function(e){if(++tries<6&&typeof e!='number'){setTimeout(put,800);return;}   // the board's file server may still be starting
    note('Couldn\'t send '+nm+(typeof e=='number'?' (TidyOS said '+e+')':' (no answer from TidyOS)')+'.',8000);dropNext();});})();}
+// TidyOS has no internet of its own right now: this browser fetches for it (POST back to the board)
+function newerV(a,b){a=String(a).split('.');b=String(b).split('.');for(var i=0;i<3;i++){var x=+a[i]||0,y=+b[i]||0;if(x!=y)return x>y;}return false;}
+function relayUpdate(cur){var B='https://hardwaremack-prog.github.io/TidyOS-ESP32/',E=encodeURIComponent;
+ function fail(m){fetch('/tidyos-update?err='+E(m),{method:'POST'}).catch(function(){});note('Update: '+m,9000);}
+ note('TidyOS has no internet, so this browser is getting the update…',9000);
+ fetch(B+'manifest-html5.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw 'GitHub answered '+r.status;return r.json();}).then(function(m){var t=m.tidyos;
+  if(!t||!t.app||!t.sha256)throw 'no update information on GitHub';
+  if(!newerV(t.version,cur))return fetch('/tidyos-update?newest='+E(t.version),{method:'POST'});
+  return fetch(B+t.app,{cache:'no-store'}).then(function(r){if(!r.ok)throw 'download failed ('+r.status+')';var tot=+r.headers.get('Content-Length')||t.size,rd=r.body.getReader(),parts=[],got=0,last=-1;
+    return (function pump(){return rd.read().then(function(x){if(x.done)return new Blob(parts);parts.push(x.value);got+=x.value.length;var pc=Math.min(100,Math.floor(got*100/tot));if(pc!=last){last=pc;send([19,pc]);}return pump();});})();})
+   .then(function(blob){if(blob.size!=t.size)throw 'the download was incomplete';note('Sending TidyOS '+t.version+' to the board…',60000);
+    return fetch('/tidyos-update?ver='+E(t.version)+'&size='+t.size+'&sha256='+t.sha256,{method:'POST',body:blob}).then(function(r){return r.text().then(function(x){if(!r.ok)throw x||('the board said '+r.status);note('TidyOS '+t.version+' is on the board. Installing…',20000);});});});
+ }).catch(function(e){fail(typeof e=='string'?e:'no internet from this browser either');});}
+function cleanPage(h,url){try{var d=new DOMParser().parseFromString(h,'text/html'),b=d.createElement('base');b.href=url;d.head.insertBefore(b,d.head.firstChild);
+  d.querySelectorAll('script,style,noscript,svg,iframe,template,link,meta,object,embed,canvas,video,audio,source,picture,button,input,select,textarea').forEach(function(e){e.remove();});
+  d.querySelectorAll('body *').forEach(function(e){var hr=e.hasAttribute('href')?e.href:null,al=e.getAttribute('alt');
+   for(var k=e.attributes.length-1;k>=0;k--)e.removeAttribute(e.attributes[k].name);if(hr)e.setAttribute('href',hr);if(al)e.setAttribute('alt',al);});
+  return ('<html><head><title>'+(d.title||'').replace(/</g,'&lt;')+'</title></head>'+d.body.outerHTML+'</html>').slice(0,200000);}catch(e){return h.slice(0,200000);}}
+function relayPage(url){var E=encodeURIComponent,tries=[url,'https://api.allorigins.win/raw?url='+E(url),'https://api.codetabs.com/v1/proxy/?quest='+E(url)],i=0;
+ (function next(){if(i>=tries.length){fetch('/relay?err='+E('no internet from this browser either, or the site said no'),{method:'POST'}).catch(function(){});return;}
+  var t=tries[i++],ac=window.AbortController?new AbortController():null,tm=setTimeout(function(){if(ac)ac.abort();},15000);
+  fetch(t,ac?{signal:ac.signal}:{}).then(function(r){if(!r.ok)throw r.status;return r.text();}).then(function(h){clearTimeout(tm);
+   return fetch('/relay?url='+E(url),{method:'POST',body:cleanPage(h,url)});}).catch(function(){clearTimeout(tm);next();});})();}
 function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv');
+ if(k=='U'){relayUpdate(v);return;}
+ if(k=='f'){relayPage(v);return;}
  if(midiCur&&(k=='p'||k=='r'||k=='s'||k=='v')){if(k=='p'){midiCur.paused=true;midiCur.ctx.suspend();midiReport();}else if(k=='r'){midiCur.paused=false;midiCur.ctx.resume();}else if(k=='s'){midiStop();send([8,255,0,0,0,0]);}else midiCur.out.gain.value=Math.max(0,Math.min(1,+v));return;}
  if(k=='m'){midiPlay(mUrl(v),au?au.volume:0.8);return;}
  if(k=='o'){var t=v.split('\t');openBanner(mUrl(t[0]),t[1]||'');return;}
@@ -470,6 +498,7 @@ static bool pollInput(WiFiClient & c)
       case 18: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskCityTempsFromPage((const char *)p + 1); break; } // Moscow, LA, Tokyo
       case 17: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskTempsFromPage((const char *)p + 1); break; } // temperatures, last 4 days
       case 14: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskNewsFromPage((const char *)p + 1); break; } // news headlines
+      case 19: if (keep >= 2) updateRelayProgress(p[1]); break;                      // the page's download of an update
       case 5: inputWebReleaseAll(); break;
       case 6: if (keep >= 5) netSetClockFrom(p[1] | (p[2] << 8) | (p[3] << 16) | ((uint32_t)p[4] << 24)); break;
       case 8: if (keep >= 6) { s_mState = p[1] == 255 ? -1 : p[1]; s_mPos = p[2] | (p[3] << 8); s_mDur = p[4] | (p[5] << 8); } break;
@@ -489,7 +518,8 @@ static void dropViewer()
 // parses a complete request header (already read) and answers it
 static void handleHttp(WiFiClient c, const std::string & req)
 {
-  std::string key, path;
+  std::string key, path, method;
+  long clen = 0;
   bool upgrade = false, first = true;
   size_t st = 0;
   while (st < req.size()) {
@@ -502,12 +532,14 @@ static void handleHttp(WiFiClient c, const std::string & req)
     if (first) {
       first = false;
       size_t sp1 = line.find(' '), sp2 = line.find(' ', sp1 + 1);
+      method = line.substr(0, sp1);
       if (sp1 != std::string::npos) path = line.substr(sp1 + 1, sp2 == std::string::npos ? std::string::npos : sp2 - sp1 - 1);
     } else {
       std::string low = line;
       for (auto & k : low) k = tolower(k);
       if (low.rfind("sec-websocket-key:", 0) == 0) { key = line.substr(18); while (!key.empty() && key[0] == ' ') key.erase(0, 1); }
       if (low.rfind("upgrade:", 0) == 0 && low.find("websocket") != std::string::npos) upgrade = true;
+      if (low.rfind("content-length:", 0) == 0) clen = atol(line.c_str() + 15);
     }
   }
   c.setTimeout(2);
@@ -540,6 +572,19 @@ static void handleHttp(WiFiClient c, const std::string & req)
     return;
   }
   std::string p = path.substr(0, path.find('?'));
+  if (method == "POST" && (p == "/relay" || p == "/tidyos-update")) {
+    // the page hands over something it fetched from the internet for TidyOS
+    size_t he = req.find("\r\n\r\n");
+    size_t hl = he == std::string::npos ? (req.find("\n\n") == std::string::npos ? req.size() : req.find("\n\n") + 2) : he + 4;
+    std::string early = req.substr(std::min(hl, req.size()));
+    std::string q = path.find('?') == std::string::npos ? "" : path.substr(path.find('?') + 1);
+    c.setTimeout(10);
+    if (p == "/relay") netRelayHttp(c, q, early, clen);
+    else updateRelayHttp(c, q, early, clen);
+    delay(5);
+    c.stop();
+    return;
+  }
   if (p == "/favicon.ico") {
     c.print("HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
   } else if (p != "/" && p != "/index.html") {
@@ -586,8 +631,23 @@ static void apStart()
   WiFi.setSleep(false);
   delay(100);
   Serial.printf("[TidyOS] hotspot up on channel %d, free RAM %u\n", WiFi.channel(), (unsigned)ramFree());
-  s_dns.setErrorReplyCode(DNSReplyCode::NoError);
-  s_dns.start(53, "*", WiFi.softAPIP());
+  if (!gSet.ssid.length()) {
+    // first setup: answer every name with the desktop, so the phone pops it up
+    s_dns.setErrorReplyCode(DNSReplyCode::NoError);
+    s_dns.start(53, "*", WiFi.softAPIP());
+  } else {
+    // home Wi-Fi is set up (just out of reach, or the hotspot is switched on): hand out NO gateway and
+    // NO name server. Phones then keep their mobile data for the internet while showing TidyOS at
+    // http://10.1.1.250, so the desktop page can still fetch weather, news, web pages and updates.
+    esp_netif_t * apif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    if (apif) {
+      esp_netif_dhcps_stop(apif);
+      dhcps_offer_t none = 0;
+      esp_netif_dhcps_option(apif, ESP_NETIF_OP_SET, ESP_NETIF_ROUTER_SOLICITATION_ADDRESS, &none, sizeof(none));
+      esp_netif_dhcps_option(apif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER, &none, sizeof(none));
+      esp_netif_dhcps_start(apif);
+    }
+  }
   s_ap = true;
   s_apSince = millis();
   Serial.printf("[TidyOS] setup hotspot \"%s\" (password %s) - open http://%s\n", SCREEN_AP_NAME, SCREEN_AP_PASS, WiFi.softAPIP().toString().c_str());

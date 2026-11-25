@@ -26,3 +26,7 @@ void        fetchStart(const std::string & url);
 FetchState  fetchState();
 std::string fetchTake();                          // result (or error message), sets state back to idle
 std::string urlFromInput(const std::string & typed);   // adds http:// or turns words into a search
+#ifdef TIDYOS_HTML5
+#include <WiFi.h>
+void netRelayHttp(WiFiClient & c, const std::string & query, const std::string & early, long len);   // POST /relay from the page
+#endif

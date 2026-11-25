@@ -21,7 +21,8 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Bottom bar:** TidyOS, version and this board's ID (e.g. `v2.5.2  A93160`), Wi-Fi and address, free RAM with an **Optimize** button that frees what isn't being used, minimized windows, and the clock
 - **Opens Office files:** .csv and .xlsx open in Tidy; .rtf, .doc and .docx open in Neat
 - **Start-up screen:** an **Update** button (switches to black & white just for the update, then puts your colours back), and a start-up splash where the app icons march in one by one like a classic Mac while each step is ticked off. It waits for the weather and headlines so the desktop opens filled in
-- **Little OLED screen (optional):** a 128 × 64 SSD1306 on **GPIO 21 (SDA) / 22 (SCL)**, the same wiring as The Shelf on ESP32, is found at start-up. It shows the start-up progress, then turns through: how to get in (hotspot name, password and address, or the home Wi-Fi address and .local name), the clock, the weather, world times, the system (RAM, Wi-Fi, uptime), the song playing and new messages, about 5 seconds each
+- **No internet on the board? The browser helps** (2.7.4 on): when TidyOS can't get online itself (no Wi-Fi, or on its own hotspot) but the phone or computer showing the desktop can, that browser downloads updates (Check for updates) and web pages (the Browser app) and hands them to TidyOS. Weather, news and the clock already came that way. On its hotspot with home Wi-Fi set up, TidyOS no longer hands out a gateway, so phones keep their mobile data for the internet (open http://10.1.1.250)
+- **Little OLED screen (optional):** a 128 × 64 SSD1306 on **GPIO 21 (SDA) / 22 (SCL)**, or plugged straight onto **27 · 14 · 12 · GND** (turned around, powered from GPIO 12), the same as The Shelf on ESP32, is found at start-up. It shows the start-up progress, then turns through: how to get in (hotspot name, password and address, or the home Wi-Fi address and .local name), the clock, the weather, world times, the system (RAM, Wi-Fi, uptime), the song playing and new messages, about 5 seconds each
 - **Top bar of the web page (HTML5):** Keyboard, Task Manager, **Restart**, **Sleep** (deep sleep), Full screen, Size, and a **volume bar** in Music
 - **Desktop panel:** time, date, weather in °F with a 4-day temperature graph (day letters, a red **freezing** line at 32° with an arrow, and point at the graph to see that hour's temperature), Moscow / Los Angeles / Tokyo times **with their temperatures**, daily affirmations (>> shows up to 3), up to six news headlines, a world map shaded for day and night with a you-are-here marker, and a drop box: drag files onto the page and TidyOS asks which SD folder they go in
 - **Git-Store:** a cloud folder for each board (up to 1 GB, 25 MB a file), kept by a free Cloudflare Worker - see [gitstore/](gitstore/README.md)
@@ -29,7 +30,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
 - **Updates itself from GitHub:** Settings → Check for updates
 
-> Status: version 2.7.1. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
+> Status: version 2.7.4. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
