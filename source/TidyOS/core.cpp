@@ -681,6 +681,9 @@ public:
           std::string n = s_bootNote; s_bootNote.clear();
           gApp->messageBox("Update", n.c_str(), "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
         }
+#ifdef TIDYOS_HTML5
+        oledPoll();                                 // the little screen: a BOOT press shows at once
+#endif
         if (++m_tick % 10) break;                   // the rest once a second (timer: 100 ms)
         netTick();
         oledTick();

@@ -25,7 +25,14 @@ static volatile bool s_newsMode = false;         // the news page: the send task
 static volatile uint32_t s_wakeAt = 0;           // last BOOT press (or start-up): the screen sleeps 5 minutes after it
 static volatile bool s_asleep = false, s_wakeReq = false, s_sleepReq = false;   // (only the send task talks to the screen)
 static uint32_t s_newsAt = 0;
+// the BOOT button, as on TidyOS Pro: tap once = hold this page (tap again to let them turn), tap twice = next page;
+// on the stopwatch page hold 1 s = start / stop, hold 3 s = reset. (The send task reads it; the desktop acts on it.)
+static volatile uint8_t s_evNext = 0, s_evHold = 0, s_evSw = 0;
+static volatile bool s_held = false;
+static bool s_swRun = false; static uint32_t s_swStart = 0, s_swAcc = 0;
+static uint32_t swMs() { return s_swAcc + (s_swRun ? millis() - s_swStart : 0); }
 static void drawNews();
+static void holdTag();
 
 static void cmds(std::initializer_list<uint8_t> list)
 {
@@ -37,10 +44,24 @@ static void cmds(std::initializer_list<uint8_t> list)
 
 static void sendTask(void *)
 {
-  bool wasDown = false;
+  bool wasDown = false, swallow = false;
+  uint32_t downAt = 0, tapAt = 0;
   for (;;) {
     bool down = digitalRead(0) == LOW;           // the BOOT button (only read here, never driven)
-    if (down && !wasDown) { s_wakeAt = millis(); if (s_asleep) s_wakeReq = true; }
+    uint32_t t = millis();
+    if (down && !wasDown) {
+      downAt = t; s_wakeAt = t;
+      if (s_asleep) { s_wakeReq = true; swallow = true; }   // a press on a sleeping screen only wakes it
+    }
+    if (!down && wasDown) {
+      uint32_t held = t - downAt;
+      if (swallow) swallow = false;
+      else if (held >= 3000) { if (s_page == 10) s_evSw = 2; }       // stopwatch: reset
+      else if (held >= 1000) { if (s_page == 10) s_evSw = 1; }       // stopwatch: start / stop
+      else if (tapAt && t - tapAt < 400) { tapAt = 0; s_evNext = 1; } // two taps: next page
+      else tapAt = t;
+    }
+    if (tapAt && !down && t - tapAt >= 400) { tapAt = 0; s_evHold = 1; }   // one tap: hold / let go
     wasDown = down;
     if (s_sleepReq) { s_sleepReq = false; cmds({ 0xAE }); }
     if (s_wakeReq) { s_wakeReq = false; s_asleep = false; cmds({ 0xAF }); }
@@ -321,7 +342,31 @@ static void drawNews()
     if (s_wx.code >= 0) { size_t l = strlen(b); snprintf(b + l, sizeof(b) - l, "   %d\xB0" "F", s_wx.temp); }
     band(b);
   } else band("Headlines");
+  holdTag();
   push();
+}
+
+// "HOLD" in the corner of the yellow band while the pages are held
+static void holdTag()
+{
+  if (!s_held) return;
+  int w = textW(&FONT_std_12, "HOLD");
+  for (int y = 49; y < 64; ++y) for (int x = 127 - w - 3; x < 128; ++x) s_buf[x + (y >> 3) * 128] &= ~(1 << (y & 7));
+  box(127 - w - 3, 49, 127, 63);
+  for (int y = 50; y < 63; ++y) for (int x = 127 - w - 2; x < 127; ++x) s_buf[x + (y >> 3) * 128] ^= 1 << (y & 7);   // dark text on a lit box
+  text(&FONT_std_12, 127 - w - 1, 51, "HOLD");
+  for (int y = 50; y < 63; ++y) for (int x = 127 - w - 2; x < 127; ++x) s_buf[x + (y >> 3) * 128] ^= 1 << (y & 7);
+}
+
+static void pageStopwatch()
+{
+  char b[24];
+  uint32_t ms = swMs(), sec = ms / 1000, h = sec / 3600, m = (sec / 60) % 60;
+  if (h) snprintf(b, sizeof(b), "%u:%02u:%02u", (unsigned)h, (unsigned)m, (unsigned)(sec % 60));
+  else snprintf(b, sizeof(b), "%02u:%02u.%u", (unsigned)m, (unsigned)(sec % 60), (unsigned)(ms / 100 % 10));
+  text(&FONT_std_12, 0, 0, s_swRun ? "STOPWATCH  running" : ms ? "STOPWATCH  stopped" : "STOPWATCH");
+  center(&FONT_std_24, 18, b);
+  band(s_swRun ? "Hold BOOT 1 s to stop" : ms ? "BOOT 1 s: go on  3 s: reset" : "Hold BOOT 1 s to start");
 }
 
 }  // namespace oled
@@ -391,6 +436,7 @@ void oledSplash(const char * msg, int percent)
   push();
 }
 
+static void oledDraw(bool tick, time_t now, const std::string & song, int unread);
 // once a second from the desktop: the next screen every 5 s (the news ticker gets 25 s)
 void oledTick()
 {
@@ -410,17 +456,29 @@ void oledTick()
   }
   if (s_asleep && (!gSet.oledSleep || millis() - s_wakeAt < 300000)) s_wakeReq = true;
   if (s_asleep || s_wakeReq) return;
-  // 0 access, 1 clock, 2 weather, 3 world, 4 system, 5 music, 6 messages, 7 watch face, 8 temperatures, 9 news
-  static const int ORDER[10] = { 0, 1, 7, 2, 8, 9, 3, 4, 5, 6 };
+  oledDraw(true, now, song, unread);
+}
+
+// 0 access, 1 clock, 2 weather, 3 world, 4 system, 5 music, 6 messages, 7 watch face, 8 temperatures, 9 news, 10 stopwatch
+static const int ORDER[11] = { 0, 1, 7, 2, 8, 9, 3, 4, 5, 6, 10 };
+static int s_pos = 1;
+static void oledDraw(bool tick, time_t now, const std::string & song, int unread)
+{
+  using namespace oled;
   bool timeOk = netClockSet();
-  bool have[10] = { true, true, s_wx.code >= 0, true, true, !song.empty(), unread > 0, timeOk, s_tempsN > 1, s_newsCount > 0 };
-  static int pos = 1;
-  if (++s_pageAge >= (ORDER[pos] == 9 ? 25 : 5)) {
-    s_pageAge = 0;
-    for (int k = 0; k < 10; ++k) { pos = (pos + 1) % 10; if (have[ORDER[pos]]) break; }
+  bool have[11] = { true, true, s_wx.code >= 0, true, true, !song.empty(), unread > 0, timeOk, s_tempsN > 1, s_newsCount > 0, true };
+  auto next = [&]() { for (int k = 0; k < 11; ++k) { s_pos = (s_pos + 1) % 11; if (have[ORDER[s_pos]]) break; } };
+  if (s_evNext) { s_evNext = 0; s_pageAge = 0; next(); }
+  if (s_evHold) { s_evHold = 0; s_held = !s_held; s_pageAge = 0; }
+  if (s_evSw) {
+    if (s_evSw == 2) { s_swRun = false; s_swAcc = 0; }
+    else if (s_swRun) { s_swAcc += millis() - s_swStart; s_swRun = false; }
+    else { s_swStart = millis(); s_swRun = true; }
+    s_evSw = 0;
   }
-  if (!have[ORDER[pos]]) pos = 1;
-  s_page = ORDER[pos];
+  if (tick && !s_held && ++s_pageAge >= (ORDER[s_pos] == 9 ? 25 : 5)) { s_pageAge = 0; next(); }
+  if (!have[ORDER[s_pos]]) s_pos = 1;
+  s_page = ORDER[s_pos];
   if (!s_drawMx) s_drawMx = xSemaphoreCreateMutex();
   xSemaphoreTake(s_drawMx, portMAX_DELAY);
   if (s_page == 9) {
@@ -439,14 +497,27 @@ void oledTick()
     case 5: pageMusic(song); break;
     case 7: pageAnalog(now); break;
     case 8: pageTemps(); break;
+    case 10: pageStopwatch(); break;
     default: pageMessages(unread); break;
   }
+  holdTag();
   push();
   xSemaphoreGive(s_drawMx);
+}
+
+// every 100 ms from the desktop: act on a BOOT press straight away, and keep a running stopwatch ticking
+void oledPoll()
+{
+  using namespace oled;
+  if (!s_on || s_asleep || s_wakeReq) return;
+  bool sw = s_page == 10 && s_swRun;
+  if (!s_evNext && !s_evHold && !s_evSw && !sw) return;
+  oledDraw(false, time(nullptr), musicNowPlaying(), msgStarted() ? msgUnreadTotal() : 0);
 }
 #else
 void oledBegin() {}
 void oledOff() {}
 void oledSplash(const char *, int) {}
 void oledTick() {}
+void oledPoll() {}
 #endif
