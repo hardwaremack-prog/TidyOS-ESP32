@@ -321,6 +321,72 @@ static void drawTempGraph(Canvas * cv, int gx, int gy, int gw, int gh)
   }
 }
 
+
+// ---- the news line: one headline at a time. A short one stays 5 s; a long one waits 1.5 s, slides along
+// (2 pixels every 100 ms) until its end shows, waits 1.5 s, then the next headline takes its turn.
+static Rect s_tickRect(0, 0, -1, -1);
+static int s_tickIdx = 0, s_tickPos = 0, s_tickPx = 0, s_tickPhase = 0;   // phase 0 wait, 1 slide, 2 wait at the end
+static uint32_t s_tickAt = 0;
+static Rect newsTickerRect() { return s_tickRect; }
+static int tickTextX(Canvas * cv) { return s_tickRect.X1 + 9 + cv->textExtent(&FONT_std_12, "NEWS") + 12; }
+static void drawNewsTicker(Canvas * cv)
+{
+  Rect k = s_tickRect;
+  if (k.X2 <= k.X1) return;
+  const fabgl::FontInfo * f = &FONT_std_12;
+  cv->setBrushColor(T.win);
+  cv->fillRectangle(k.X1, k.Y1, k.X2, k.Y2);
+  if (!s_newsCount) return;
+  if (s_tickIdx >= s_newsCount) { s_tickIdx = 0; s_tickPos = s_tickPx = 0; }
+  const char * t = s_news[s_tickIdx];
+  int n = strlen(t), xs = tickTextX(cv), xe = k.X2 - 8, y = k.Y1 + 2;
+  if (s_tickPos > n) s_tickPos = n;
+  std::string vis;                                  // from the left-edge letter on, until the right edge
+  for (int i = s_tickPos; i < n; ++i) {
+    vis += t[i];
+    if (xs - s_tickPx + cv->textExtent(f, vis.c_str()) > xe) { vis.pop_back(); break; }
+  }
+  cv->setPenColor(T.text); cv->setBrushColor(T.win);
+  cv->drawText(f, xs - s_tickPx, y, vis.c_str());
+  cv->setBrushColor(T.win);                         // tidy edges: the letter sliding out on the left
+  cv->fillRectangle(k.X1, k.Y1, xs - 1, k.Y2);
+  cv->fillRectangle(xe + 1, k.Y1, k.X2, k.Y2);
+  int x0 = k.X1 + 9, tw = cv->textExtent(f, "NEWS");          // the NEWS tag, with which headline this is
+  cv->setBrushColor(T.accent); cv->setPenColor(T.accentText);
+  cv->fillRectangle(x0 - 3, k.Y1 + 1, x0 + tw + 2, k.Y2 - 1);
+  cv->drawText(f, x0, k.Y1 + 2, "NEWS");
+  cv->setBrushColor(T.win); cv->setPenColor(T.text);
+  for (int i = 0; i < s_newsCount; ++i) {            // little dots under the tag: which one
+    int dx = x0 + i * 6 - 1;
+    if (i == s_tickIdx) cv->fillRectangle(dx, k.Y2 - 1, dx + 3, k.Y2); else cv->drawLine(dx, k.Y2, dx + 3, k.Y2);
+  }
+}
+// every 100 ms; true when the line changed and needs redrawing
+static bool newsTickerStep(Canvas * cv)
+{
+  if (!s_newsCount || s_tickRect.X2 <= s_tickRect.X1) return false;
+  if (s_tickIdx >= s_newsCount) { s_tickIdx = 0; s_tickPos = s_tickPx = 0; s_tickPhase = 0; s_tickAt = millis(); return true; }
+  const fabgl::FontInfo * f = &FONT_std_12;
+  const char * t = s_news[s_tickIdx];
+  int avail = s_tickRect.X2 - 8 - tickTextX(cv);
+  int rest = cv->textExtent(f, t + s_tickPos) - s_tickPx;           // what's still to come, from the left edge
+  uint32_t el = millis() - s_tickAt;
+  auto next = [&]() { s_tickIdx = (s_tickIdx + 1) % s_newsCount; s_tickPos = s_tickPx = 0; s_tickPhase = 0; s_tickAt = millis(); };
+  if (s_tickPhase == 0) {
+    if (rest <= avail) { if (el >= 5000) { next(); return true; } return false; }   // fits: 5 s, then the next
+    if (el >= 1500) { s_tickPhase = 1; }
+    return false;
+  }
+  if (s_tickPhase == 1) {
+    s_tickPx += 2;
+    for (;;) { char c[2] = { t[s_tickPos], 0 }; int w = cv->textExtent(f, c); if (!t[s_tickPos] || s_tickPx < w) break; s_tickPx -= w; ++s_tickPos; }
+    if (cv->textExtent(f, t + s_tickPos) - s_tickPx <= avail) { s_tickPhase = 2; s_tickAt = millis(); }
+    return true;
+  }
+  if (el >= 1500) { next(); return true; }
+  return false;
+}
+
 static void drawDeskPanel(Canvas * cv)
 {
   Rect r = deskPanelRect();
@@ -472,21 +538,12 @@ static void drawDeskPanel(Canvas * cv)
     }
     y += 3;
   }
-  // news: one line each
+  // news: one line, the headlines taking turns (the desktop's timer slides it along and redraws just that strip)
   if (s_newsCount) {
     cv->drawLine(x, y - 2, r.X2 - 10, y - 2);
-    y += 2;
-    for (int i = 0; i < s_newsCount && y + 14 < r.Y2 - 128; ++i) {       // as many as fit above the map
-      std::string h = s_news[i];
-      int maxW = PANEL_W - 22;
-      if (cv->textExtent(&FONT_std_12, h.c_str()) > maxW) {
-        while (h.size() > 4 && cv->textExtent(&FONT_std_12, (h + "...").c_str()) > maxW) h.pop_back();
-        h += "...";
-      }
-      cv->drawText(&FONT_std_12, x, y, h.c_str());
-      y += 15;
-    }
-  }
+    s_tickRect = Rect(r.X1 + 1, y + 1, r.X2 - 1, y + 17);
+    drawNewsTicker(cv);
+  } else s_tickRect = Rect(0, 0, -1, -1);
   // the map sits at the bottom
   drawWorldMap(cv, r.X1 + (PANEL_W - 288) / 2, r.Y2 - 124, now);
 }

@@ -556,6 +556,15 @@ static std::string s_bootNote;              // shown once on the desktop (update
 #include "desk_panel.h"
 #include "oled.h"
 
+// a window (other than the desktop itself) is over the news line: don't redraw it unseen
+static bool tickerCovered()
+{
+  Rect k = newsTickerRect();
+  for (uiWindow * w = gApp->rootWindow()->firstChild(); w; w = w->next())
+    if (w != s_deskCtl && w->state().visible && w->rect(uiOrigin::Screen).intersects(k)) return true;
+  return false;
+}
+
 class Desktop : public uiControl {
 public:
   static const int BAR_H = 20;
@@ -681,9 +690,10 @@ public:
           std::string n = s_bootNote; s_bootNote.clear();
           gApp->messageBox("Update", n.c_str(), "OK", nullptr, nullptr, uiMessageBoxIcon::Info);
         }
-#ifdef TIDYOS_HTML5
-        oledPoll();                                 // the little screen: a BOOT press shows at once
-#endif
+        if (s_newsCount && !showingHint() && !tickerCovered()) {      // the news line, every 100 ms
+          Canvas tc(s_dc);
+          if (newsTickerStep(&tc)) repaint(newsTickerRect());
+        }
         if (++m_tick % 10) break;                   // the rest once a second (timer: 100 ms)
         netTick();
         oledTick();
@@ -814,6 +824,8 @@ private:
 
   void paint(Rect const & clip) {
     auto cv = canvas();
+    { Rect k = newsTickerRect();                    // just the news line moving on: draw only that
+      if (!showingHint() && k.X2 > k.X1 && clip.X1 >= k.X1 && clip.X2 <= k.X2 && clip.Y1 >= k.Y1 && clip.Y2 <= k.Y2) { drawNewsTicker(cv); return; } }
     cv->setBrushColor(T.desk);
     cv->fillRectangle(clip.X1, clip.Y1, clip.X2, imin(clip.Y2, SCREEN_H - BAR_H - 1));
     for (int i = 0; i < NICONS; ++i) {
