@@ -118,19 +118,33 @@ function connect(){
     else if(bpp==2){var p=y*640+a*4;for(;o<oe;o++){var b=d[o];px[p++]=pal[b>>6];px[p++]=pal[b>>4&3];px[p++]=pal[b>>2&3];px[p++]=pal[b&3];}}
     else{var p=y*640+a/3*8;for(;o<oe;o+=3){var v=d[o]|d[o+1]<<8|d[o+2]<<16;for(var i=0;i<8;i++)px[p++]=pal[v>>(21-3*i)&7];}}}
    dirty=true;}
-  else if(d[0]==8){var t=new TextDecoder().decode(d.subarray(1)).split('\n');ver=t[0];upBase=parseInt(t[1])||0;upAt=Date.now();}
+  else if(d[0]==8){var t=new TextDecoder().decode(d.subarray(1)).split('\n');ver=t[0];upBase=parseInt(t[1])||0;upAt=Date.now();if(t[2]){try{localStorage.tidyHost=t[2];}catch(e){}}goStop();}
   else if(d[0]==9)media(new TextDecoder().decode(d.subarray(1)));
   else if(d[0]==3){kicked=true;show('TidyOS was opened in another browser.',true);}
-  else if(d[0]==7){var t=new TextDecoder().decode(d.subarray(1)).split('\n');home={ssid:t[0],ip:t[1],host:t[2]||''};
+  else if(d[0]==7){var t=new TextDecoder().decode(d.subarray(1)).split('\n');home={ssid:t[0],ip:t[1],host:t[2]||''};try{localStorage.tidyHome=JSON.stringify(home);}catch(e){}
    var hb=document.getElementById('home');
    if(location.hostname!=home.ip&&location.hostname.slice(-6)!='.local'){var hn=(home.host||'')+'.local';hb.innerHTML='TidyOS is on <b></b> now. Switch this device to that Wi-Fi, then open <a href="http://'+home.ip+'/">http://'+home.ip+'</a>'+(home.host?' or <a href="http://'+hn+'/">http://'+hn+'</a>':'');hb.querySelector('b').textContent=home.ssid;hb.style.display='block';}
    else hb.style.display='none';}};
  ws.onclose=function(){st.textContent='Disconnected';if(!kicked){
   var t='Lost connection - trying again...';
-  if(location.hostname=='10.1.1.250')t='Lost the TidyOS hotspot - trying again...\nIf TidyOS just joined your Wi-Fi, switch this device to '+(home?home.ssid:'that Wi-Fi')+' and open http://'+(home?home.ip:'the address on its screen');
-  else if(home&&home.host)t+='\nIf you turned on the TidyOS hotspot: join Wi-Fi '+('TidyOS-'+home.host.slice(7).toUpperCase())+' (password tidyos123) and open http://10.1.1.250';
-  show(t);setTimeout(connect,2000);}};
+  if(location.hostname=='10.1.1.250')t='Lost the TidyOS hotspot - trying again...';
+  show(t);goStart();setTimeout(connect,2000);}};
 }
+// Lost TidyOS (it joined your Wi-Fi, or switched to its hotspot): the yellow bar with links to where it went,
+// and this page goes there by itself as soon as this device can reach it.
+var goT=null;
+function goPlaces(){var h=home,host='';try{if(!h&&localStorage.tidyHome)h=JSON.parse(localStorage.tidyHome);host=localStorage.tidyHost||'';}catch(e){}
+ if(h&&h.host)host=h.host;var L=[],here=location.hostname;
+ if(h&&h.ip&&h.ip!=here)L.push({u:'http://'+h.ip+'/',t:'http://'+h.ip});
+ if(host&&here!=host+'.local')L.push({u:'http://'+host+'.local/',t:'http://'+host+'.local'});
+ if(here!='10.1.1.250')L.push({u:'http://10.1.1.250/',t:'http://10.1.1.250 (its hotspot)'});
+ return {h:h,L:L};}
+function goStart(){var g=goPlaces(),hb=document.getElementById('home');if(!g.L.length)return;
+ hb.innerHTML=(g.h&&g.h.ssid?'TidyOS may be on <b></b> now. ':'Can\'t reach TidyOS here. ')+'Switch this device to that Wi-Fi and tap: '+g.L.map(function(x){return '<a href="'+x.u+'">'+x.t+'</a>';}).join(' or ')+'<br><small>(this page also goes there by itself as soon as it can)</small>';
+ if(g.h&&g.h.ssid)hb.querySelector('b').textContent=g.h.ssid;hb.style.display='block';
+ if(goT)return;goT=setInterval(function(){g.L.forEach(function(x){var ac=window.AbortController?new AbortController():null;setTimeout(function(){if(ac)ac.abort();},2500);
+  fetch(x.u+'ping',{cache:'no-store',signal:ac?ac.signal:undefined}).then(function(){if(goT)location.href=x.u;}).catch(function(){});});},3000);}
+function goStop(){if(goT){clearInterval(goT);goT=null;}var hb=document.getElementById('home');if(hb&&!(home&&location.hostname!=home.ip&&location.hostname.slice(-6)!='.local'))hb.style.display='none';}
 btn.onclick=function(){connect();};
 function frame(){if(dirty){og.putImageData(img,0,0);g.imageSmoothingEnabled=false;g.drawImage(o,0,0,640*ZK,480*ZK);dirty=false;}
  if(mDirty){mDirty=false;send([2,mx&255,mx>>8,my&255,my>>8,mb,0]);}requestAnimationFrame(frame);}
@@ -645,8 +659,8 @@ static void handleHttp(WiFiClient c, const std::string & req)
     s_obLen = s_obPos = 0; s_outStuck = 0;
     sendPalette(s_ws);
     {   // version + uptime for the page's top bar (the page keeps counting from here)
-      char m[48];
-      int n = snprintf(m, sizeof(m), "\x08" TIDYOS_VERSION "\n%lu", (unsigned long)(millis() / 1000));
+      char m[96];
+      int n = snprintf(m, sizeof(m), "\x08" TIDYOS_VERSION "\n%lu\n%s", (unsigned long)(millis() / 1000), boardHost().c_str());
       if (n > 0 && n < (int)sizeof(m)) wsSend(s_ws, (const uint8_t *)m, n);
     }
     s_sentHome[0] = 0;
@@ -676,6 +690,12 @@ static void handleHttp(WiFiClient c, const std::string & req)
     snprintf(r, sizeof(r), "HTTP/1.0 302 Found\r\nLocation: http://%s:%d/\r\nCache-Control: no-cache\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
              c.localIP().toString().c_str(), fileServerPort());
     c.print(r);
+    delay(5);
+    c.stop();
+    return;
+  }
+  if (p == "/ping") {                // "is TidyOS here?" from a page that lost it (another network, the hotspot)
+    c.print("HTTP/1.0 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     delay(5);
     c.stop();
     return;
@@ -726,13 +746,9 @@ static void apStart()
   WiFi.setSleep(false);
   delay(100);
   Serial.printf("[TidyOS] hotspot up on channel %d, free RAM %u\n", WiFi.channel(), (unsigned)ramFree());
-  if (!gSet.ssid.length()) {
-    // first setup: answer every name with the desktop, so the phone pops it up
-    s_dns.setErrorReplyCode(DNSReplyCode::NoError);
-    s_dns.start(53, "*", WiFi.softAPIP());
-  } else {
-    // home Wi-Fi is set up (just out of reach, or the hotspot is switched on): hand out NO gateway and
-    // NO name server. Phones then keep their mobile data for the internet while showing TidyOS at
+  {
+    // No "captive portal" (no sign-in sheet popping up and vanishing): hand out NO gateway and NO name
+    // server. Phones stay joined, keep their mobile data for the internet and show TidyOS at
     // http://10.1.1.250, so the desktop page can still fetch weather, news, web pages and updates.
     esp_netif_t * apif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
     if (apif) {

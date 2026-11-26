@@ -21,6 +21,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Bottom bar:** TidyOS, version and this board's ID (e.g. `v2.5.2  A93160`), Wi-Fi and address, free RAM with an **Optimize** button that frees what isn't being used, minimized windows, and the clock
 - **Opens Office files:** .csv and .xlsx open in Tidy; .rtf, .doc and .docx open in Neat
 - **Start-up screen:** an **Update** button (switches to black & white just for the update, then puts your colours back), and a start-up splash where the app icons march in one by one like a classic Mac while each step is ticked off. It waits for the weather and headlines so the desktop opens filled in
+- **2.7.9:** no captive portal on the TidyOS hotspot (nothing pops up; open http://10.1.1.250, phones keep their mobile data); when TidyOS moves between its hotspot and your Wi-Fi the page shows the yellow bar with links and goes there by itself once it can; the file page says why a file or folder didn't go (full storage, no folders in the board's own storage) and uploads several files in a row reliably
 - **OLED controls (2.7.8, as on TidyOS Pro):** BOOT tapped once holds the page on the little screen (HOLD shows; tap again to let them turn), tapped twice goes to the next page; a stopwatch page (hold BOOT 1 s to start / stop, 3 s to reset)
 - **From TidyOS Pro (2.7.7):** the desktop page works on phones (pinch to zoom, one finger moves a zoomed screen, a top bar that fits); a **Files** button on that page (or http://<board>/files) to download ticked files or whole folders as a ZIP; **music buttons** beside the desktop clock (MP3 play/pause, volume -/+, Next) with the song's name and controls on a phone's lock screen; **Files → Select several** and **Move to...**; the little OLED **sleeps after 5 minutes** (BOOT wakes it; Switches → OLED sleep); **copy files over USB** from the web flasher page; the update bar shows its real percent; the clocks tick every second
 - **No internet on the board? The browser helps** (2.7.4 on): when TidyOS can't get online itself (no Wi-Fi, or on its own hotspot) but the phone or computer showing the desktop can, that browser downloads updates (Check for updates) and web pages (the Browser app) and hands them to TidyOS. Weather, news and the clock already came that way. On its hotspot with home Wi-Fi set up, TidyOS no longer hands out a gateway, so phones keep their mobile data for the internet (open http://10.1.1.250)
@@ -32,7 +33,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 - **Start-up switches:** before TidyOS starts you can turn the SD card, mesh, blue light and Shelf messages on or off and pick 4 colours, 8 colours or black & white, to trade features for memory
 - **Updates itself from GitHub:** Settings → Check for updates
 
-> Status: version 2.7.8. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
+> Status: version 2.7.9. It runs every day on a NodeMCU-32S (HTML5 edition, in-line SD wiring). Newer features may still have rough edges.
 > If something misbehaves, open the Serial Monitor at 115200 to see the start-up log.
 
 ---
@@ -91,7 +92,7 @@ A tiny general-purpose computer on a NodeMCU ESP32:
 *Drawn desktop, real browser page: this is the HTML5 page running against a simulated board.*
 
 1. On the flasher page, flip the switch to **HTML5** and click **Install TidyOS (HTML5)**. The only wiring you need is the optional microSD module.
-2. Power the board. On a phone or PC, join the Wi-Fi hotspot named after the board, **TidyOS-xxxxxx** (e.g. `TidyOS-A93160`, password `tidyos123`; each board has its own; before 2.6.3 it was TidyOS-Setup). The desktop pops up, or open **http://10.1.1.250**.
+2. Power the board. On a phone or PC, join the Wi-Fi hotspot named after the board, **TidyOS-xxxxxx** (e.g. `TidyOS-A93160`, password `tidyos123`; each board has its own; before 2.6.3 it was TidyOS-Setup). Open **http://10.1.1.250** (nothing pops up by itself since 2.7.9; the phone keeps its mobile data while joined).
 3. Open **Settings**, join your home Wi-Fi, **Save**.
 4. Back on your home Wi-Fi, open the address at the bottom of the desktop, or **http://tidyos-xxxxxx.local** (the board ID in small letters).
 

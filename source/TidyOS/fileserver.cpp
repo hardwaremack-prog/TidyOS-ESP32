@@ -53,12 +53,12 @@ button.p{background:#0055aa;color:#fff}.x{background:none;border:none;color:#a00
 <div class="card"><button class="p" onclick="pick.click()">Upload files</button> <button onclick="mk()">New folder</button>
 <input type="file" id="pick" multiple hidden><div id="drop">...or drop files here</div><div id="prog"></div><div id="msg"></div></div>
 </main><script>
-let cwd='/SD',rows=[];const $=s=>document.querySelector(s);
+let cwd='/SD',rows=[],free=-1;const $=s=>document.querySelector(s);
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const sz=b=>b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB';
 async function load(){let j;try{j=await (await fetch('/api/list?path='+encodeURIComponent(cwd))).json()}catch(e){$('#msg').textContent='Could not reach TidyOS';return}
  if(j.error){if(cwd!='/'){cwd='/';return load()}$('#msg').textContent=j.error;return}
- $('#free').textContent=j.total?sz(j.free)+' free of '+sz(j.total):'';
+ $('#free').textContent=j.total?sz(j.free)+' free of '+sz(j.total):'';free=j.total?j.free:-1;
  let parts=cwd.split('/').filter(x=>x),acc='';const cr=$('#crumbs');cr.innerHTML='';
  const link=(t,p)=>{const a=document.createElement('a');a.href='#';a.textContent=t;a.onclick=()=>go(p);cr.append(a)};link('Home','/');
  for(const p of parts){acc+='/'+p;cr.append(' / ');link(acc==='/SD'?'SD card':acc==='/flash'?'Board storage':p,acc)}
@@ -76,12 +76,15 @@ $('#list').onclick=e=>{const a=e.target.closest('[data-a]');if(!a)return;e.preve
 async function post(u){const r=await fetch(u,{method:'POST'});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Error');return j}
 async function del(p){if(!confirm('Delete '+p.split('/').pop()+'?'))return;try{await post('/api/delete?path='+encodeURIComponent(p));load()}catch(e){alert(e.message)}}
 async function ren(p){const o=p.split('/').pop(),n=prompt('New name',o);if(!n||n==o)return;try{await post('/api/rename?path='+encodeURIComponent(p)+'&to='+encodeURIComponent(n));load()}catch(e){alert(e.message)}}
-async function mk(){if(cwd=='/'){alert('Open SD first');return}const n=prompt('Folder name');if(!n)return;try{await post('/api/mkdir?path='+encodeURIComponent(cwd+'/'+n));load()}catch(e){alert(e.message)}}
-function up(files){if(cwd=='/'){alert('Open SD first');return}let q=[...files];const next=()=>{const f=q.shift();if(!f){$('#prog').innerHTML='';$('#msg').textContent='Upload done';load();return}
- $('#prog').innerHTML=esc(f.name)+'<div class="bar"><i></i></div>';const x=new XMLHttpRequest();
- x.upload.onprogress=e=>{if(e.lengthComputable)$('.bar i').style.width=(100*e.loaded/e.total)+'%'};
- x.onload=()=>{if(x.status!=200)$('#msg').textContent=f.name+': '+x.responseText;next()};x.onerror=()=>{$('#msg').textContent=f.name+' failed';next()};
- x.open('PUT','/api/file?path='+encodeURIComponent(cwd+'/'+f.name));x.send(f)};next()}
+async function mk(){if(cwd=='/'){alert('Open the SD card first');return}if(cwd.startsWith('/flash')){alert("The board's own storage can't have folders. Turn the SD card on in TidyOS (Switches > SD card) for folders.");return}const n=prompt('Folder name');if(!n)return;try{await post('/api/mkdir?path='+encodeURIComponent(cwd+'/'+n));load()}catch(e){alert(e.message)}}
+function up(files){if(cwd=='/'){alert('Open the SD card first');return}let q=[...files],ok=0,bad=[],room=free;
+ const next=()=>{const f=q.shift();if(!f){$('#prog').innerHTML='';$('#msg').textContent=(ok?ok+' file'+(ok==1?'':'s')+' uploaded. ':'')+(bad.length?'Not uploaded: '+bad.join('; '):'');load();return}
+  if(room>=0&&f.size+4096>room){bad.push(f.name+' (not enough room: '+sz(Math.max(0,room))+' free'+(cwd.startsWith('/flash')?'; turn the SD card on for more':'')+')');next();return}
+  $('#prog').innerHTML=esc(f.name)+(q.length?' <span style="color:#555">('+q.length+' more after this)</span>':'')+'<div class="bar"><i></i></div>';const x=new XMLHttpRequest();
+  x.upload.onprogress=e=>{if(e.lengthComputable)$('.bar i').style.width=(100*e.loaded/e.total)+'%'};
+  x.onload=()=>{if(x.status==200){ok++;if(room>=0)room-=f.size}else bad.push(f.name+' ('+((x.responseText.match(/"error":"([^"]*)/)||[])[1]||('error '+x.status))+')');setTimeout(next,300)};
+  x.onerror=()=>{bad.push(f.name+' (the connection dropped)');setTimeout(next,1500)};
+  x.open('PUT','/api/file?path='+encodeURIComponent(cwd+'/'+f.name));x.send(f)};next()}
 // several files at once: fetched one after another, put together as a plain (stored) ZIP here in the browser
 const T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
 const crc=d=>{let c=-1;for(let i=0;i<d.length;i++)c=T[(c^d[i])&255]^(c>>>8);return(c^-1)>>>0};
@@ -281,7 +284,7 @@ static void receiveFile(WiFiClient & c, const std::string & path, long len)
   uint8_t buf[1400];
   long got = 0;
   uint32_t last = millis(), rest = millis();
-  bool ok = true;
+  bool ok = true, full = false;
   while (got < len) {
     // a big upload arriving fast never waits: give core 0 (and the watchdog's idle task) a moment every 50 ms
     if (millis() - rest >= 50) { vTaskDelay(1); rest = millis(); }
@@ -293,12 +296,22 @@ static void receiveFile(WiFiClient & c, const std::string & path, long len)
     }
     int r = c.read(buf, std::min((long)sizeof(buf), std::min((long)av, len - got)));
     if (r <= 0) continue;
-    if (fwrite(buf, 1, r, f) != (size_t)r) { ok = false; break; }
+    if (fwrite(buf, 1, r, f) != (size_t)r) { ok = false; full = true; break; }
     got += r;
     gNetRx += r;
     last = millis();
   }
   fclose(f);
+  if (full && c.connected()) {        // the card is full (or a write failed): take in the rest, so the
+    uint32_t t0 = millis();                       // browser gets the answer instead of a dropped connection
+    while (got < len && c.connected() && millis() - t0 < 60000) {
+      int r = c.read(buf, std::min((long)sizeof(buf), len - got));
+      if (r > 0) { got += r; t0 = millis(); } else delay(2);
+    }
+    remove(tmp.c_str());
+    sendErr(c, 507, "Not enough room for it there");
+    return;
+  }
   if (!ok) { remove(tmp.c_str()); sendErr(c, 500, "Upload stopped part way"); return; }
   remove(path.c_str());
   rename(tmp.c_str(), path.c_str());
@@ -357,6 +370,7 @@ static void handle(WiFiClient & c)
     else sendErr(c, 500, "Couldn't delete it (folders must be empty)");
   } else if (path == "/api/mkdir" && method == "POST") {
     if (!safePath(p)) sendErr(c, 400, "Not allowed");
+    else if (p.compare(0, 6, "/flash") == 0) sendErr(c, 400, "The board's own storage can't have folders: turn the SD card on (Switches) for folders");
     else if (mkdir(p.c_str(), 0777) == 0) send(c, 200, "application/json", "{\"ok\":true}");
     else sendErr(c, 500, "Couldn't make that folder");
   } else if (path == "/api/rename" && method == "POST") {
@@ -403,7 +417,7 @@ void fileServerSet(bool on)
   if (gSet.fileShare != on) { gSet.fileShare = on; settingsSave(); }
   if (on && !s_taskStarted) {
     s_taskStarted = true;
-    xTaskCreatePinnedToCore(serverTask, "fileweb", 6144, nullptr, 1, nullptr, 0);
+    xTaskCreatePinnedToCore(serverTask, "fileweb", 8192, nullptr, 1, nullptr, 0);   // (SD card writes need the room)
   }
 }
 
@@ -422,7 +436,7 @@ void fileServerMedia(bool on)
   if (on) s_lastUse = millis();
   if (on && !s_taskStarted) {
     s_taskStarted = true;
-    xTaskCreatePinnedToCore(serverTask, "fileweb", 6144, nullptr, 1, nullptr, 0);
+    xTaskCreatePinnedToCore(serverTask, "fileweb", 8192, nullptr, 1, nullptr, 0);   // (SD card writes need the room)
   }
 }
 
