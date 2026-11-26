@@ -31,6 +31,28 @@
   .switch small { display:block; font-size:.78rem; font-weight:400; opacity:.85; }
   .edition { background:#eef6ff; border-left:4px solid var(--accent); padding:10px 14px; margin:0 0 14px; }
   body.html5 .vga-only, body.vga .html5-only { display:none; }
+  /* backup / restore / erase, console, shrink (from Tidy Pro Plus's flasher) */
+  .btn { font:inherit; font-weight:600; padding:9px 16px; background:var(--accent); color:#fff; border:2px solid #000; box-shadow:3px 3px 0 #000; cursor:pointer; }
+  .btn.alt { background:#fff; color:#111; }
+  .btn:disabled { opacity:.45; cursor:default; }
+  .btn.sm { padding:4px 10px; font-size:.85rem; }
+  .muted { color:#555; font-size:.9rem; }
+  .fb-status { margin-top:12px; border:2px solid #000; padding:10px 12px; background:#f6f9ff; }
+  .fb-bar { height:12px; border:2px solid #000; background:#fff; margin-bottom:8px; }
+  .fb-bar div { height:100%; width:0; background:var(--accent); transition:width .2s; }
+  .chip { font:inherit; font-size:.85rem; background:#fff; border:1px solid #000; padding:3px 10px; cursor:pointer; }
+  .con-bar { display:flex; flex-wrap:wrap; gap:8px 10px; align-items:center; margin-bottom:10px; }
+  .con-bar label { display:flex; gap:5px; align-items:center; cursor:pointer; }
+  .con-out { background:#050b14; color:#cfe3f7; border:2px solid #000; margin:0; padding:8px 10px; height:320px; overflow:auto; font:12.5px/1.45 ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; word-break:break-word; }
+  .con-out .t { color:#6f8aa6 } .con-out .bad { color:#ff8a73; font-weight:700 } .con-out .warn { color:#ffd84d } .con-out .me { color:#7fd6a4 }
+  .con-send { display:flex; gap:8px; margin-top:8px; } .con-send input { flex:1; font:13px ui-monospace,Menlo,Consolas,monospace; border:2px solid #000; padding:6px 8px; }
+  .seg { display:inline-flex; border:2px solid #000; } .seg label { padding:6px 12px; cursor:pointer; } .seg input { display:none } .seg label:has(input:checked) { background:var(--accent); color:#fff; }
+  .drop { border:2px dashed var(--accent); background:#eef6ff; padding:22px; text-align:center; color:#333; margin-top:10px; } .drop.on { background:#cfe3ff; }
+  .sh-bar { display:flex; align-items:center; gap:14px; margin:12px 0 4px; flex-wrap:wrap; }
+  .sh-folder h4 { margin:12px 0 0; }
+  table.mt { margin-top:6px; font-size:.9rem; } table.mt.sh td:first-child { width:22px } table.mt.sh tr.off td { opacity:.45 }
+  .xbtn { background:#fff; border:1px solid #999; border-radius:4px; padding:1px 7px; margin-left:6px; cursor:pointer; font:inherit; font-size:.8rem; }
+  :root { --free:#1a8a4a; }
   /* USB file manager */
   .fm-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0; }
   .fm-btn { font:inherit; padding:8px 14px; background:#fff; color:#111; border:2px solid #000; box-shadow:3px 3px 0 #000; cursor:pointer; }
@@ -111,6 +133,42 @@
   </div>
 
   <div class="card">
+    <h2>Back up, restore or erase the board</h2>
+    <p>A <b>backup</b> copies the board's whole flash (TidyOS, settings, Wi-Fi, files kept in its internal storage) to one file on this computer; <b>Restore</b> puts it back exactly as it was. <b>Erase</b> wipes the whole flash before a clean install. Plug the board in with a USB <i>data</i> cable. The microSD card is never touched. Chrome or Edge on a computer.</p>
+    <p><button class="btn" id="fbBackup">Back up board</button> <span class="muted">about 2 minutes for the ESP32's 4 MB</span></p>
+    <div class="fb-status" id="fbStatus" hidden><div class="fb-bar"><div id="fbFill"></div></div><div id="fbMsg"></div></div>
+    <p style="margin-top:16px"><button class="btn alt" id="fbRestore">Restore from file&hellip;</button> <button class="btn" id="fbRestoreGo" hidden></button>
+      <input type="file" id="fbFile" accept=".gz,.bin" hidden> <span class="muted">use a backup from the same kind of board</span></p>
+    <div class="fb-status" id="rsStatus" hidden><div class="fb-bar"><div id="rsFill"></div></div><div id="rsMsg"></div></div>
+    <p style="margin-top:16px"><button class="btn alt" id="fbErase" style="color:#b00">Erase the whole board&hellip;</button> <span class="muted">back up first if there's anything on it you want to keep</span></p>
+    <div class="fb-status" id="erStatus" hidden><div class="fb-bar"><div id="erFill"></div></div><div id="erMsg"></div></div>
+  </div>
+
+  <div class="card" id="shrink">
+    <h2>Make room: shrink your music and photos</h2>
+    <p>The ESP32's internal storage is small and an SD card fills up too. Shrunk, far more fits: music becomes <b>Opus</b> (about the same sound as an MP3 at a third of the size, title, artist, album and cover kept) and photos are resized and saved small. It all happens in this browser; nothing is uploaded anywhere. A 4-minute 3.8 MB MP3 becomes about 1.4 MB; a 3.5 MB phone photo about 200 KB.</p>
+    <div class="seg" role="radiogroup" aria-label="For">
+      <label><input type="radio" name="shFor" value="tidy" checked> For TidyOS (JPEG photos)</label>
+      <label><input type="radio" name="shFor" value="shelf"> For The Shelf (AVIF photos)</label>
+    </div>
+    <label class="btn alt" style="margin-left:10px">Choose files&hellip;<input type="file" id="shPick" multiple accept="audio/*,image/*,.heic,.heif,.mp3,.m4a,.flac,.wav,.ogg,.opus" hidden></label>
+    <div class="drop" id="shDrop">Drop MP3s, Opus songs and photos here<br><small>(.opus files are added as they are: they're already small)</small></div>
+    <div id="shFolders" hidden>
+      <div class="sh-bar">
+        <label><input type="checkbox" id="shAll" checked> Select all</label>
+        <span id="shSel" class="muted"></span>
+        <button class="btn alt sm" id="shRemove">Remove selected</button>
+      </div>
+      <div class="sh-folder"><h4>&#128193; Music <span class="muted" id="shMusicN"></span></h4><table class="mt sh" id="shMusic"><tr><th></th><th>Song</th><th>Before</th><th>After</th><th>Saved</th><th></th></tr></table></div>
+      <div class="sh-folder"><h4>&#128193; Pictures <span class="muted" id="shPicN"></span></h4><table class="mt sh" id="shPics"><tr><th></th><th>Photo</th><th>Before</th><th>After</th><th>Saved</th><th></th></tr></table></div>
+      <div id="shTotal" class="muted" style="margin-top:8px"></div>
+      <button class="btn" id="shZip" style="margin-top:10px">Download selected (.zip)</button>
+      <span class="muted" style="margin-left:8px">The zip has Music and Pictures folders, ready to copy onto an SD card.</span>
+    </div>
+    <p class="note">Then copy the folders onto the SD card, drop the files on the TidyOS desktop in your browser, or send them over the cable with <b>Copy files over USB</b> above.</p>
+  </div>
+
+  <div class="card">
     <h2>What it looks like</h2>
     <img class="vga-only" src="docs/previews/TidyOS-previews.png" alt="TidyOS screen previews">
     <img class="html5-only" src="docs/screens/01-desktop.png" alt="TidyOS 2.5.2 desktop, real screenshot">
@@ -186,8 +244,24 @@
     <p><b>Also:</b> Doodle · Pictures · Music (MP3 + MIDI, shuffle) · Nic Sweep · Screenshot · Clock (alarm, stopwatch, world time) · <b>Latch</b> password safe · Git-Store cloud folder · HTML Games (<code>SD:/games</code>) · HTML Programs (<code>SD:/programs</code>) · Ping · Switches</p>
     <p><b>Games:</b> Sammy the Snake (with music) · Minesweeper · Blocks · 2048 · Bricks · Paradrop · Deep Drill · Missile Command · StuntCopter, each with a Pause button</p>
     <p><b>Desktop:</b> weather in °F with a 4-day graph (point at it for each hour), world times with temperatures, affirmations, news headlines, a day/night world map, and a drop box for copying files to the SD card. Windows minimize to the bottom bar, which also has an <b>Optimize</b> button next to RAM.</p>
+    <p class="html5-only"><b>New in 2.7.7 (from TidyOS Pro):</b> the desktop page works on phones (pinch to zoom), a <b>Files</b> button to download ticked files or whole folders as a ZIP, music buttons beside the clock (MP3, volume, Next) with the song on your phone's lock screen, Files &rarr; Select several and Move to, and the little OLED sleeps after 5 minutes (BOOT wakes it).</p>
     <p>For better web pages, run <code>helper/tidyos_proxy.py</code> on a Raspberry Pi and enter its address in Settings → Browser.
        See the <a href="https://github.com/hardwaremack-prog/TidyOS-ESP32#readme">README</a> for everything else.</p>
+  </div>
+  <div class="card">
+    <h2>Serial console</h2>
+    <p>See what the board says over USB (115200 baud): start-up messages and crash reports. Plug it in, click <b>Connect</b> and pick its port. The buttons above close the console by themselves when they need the port. Lines you type go to the board (try <code>!status</code>).</p>
+    <div class="con-bar">
+      <button class="btn" id="cnGo">Connect</button>
+      <button class="chip" id="cnReset" disabled>Restart board</button>
+      <button class="chip" id="cnClear">Clear</button>
+      <button class="chip" id="cnSave">Save log</button>
+      <label class="muted"><input type="checkbox" id="cnScroll" checked> Follow</label>
+      <label class="muted"><input type="checkbox" id="cnTime" checked> Times</label>
+      <span class="muted" id="cnState">Not connected</span>
+    </div>
+    <pre id="cnOut" class="con-out" aria-live="polite"></pre>
+    <form id="cnForm" class="con-send"><input id="cnLine" placeholder="Type a line to send to the board, Enter sends" autocomplete="off" disabled><button class="chip" disabled id="cnSend">Send</button></form>
   </div>
 </main>
 <script>
@@ -202,6 +276,9 @@
     inst.setAttribute('manifest', ED[e].manifest);
     inst.manifest = ED[e].manifest;
     document.getElementById('install-label').textContent = ED[e].label;
+    fetch(ED[e].manifest, { cache: 'no-store' }).then(r => r.json()).then(j => {      // which version it installs
+      if (document.body.className === e && j.version) document.getElementById('install-label').textContent = ED[e].label + ' ' + j.version;
+    }).catch(() => {});
     for (const k of Object.keys(ED)) {
       const b = document.getElementById('ed-' + k);
       b.classList.toggle('on', k === e);
@@ -294,6 +371,7 @@
 
   async function connect() {
     if (port) { try { if (!busy) { await send('\n!fs slow\n'); await sleep(150); } } catch (e) {} await close(); port = null; $('fmUi').hidden = true; $('fmConnect').textContent = 'Connect to TidyOS'; status('Disconnected.'); return; }
+    if (window.tidyConsoleStop) await window.tidyConsoleStop();   // the serial console lets go of the port
     try { port = await navigator.serial.requestPort(); } catch (e) { return; }
     try {
       status('Connecting…');
@@ -457,6 +535,11 @@
 
   // keep the fast link alive (the board drops back to normal speed after a minute of quiet)
   setInterval(async () => { if (port && writer && !busy) { busy = true; try { await hello(2000); } catch (e) {} busy = false; } }, 25000);
+  window.fmRelease = async () => {                 // backup / restore / erase / the console need the port
+    if (!port) return;
+    try { if (!busy) { await send('\n!fs slow\n'); await sleep(150); } } catch (e) {}
+    await close(); port = null; $('fmUi').hidden = true; $('fmConnect').textContent = 'Connect to TidyOS'; status('Disconnected so the flasher could use the port.');
+  };
   $('fmConnect').onclick = connect;
   $('fmUp').onclick = () => { if (path !== drive) go(path.slice(0, path.lastIndexOf('/')) || drive); };
   $('fmRefresh').onclick = () => showDrives();
@@ -478,6 +561,336 @@
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); upload([...e.dataTransfer.files]); };
 })();
+</script>
+<script src="shrink/shrink.js"></script>
+<script src="shrink/photo.js"></script>
+<script src="shrink/zip.js"></script>
+<script>
+// ---------- Shrink music and photos (in this browser) ----------
+// Each file goes in the Music or Pictures folder list, with a tick box (in the zip or not), Save and Remove.
+(function(){
+ var items=[],busyQ=Promise.resolve();
+ var $=function(i){return document.getElementById(i);};
+ var kb=function(n){return n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';};
+ function target(){return document.querySelector('input[name=shFor]:checked').value;}
+ function isOpus(f){return /\.(opus|ogg|oga)$/i.test(f.name);}
+ function refresh(){
+  var sel=items.filter(function(x){return x.on&&x.out;}),done=items.filter(function(x){return x.out;});
+  var tB=0,tA=0;sel.forEach(function(x){tB+=x.before;tA+=x.out.size;});
+  var mus=items.filter(function(x){return x.kind=='music';}),pic=items.filter(function(x){return x.kind=='photo';});
+  $('shMusic').parentNode.hidden=!mus.length;$('shPics').parentNode.hidden=!pic.length;
+  $('shMusicN').textContent=mus.length?'('+mus.length+' song'+(mus.length==1?'':'s')+')':'';
+  $('shPicN').textContent=pic.length?'('+pic.length+' photo'+(pic.length==1?'':'s')+')':'';
+  $('shFolders').hidden=!items.length;
+  $('shSel').textContent=sel.length+' of '+done.length+' selected';
+  $('shAll').checked=done.length>0&&sel.length==done.length;
+  $('shAll').indeterminate=sel.length>0&&sel.length<done.length;
+  $('shTotal').innerHTML=sel.length?'Selected: before <b>'+kb(tB)+'</b> &nbsp; after <b>'+kb(tA)+'</b> &nbsp; <b style="color:var(--free)">'+Math.max(0,Math.round(100-tA*100/tB))+'% smaller</b>':'Nothing selected.';
+  $('shZip').disabled=!sel.length;
+ }
+ function remove(x){var i=items.indexOf(x);if(i>=0)items.splice(i,1);x.tr.remove();if(x.url)URL.revokeObjectURL(x.url);refresh();}
+ function one(f){
+  var kind=(canShrink(f)||isOpus(f))?'music':isPhoto(f)?'photo':null;
+  if(!kind)return Promise.resolve();
+  var tr=document.createElement('tr'),x={f:f,kind:kind,on:true,before:f.size,out:null,tr:tr};
+  tr.innerHTML='<td><input type="checkbox" checked></td><td></td><td></td><td>waiting...</td><td></td><td></td>';
+  tr.cells[1].textContent=f.name;tr.cells[2].textContent=kb(f.size);
+  var cb=tr.cells[0].firstChild;cb.disabled=true;
+  cb.onchange=function(){x.on=cb.checked;tr.classList.toggle('off',!x.on);refresh();};
+  var rm=document.createElement('button');rm.className='xbtn';rm.textContent='Remove';rm.title='Take it off the list';rm.onclick=function(){remove(x);};
+  tr.cells[5].appendChild(rm);
+  $(kind=='music'?'shMusic':'shPics').appendChild(tr);items.push(x);refresh();
+  return Promise.resolve().then(function(){
+   if(items.indexOf(x)<0)return;                                       // removed while waiting
+   tr.cells[3].textContent='working...';
+   var job=isOpus(f)?Promise.resolve(f)                                // already Opus: into the Music folder as it is
+          :kind=='music'?shrinkAudio(f,function(p){tr.cells[3].textContent=p+'%';})
+          :(target()=='shelf'?shrinkPhoto(f,'avif',2048):shrinkPhoto(f,'jpeg',1280));
+   return job.then(function(o){
+    if(items.indexOf(x)<0)return;
+    x.out=o;cb.disabled=false;
+    if(o.name!=f.name)tr.cells[1].textContent=f.name+'  →  '+o.name;
+    tr.cells[3].textContent=kb(o.size);
+    tr.cells[4].innerHTML=o===f&&isOpus(f)?'<span class="muted">as is</span>':'<b style="color:var(--free)">'+Math.max(0,Math.round(100-o.size*100/f.size))+'%</b>';
+    var a=document.createElement('a');a.textContent='Save';x.url=a.href=URL.createObjectURL(o);a.download=o.name;tr.cells[5].insertBefore(a,rm);
+    refresh();
+   }).catch(function(e){tr.cells[3].textContent='skipped';tr.cells[4].textContent=(e&&e.message)||'';cb.checked=false;x.on=false;refresh();});
+  });
+ }
+ function add(list){[].slice.call(list).forEach(function(f){busyQ=busyQ.then(function(){return one(f);});});}
+ var dz=$('shDrop');
+ dz.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('on');});
+ dz.addEventListener('dragleave',function(){dz.classList.remove('on');});
+ dz.addEventListener('drop',function(e){e.preventDefault();dz.classList.remove('on');add(e.dataTransfer.files);});
+ $('shPick').onchange=function(){add(this.files);this.value='';};
+ $('shAll').onchange=function(){var on=this.checked;items.forEach(function(x){if(!x.out)return;x.on=on;x.tr.cells[0].firstChild.checked=on;x.tr.classList.toggle('off',!on);});refresh();};
+ $('shRemove').onclick=function(){items.filter(function(x){return x.on&&x.out;}).forEach(remove);};
+ $('shZip').onclick=function(){
+  var sel=items.filter(function(x){return x.on&&x.out;});if(!sel.length)return;
+  Promise.all(sel.map(function(x){return x.out.arrayBuffer().then(function(ab){return {name:(x.kind=='music'?'Music/':'Pictures/')+x.out.name,data:new Uint8Array(ab)};});}))
+   .then(function(files){var a=document.createElement('a');a.href=URL.createObjectURL(makeZip(files));a.download=(target()=='shelf'?'shrunk-for-the-shelf':'shrunk-for-tidyos')+'.zip';a.click();});
+ };
+})();
+</script>
+<script type="module">
+// Whole-board flash backup and restore over USB, with esptool-js.
+const ESPTOOL = 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+const $ = id => document.getElementById(id);
+const busy = on => { $('fbBackup').disabled = $('fbRestore').disabled = $('fbRestoreGo').disabled = $('fbErase').disabled = on; };
+let at = 'fb';      // which card shows the progress: fb = backup, rs = restore
+const show = (msg, frac) => {
+  $(at + 'Status').hidden = false; $(at + 'Msg').textContent = msg;
+  if (frac != null) $(at + 'Fill').style.width = Math.round(frac * 100) + '%';
+};
+const mb = n => n < 1048576 ? Math.max(1, Math.round(n / 1024)) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+
+if (!('serial' in navigator)) {
+  for (const id of ['fbBackup', 'fbRestore', 'fbErase']) $(id).disabled = true;
+  show('Open this page in Chrome or Edge on a computer to back up or restore over USB.');
+}
+
+// Chrome only shows its port list straight after a click, so every button asks for the port
+// first, before downloading or reading anything, and then hands it to connect().
+const pickPort = async () => { consoleStop(); if (window.fmRelease) await window.fmRelease(); return navigator.serial.requestPort(); };   // the console and the file copier let go of the port
+async function connect(port) {
+  await consoleStop();                         // (finishes closing it, if it was open)
+  const { ESPLoader, Transport } = await import(ESPTOOL);
+  const transport = new Transport(port, true);
+  const terminal = { clean() {}, writeLine() {}, write() {} };
+  const loader = new ESPLoader({ transport, baudrate: 921600, romBaudrate: 115200, terminal });
+  show('Connecting to the board…', 0);
+  const chip = await loader.main();
+  const bytes = (await loader.getFlashSize()) * 1024;
+  if (!bytes) throw new Error("Couldn't read the board's flash size.");
+  return { loader, transport, chip, bytes };
+}
+// Restart the board into its program. (esptool-js 0.5.7's own "hard_reset" only lets go of the reset
+// line without pulling it first, so the board stayed in download mode with a dark screen.)
+// DTR off = GPIO 0 left high, so the chip starts the program; then RTS pulses the reset (EN) line.
+// Works for the V4's built-in USB and for USB-serial chips alike.
+async function done(c) {
+  const t = c.transport, wait = ms => new Promise(r => setTimeout(r, ms));
+  try {
+    await t.setDTR(false);
+    await t.setRTS(true);
+    await wait(150);
+    await t.setRTS(false);
+    await t.setDTR(false);
+    await wait(200);
+  } catch {}
+  try { await t.disconnect(); } catch {}
+  if (cn.reopen) {                             // the console was open before: open it again to watch the board start
+    const p = cn.reopen; cn.reopen = null;
+    for (let i = 0; i < 6; i++) {
+      await wait(500);
+      try { await cnOpen(p); return; } catch {}
+    }
+    cnAdd('(click Connect to watch the board again)', 'warn');
+  }
+}
+function friendly(e) {
+  const m = String(e && e.message || e);
+  if (/No port selected|NotFoundError/i.test(m)) return 'No board picked.';
+  if (e && e.plain) return m;                                          // a message that says what to do already
+  if (/open|busy|in use/i.test(m)) return 'The port is busy. Close any other page or app using the board (another tab, Arduino, a serial monitor) and try again.';
+  return m + '. Unplug the board, plug it back in, and try again. If it keeps failing, hold BOOT, tap EN, then let go of BOOT, and try again.';
+}
+
+$('fbBackup').onclick = async () => {
+  at = 'fb'; let c, port;
+  try { port = await pickPort(); } catch (e) { show(friendly(e)); return; }
+  busy(true);
+  try {
+    c = await connect(port);
+    const t0 = Date.now();
+    const data = await c.loader.readFlash(0, c.bytes, (_p, got, total) => {
+      const s = (Date.now() - t0) / 1000, left = got ? s * (total - got) / got : 0;
+      show(`Reading ${mb(got)} of ${mb(total)}` + (got > 65536 ? ` · about ${Math.ceil(left / 60)} min left` : ''), got / total);
+    });
+    await done(c); c = null;
+    show('Compressing…', 1);
+    const gz = await new Response(new Blob([data]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+    const name = `tidyos-esp32-flash-${new Date().toISOString().slice(0, 10)}.bin.gz`;
+    if (window.showSaveFilePicker) {
+      try {
+        const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: 'Board backup', accept: { 'application/gzip': ['.gz'] } }] });
+        const w = await h.createWritable(); await w.write(gz); await w.close();
+      } catch (e) { if (e.name === 'AbortError') { show('Backup read but not saved.'); return; } throw e; }
+    } else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(gz); a.download = name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    }
+    show(`Saved ${name}: ${mb(data.length)} of flash in ${mb(gz.size)}. The board has restarted.`, 1);
+  } catch (e) { show(friendly(e)); }
+  finally { if (c) await done(c); busy(false); }
+};
+
+let pending = null;      // the backup chosen for Restore, waiting for the "write it" click
+$('fbRestore').onclick = () => { at = 'rs'; $('fbFile').click(); };
+$('fbFile').onchange = async () => {
+  const f = $('fbFile').files[0]; $('fbFile').value = '';
+  if (!f) return;
+  at = 'rs'; pending = null; $('fbRestoreGo').hidden = true;
+  try {
+    show('Opening ' + f.name + '…', 0);
+    let data = new Uint8Array(await f.arrayBuffer());
+    if (data[0] === 0x1f && data[1] === 0x8b) data = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+    if (data.length < 1048576 || data.length % 4096) throw new Error("That file isn't a whole-board backup");
+    pending = { name: f.name, data };
+    $('fbRestoreGo').textContent = `Write ${f.name} to the board`; $('fbRestoreGo').hidden = false;
+    show(`${f.name} is ready (${mb(data.length)}). Click "Write ${f.name} to the board" and pick the board's port.`, 0);
+  } catch (e) { show(friendly(e)); }
+};
+$('fbRestoreGo').onclick = async () => {
+  if (!pending) return;
+  at = 'rs'; let c, port;
+  const { name: fname, data } = pending, f = { name: fname };
+  try { port = await pickPort(); } catch (e) { show(friendly(e)); return; }
+  if (!confirmRestore(f.name, data.length)) { show('Restore cancelled.'); return; }
+  busy(true);
+  try {
+    c = await connect(port);
+    if (data.length > c.bytes) throw new Error(`That backup is ${mb(data.length)} but this board's flash is ${mb(c.bytes)}. Use a backup from the same kind of board`);
+    let bin = '';
+    for (let i = 0; i < data.length; i += 0x8000) bin += String.fromCharCode.apply(null, data.subarray(i, i + 0x8000));
+    const t0 = Date.now();
+    await c.loader.writeFlash({
+      fileArray: [{ data: bin, address: 0 }],
+      flashSize: 'keep', flashMode: 'keep', flashFreq: 'keep',
+      eraseAll: false, compress: true,
+      reportProgress: (_i, w, total) => {
+        const s = (Date.now() - t0) / 1000, left = w ? s * (total - w) / w : 0;
+        show(`Writing ${Math.round(w / total * 100)}%` + (w > 65536 ? ` · about ${Math.ceil(left / 60)} min left` : ''), w / total);
+      },
+    });
+    await done(c); c = null;
+    show(`Restored ${f.name}. The board has restarted.`, 1);
+    pending = null; $('fbRestoreGo').hidden = true;
+  } catch (e) { show(friendly(e)); }
+  finally { if (c) await done(c); busy(false); }
+};
+// ---------- Serial console: reads the board at 115200 baud ----------
+const cn = { port: null, reader: null, writer: null, buf: '', lines: 0, log: [], closing: null };
+const cnTs = () => { const d = new Date(); return d.toTimeString().slice(0, 8); };
+function cnAdd(text, cls) {
+  const out = $('cnOut'), line = document.createElement('div');
+  if ($('cnTime').checked) { const t = document.createElement('span'); t.className = 't'; t.textContent = '[' + cnTs() + ']'; line.appendChild(t); }
+  const b = document.createElement('span');
+  b.textContent = text;
+  if (cls) b.className = cls;
+  else if (/Guru Meditation|panic|abort\(\)|Backtrace|CORRUPTED|Brownout|stack low/i.test(text)) b.className = 'bad';
+  else if (/warn|fail|error|can't|couldn't/i.test(text)) b.className = 'warn';
+  line.appendChild(b); out.appendChild(line);
+  cn.log.push('[' + cnTs() + ']' + text);
+  if (++cn.lines > 4000) { out.firstChild.remove(); cn.log.shift(); cn.lines--; }
+  if ($('cnScroll').checked) out.scrollTop = out.scrollHeight;
+}
+function cnState(on, msg) {
+  $('cnGo').textContent = on ? 'Disconnect' : 'Connect';
+  $('cnReset').disabled = $('cnLine').disabled = $('cnSend').disabled = !on;
+  $('cnState').textContent = msg;
+}
+async function cnLoop() {
+  const dec = new TextDecoder();
+  try {
+    while (cn.port && cn.port.readable) {
+      cn.reader = cn.port.readable.getReader();
+      try {
+        for (;;) {
+          const { value, done } = await cn.reader.read();
+          if (done) break;
+          cn.buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = cn.buf.indexOf('\n')) >= 0) { const ln = cn.buf.slice(0, i).replace(/\r$/, ''); cn.buf = cn.buf.slice(i + 1); cnAdd(ln); }
+          if (cn.buf.length > 8000) { cnAdd(cn.buf); cn.buf = ''; }
+        }
+      } catch (e) { if (cn.port) cnAdd('(read stopped: ' + e.message + ')', 'warn'); }
+      finally { try { cn.reader.releaseLock(); } catch {} cn.reader = null; }
+      if (!cn.closing) await new Promise(r => setTimeout(r, 200));   // USB blip (e.g. the board restarted): keep reading
+      else break;
+    }
+  } finally {
+    if (!cn.closing && cn.port) { cnAdd('(the board went away - click Connect again)', 'warn'); try { await cn.port.close(); } catch {} cn.port = null; cnState(false, 'Not connected'); }
+  }
+}
+async function cnOpen(port) {
+  await port.open({ baudRate: 115200 });
+  try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch {}   // don't hold it in reset or download mode
+  cn.port = port; cn.closing = null;
+  const info = port.getInfo ? port.getInfo() : {};
+  cnState(true, 'Connected' + (info.usbProductId ? ` (USB ${info.usbVendorId.toString(16)}:${info.usbProductId.toString(16)})` : ''));
+  cnAdd('--- connected at 115200 baud ---', 'me');
+  cnLoop();
+}
+// closes the console (if it's open) so the flasher can use the port; returns when it's closed
+window.tidyConsoleStop = () => consoleStop();
+function consoleStop() {
+  if (!cn.port) return Promise.resolve();
+  if (cn.closing) return cn.closing;
+  const p = cn.port;
+  cn.reopen = p;                               // opened again after the flasher is done
+  cn.closing = (async () => {
+    try { if (cn.reader) await cn.reader.cancel(); } catch {}
+    await new Promise(r => setTimeout(r, 50));
+    try { await p.close(); } catch {}
+    cn.port = null;
+    cnState(false, 'Closed for the flasher - Connect again afterwards');
+    cnAdd('--- closed so the flasher can use the port ---', 'me');
+  })();
+  return cn.closing;
+}
+$('cnGo').onclick = async () => {
+  if (cn.port) { await consoleStop(); cnState(false, 'Not connected'); return; }
+  if (!('serial' in navigator)) { cnAdd('Open this page in Chrome or Edge on a computer to use the console.', 'warn'); return; }
+  let port;
+  try { port = await navigator.serial.requestPort(); } catch (e) { cnState(false, 'No board picked'); return; }
+  try { await cnOpen(port); }
+  catch (e) { cnState(false, 'Not connected'); cnAdd("Couldn't open the port: " + e.message + '. Close other programs or tabs using it (Arduino, another serial monitor).', 'warn'); }
+};
+$('cnReset').onclick = async () => {
+  if (!cn.port) return;
+  cnAdd('--- restarting the board ---', 'me');
+  try {
+    await cn.port.setSignals({ dataTerminalReady: false, requestToSend: true });
+    await new Promise(r => setTimeout(r, 150));
+    await cn.port.setSignals({ dataTerminalReady: false, requestToSend: false });
+  } catch (e) { cnAdd('Restart failed: ' + e.message, 'warn'); }
+};
+$('cnClear').onclick = () => { $('cnOut').textContent = ''; cn.log = []; cn.lines = 0; };
+$('cnSave').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([cn.log.join('\n') + '\n'], { type: 'text/plain' }));
+  a.download = 'tidyos-esp32-log-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.txt';
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+};
+$('cnForm').onsubmit = async ev => {
+  ev.preventDefault();
+  const t = $('cnLine').value;
+  if (!cn.port || !cn.port.writable) return;
+  const w = cn.port.writable.getWriter();
+  try { await w.write(new TextEncoder().encode(t + '\n')); cnAdd('> ' + t, 'me'); $('cnLine').value = ''; }
+  catch (e) { cnAdd('Send failed: ' + e.message, 'warn'); }
+  finally { w.releaseLock(); }
+};
+// ---------- Erase: the whole flash (esptool's erase_flash) ----------
+$('fbErase').onclick = async () => {
+  at = 'er'; let c, port;
+  try { port = await pickPort(); } catch (e) { show(friendly(e)); return; }
+  if (!confirm('Erase the WHOLE board?\n\nEverything on its flash goes: TidyOS, Wi-Fi and settings, and files kept in its internal storage. It will have nothing to run until you install again.\n\nThe microSD card is not touched.')) { show('Erase cancelled.'); return; }
+  busy(true);
+  try {
+    c = await connect(port);
+    const t0 = Date.now();
+    const tick = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000); show(`Erasing ${mb(c.bytes)} of flash... ${s} s (usually 20-60 s)`, Math.min(0.95, s / 45)); }, 500);
+    try { await c.loader.eraseFlash(); } finally { clearInterval(tick); }
+    await done(c); c = null;
+    show(`Erased in ${Math.round((Date.now() - t0) / 1000)} s. The board is empty now: install TidyOS from step 1.`, 1);
+  } catch (e) { show(friendly(e)); }
+  finally { if (c) await done(c); busy(false); }
+};
+function confirmRestore(name, n) {
+  return window.confirm(`Restore ${name} (${mb(n)})?\n\nThis replaces everything on the board's flash: TidyOS, Wi-Fi, settings and files in its internal storage. The microSD card isn't touched.`);
+}
 </script>
 </body>
 </html>
