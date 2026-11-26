@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include "fileserver.h"
 #include "core.h"
+#include "screen.h"
 
 static volatile bool s_on = false;
 static volatile bool s_taskStarted = false;
@@ -45,11 +46,14 @@ button.p{background:#0055aa;color:#fff}.x{background:none;border:none;color:#a00
 #drop.on{background:#e8f0ff}.bar{height:8px;background:#ddd;margin-top:4px}.bar i{display:block;height:100%;background:#0055aa;width:0}
 #msg{min-height:1.2em;color:#0055aa;margin-top:8px}</style></head><body>
 <header><h1>TidyOS Files</h1><span id="free"></span></header><main>
-<div class="card"><div id="crumbs"></div><table id="list"></table></div>
+<div class="card"><div id="crumbs"></div>
+<div id="dlbar" style="margin:8px 0"><button class="p" onclick="dlTicked()">&#11015; Download ticked</button> <button onclick="dlFolder()">&#11015; Download this folder (ZIP)</button>
+ <span style="color:#555;font-size:.9rem">One file downloads as itself, several as one ZIP. Click a file's name to download just that one.</span></div>
+<table id="list"></table><div id="dlmsg" style="color:#0055aa;margin-top:6px"></div></div>
 <div class="card"><button class="p" onclick="pick.click()">Upload files</button> <button onclick="mk()">New folder</button>
 <input type="file" id="pick" multiple hidden><div id="drop">...or drop files here</div><div id="prog"></div><div id="msg"></div></div>
 </main><script>
-let cwd='/SD';const $=s=>document.querySelector(s);
+let cwd='/SD',rows=[];const $=s=>document.querySelector(s);
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const sz=b=>b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB';
 async function load(){let j;try{j=await (await fetch('/api/list?path='+encodeURIComponent(cwd))).json()}catch(e){$('#msg').textContent='Could not reach TidyOS';return}
@@ -57,11 +61,13 @@ async function load(){let j;try{j=await (await fetch('/api/list?path='+encodeURI
  $('#free').textContent=j.total?sz(j.free)+' free of '+sz(j.total):'';
  let parts=cwd.split('/').filter(x=>x),acc='';const cr=$('#crumbs');cr.innerHTML='';
  const link=(t,p)=>{const a=document.createElement('a');a.href='#';a.textContent=t;a.onclick=()=>go(p);cr.append(a)};link('Home','/');
- for(const p of parts){acc+='/'+p;cr.append(' / ');link(p,acc)}
+ for(const p of parts){acc+='/'+p;cr.append(' / ');link(acc==='/SD'?'SD card':acc==='/flash'?'Board storage':p,acc)}
+ $('#dlbar').style.display=cwd=='/'?'none':'';rows=j.items;
  j.items.sort((a,b)=>b.d-a.d||a.n.localeCompare(b.n));let h='';
  if(!j.items.length)h='<tr><td>(empty)</td></tr>';
  for(const it of j.items){const p=(cwd=='/'?'':cwd)+'/'+it.n;
-  h+='<tr data-p="'+esc(p)+'" data-d="'+it.d+'"><td>'+(it.d?'&#128193; <a class="f" href="#" data-a="open">'+esc(it.n)+'</a>':'&#128196; <a class="f" href="/api/file?dl=1&path='+encodeURIComponent(p)+'">'+esc(it.n)+'</a>')+
+  const nm=cwd=='/'?(it.n=='SD'?'SD card':'Board storage'):it.n;
+  h+='<tr data-p="'+esc(p)+'" data-d="'+it.d+'"><td style="width:22px">'+(cwd=='/'?'':'<input type="checkbox" class="tk" data-n="'+esc(it.n)+'">')+'</td><td>'+(it.d?'&#128193; <a class="f" href="#" data-a="open">'+esc(nm)+'</a>':'&#128196; <a class="f" href="/api/file?dl=1&path='+encodeURIComponent(p)+'">'+esc(it.n)+'</a>')+
   '</td><td class="s">'+(it.d?'':sz(it.s))+'</td><td class="s">'+(cwd=='/'?'':'<button class="x" title="Rename" data-a="ren">&#9998;</button><button class="x" title="Delete" data-a="del">&#10006;</button>')+'</td></tr>'}
  $('#list').innerHTML=h}
 function go(p){cwd=p;load();return false}
@@ -76,6 +82,33 @@ function up(files){if(cwd=='/'){alert('Open SD first');return}let q=[...files];c
  x.upload.onprogress=e=>{if(e.lengthComputable)$('.bar i').style.width=(100*e.loaded/e.total)+'%'};
  x.onload=()=>{if(x.status!=200)$('#msg').textContent=f.name+': '+x.responseText;next()};x.onerror=()=>{$('#msg').textContent=f.name+' failed';next()};
  x.open('PUT','/api/file?path='+encodeURIComponent(cwd+'/'+f.name));x.send(f)};next()}
+// several files at once: fetched one after another, put together as a plain (stored) ZIP here in the browser
+const T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+const crc=d=>{let c=-1;for(let i=0;i<d.length;i++)c=T[(c^d[i])&255]^(c>>>8);return(c^-1)>>>0};
+function zip(fs){const E=new TextEncoder(),P=[],C=[];let o=0;const t=new Date(),tm=t.getHours()<<11|t.getMinutes()<<5|t.getSeconds()>>1,dt=(t.getFullYear()-1980)<<9|(t.getMonth()+1)<<5|t.getDate();
+ for(const f of fs){const n=E.encode(f.n),c=crc(f.d),l=f.d.length,h=new DataView(new ArrayBuffer(30)),z=new DataView(new ArrayBuffer(46));
+  h.setUint32(0,0x04034b50,1);h.setUint16(4,20,1);h.setUint16(6,0x800,1);h.setUint16(10,tm,1);h.setUint16(12,dt,1);h.setUint32(14,c,1);h.setUint32(18,l,1);h.setUint32(22,l,1);h.setUint16(26,n.length,1);
+  z.setUint32(0,0x02014b50,1);z.setUint16(4,20,1);z.setUint16(6,20,1);z.setUint16(8,0x800,1);z.setUint16(12,tm,1);z.setUint16(14,dt,1);z.setUint32(16,c,1);z.setUint32(20,l,1);z.setUint32(24,l,1);z.setUint16(28,n.length,1);z.setUint32(42,o,1);
+  P.push(new Uint8Array(h.buffer),n,f.d);C.push(new Uint8Array(z.buffer),n);o+=30+n.length+l}
+ const cs=C.reduce((a,b)=>a+b.length,0),e=new DataView(new ArrayBuffer(22));e.setUint32(0,0x06054b50,1);e.setUint16(8,fs.length,1);e.setUint16(10,fs.length,1);e.setUint32(12,cs,1);e.setUint32(16,o,1);
+ return new Blob([...P,...C,new Uint8Array(e.buffer)],{type:'application/zip'})}
+async function walk(dir,rel,out){const j=await (await fetch('/api/list?path='+encodeURIComponent(dir))).json();if(j.error)throw new Error(j.error);
+ for(const it of j.items){if(it.d)await walk(dir+'/'+it.n,rel+it.n+'/',out);else out.push({p:dir+'/'+it.n,n:rel+it.n,s:it.s})}return out}
+function save(name,blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),60000)}
+let busy=false;
+async function dl(list){if(busy)return;if(!list.length){$('#dlmsg').textContent='Tick some files or folders first.';return}busy=true;
+ const tot=list.reduce((a,f)=>a+f.s,0)||1,t0=Date.now();let done=0;const got=[];
+ try{for(let i=0;i<list.length;i++){const f=list[i];$('#dlmsg').textContent='Downloading '+(i+1)+' of '+list.length+': '+f.n+'  ('+sz(done)+' of '+sz(tot)+')';
+   const r=await fetch('/api/file?path='+encodeURIComponent(f.p));if(!r.ok)throw new Error(f.n+': '+r.status);
+   const d=new Uint8Array(await r.arrayBuffer());done+=d.length;got.push({n:f.n,d})}
+  const nm=(cwd.split('/').filter(x=>x).join('-')||'board')+'.zip',s=((Date.now()-t0)/1000).toFixed(0);
+  if(got.length==1&&!got[0].n.includes('/'))save(got[0].n,new Blob([got[0].d]));else save(nm,zip(got));
+  $('#dlmsg').textContent='Downloaded '+(got.length==1?got[0].n:got.length+' files as '+nm)+' ('+sz(done)+' in '+s+' s). Look in your Downloads.'}
+ catch(e){$('#dlmsg').textContent='Stopped: '+e.message}finally{busy=false}}
+async function dlTicked(){const n=[...document.querySelectorAll('.tk:checked')].map(c=>c.dataset.n),l=[];
+ try{for(const x of n){const it=rows.find(r=>r.n==x);if(!it)continue;if(it.d)await walk(cwd+'/'+x,x+'/',l);else l.push({p:cwd+'/'+x,n:x,s:it.s})}}catch(e){$('#dlmsg').textContent=e.message;return}dl(l)}
+async function dlFolder(){$('#dlmsg').textContent='Listing the folder...';let l;try{l=await walk(cwd,'',[])}catch(e){$('#dlmsg').textContent=e.message;return}
+ const t=l.reduce((a,f)=>a+f.s,0);if(t>50*1048576&&!confirm(l.length+' files, '+sz(t)+'. Download them all?'))return;dl(l)}
 pick.onchange=e=>up(e.target.files);const d=$('#drop');
 d.ondragover=e=>{e.preventDefault();d.classList.add('on')};d.ondragleave=()=>d.classList.remove('on');
 d.ondrop=e=>{e.preventDefault();d.classList.remove('on');up(e.dataTransfer.files)};load();
@@ -149,7 +182,7 @@ static const char * mimeOf(const std::string & p)
   if (!strcmp(e, "mid") || !strcmp(e, "midi")) return "audio/midi";
   if (!strcmp(e, "m4a")) return "audio/mp4";
   if (!strcmp(e, "wav")) return "audio/wav";
-  if (!strcmp(e, "ogg")) return "audio/ogg";
+  if (!strcmp(e, "ogg") || !strcmp(e, "opus")) return "audio/ogg";
   if (!strcmp(e, "bmp")) return "image/bmp";
   if (!strcmp(e, "gif")) return "image/gif";
   if (!strcmp(e, "js") || !strcmp(e, "mjs")) return "text/javascript";
@@ -229,7 +262,9 @@ static void sendFile(WiFiClient & c, const std::string & path, bool download)
   uint8_t buf[1400];
   long left = to - from + 1;
   size_t n;
+  uint32_t rest = millis();
   while (left > 0 && (n = fread(buf, 1, (size_t)std::min(left, (long)sizeof(buf)), f)) > 0) {
+    if (millis() - rest >= 50) { vTaskDelay(1); rest = millis(); }
     if (c.write(buf, n) != n) break;
     gNetTx += n;
     left -= n;
@@ -245,9 +280,11 @@ static void receiveFile(WiFiClient & c, const std::string & path, long len)
   if (!f) { sendErr(c, 500, "Can't write there (is the card full or read-only?)"); return; }
   uint8_t buf[1400];
   long got = 0;
-  uint32_t last = millis();
+  uint32_t last = millis(), rest = millis();
   bool ok = true;
   while (got < len) {
+    // a big upload arriving fast never waits: give core 0 (and the watchdog's idle task) a moment every 50 ms
+    if (millis() - rest >= 50) { vTaskDelay(1); rest = millis(); }
     int av = c.available();
     if (av <= 0) {
       if (!c.connected() || millis() - last > 15000) { ok = false; break; }
@@ -340,7 +377,7 @@ static void serverTask(void *)
 {
   uint32_t idleSince = 0;
   for (;;) {
-    bool wifi = WiFi.status() == WL_CONNECTED;
+    bool wifi = WiFi.status() == WL_CONNECTED || screenApOn();     // home Wi-Fi, or TidyOS's own hotspot
     bool want = s_on || (s_media && millis() - s_lastUse < 600000);
     // not wanted for 20 s: close up and end the task, giving back its 6 KB stack and the socket
     if (want) idleSince = 0;
@@ -354,7 +391,7 @@ static void serverTask(void *)
     if ((!want || !wifi) && s_listening) { s_srv.end(); s_listening = false; }
     if (s_listening) {
       WiFiClient c = s_srv.available();
-      if (c) { s_lastUse = millis(); handle(c); continue; }
+      if (c) { s_lastUse = millis(); handle(c); vTaskDelay(1); continue; }   // (a breather between files of a batch)
     }
     vTaskDelay((s_listening ? 20 : 500) / portTICK_PERIOD_MS);
   }
@@ -371,6 +408,13 @@ void fileServerSet(bool on)
 }
 
 bool fileServerOn() { return s_on; }
+
+// starts it (if needed) and waits up to 1.5 s until it's listening, so the browser's first request finds it
+void fileServerMediaReady()
+{
+  fileServerMedia(true);
+  for (int i = 0; i < 75 && !s_listening && (WiFi.status() == WL_CONNECTED || screenApOn()); ++i) delay(20);
+}
 
 void fileServerMedia(bool on)
 {
@@ -408,8 +452,8 @@ std::string fileServerRunPath(const std::string & file)     // "/run/SD/HTML%20G
 
 std::string fileServerUrl()
 {
-  if (!s_on || WiFi.status() != WL_CONNECTED) return "";
-  std::string u = std::string("http://") + WiFi.localIP().toString().c_str();
+  if (!s_on || (WiFi.status() != WL_CONNECTED && !screenApOn())) return "";
+  std::string u = std::string("http://") + (WiFi.status() == WL_CONNECTED ? WiFi.localIP() : WiFi.softAPIP()).toString().c_str();
   if (FILES_PORT != 80) u += ":" + std::to_string(FILES_PORT);
   return u;
 }

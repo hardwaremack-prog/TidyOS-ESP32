@@ -107,6 +107,10 @@ public:
     windowStyle().focusedBorderColor = T.accent;
     windowProps().focusable = true;
   }
+  bool multi = false;                     // "Select several": clicking a file ticks it (folders still open)
+  std::vector<std::string> marked;        // the ticked files' names (in this folder)
+  bool isMarked(const std::string & n) { return std::find(marked.begin(), marked.end(), n) != marked.end(); }
+  void toggleMark(const std::string & n) { auto it = std::find(marked.begin(), marked.end(), n); if (it == marked.end()) marked.push_back(n); else marked.erase(it); }
   bool hasUp() { return dir != SD_MOUNT && dir != FLASH_MOUNT && dir.size() > 1; }
   int rows() { return imax(1, clientRect(uiOrigin::Window).height() / RH); }
   // entry i (".." first when there is a parent folder); streams the folder every time
@@ -132,7 +136,7 @@ public:
     closedir(d);
     return n;
   }
-  void setDir(const std::string & d) { dir = d; top = 0; sel = -1; count = countAll(); repaint(); }
+  void setDir(const std::string & d) { if (d != dir) marked.clear(); dir = d; top = 0; sel = -1; count = countAll(); repaint(); }
   void scroll(int by) { int t = imax(0, imin(count - rows(), top + by)); if (t != top) { top = t; repaint(); } }
 
   void processEvent(uiEvent * e) override {
@@ -148,12 +152,14 @@ public:
         int skip = top, row = 0, idx = 0;
         auto drawRow = [&](const char * nm, bool isDir) {
           int y = cr.Y1 + row * RH;
-          bool s = idx == sel;
+          bool mk = multi && !isDir && isMarked(nm);
+          bool s = multi ? mk : idx == sel;
           cv->setBrushColor(s ? T.accent : T.win);
           if (s) cv->fillRectangle(cr.X1, y, cr.X2, y + RH - 1);
           cv->setPenColor(s ? T.accentText : T.text);
           char b[80];
-          snprintf(b, sizeof(b), isDir ? "[%s]" : "%s", nm);
+          if (multi && !isDir) snprintf(b, sizeof(b), "%s %s", mk ? "[x]" : "[  ]", nm);
+          else snprintf(b, sizeof(b), isDir ? "[%s]" : "%s", nm);
           cv->drawText(&FONT_std_14, cr.X1 + 6, y + 2, b);
           ++row;
         };
@@ -182,6 +188,12 @@ public:
         int i = top + (e->params.mouse.status.Y - cr.Y1) / RH;
         std::string nm; bool isDir = false;
         if (i < count && entry(i, nm, isDir)) {
+          if (multi && !isDir) {                          // several-select: a click ticks or unticks the file
+            if (e->id == UIEVT_DBLCLICK) break;
+            toggleMark(nm); sel = i; repaint();
+            if (onPick) onPick(nm, false, false);
+            break;
+          }
           if (e->id == UIEVT_DBLCLICK && (isDir || i != sel)) break;   // folders open on the first click
           sel = i; repaint();
           if (onPick) onPick(nm, isDir, e->id == UIEVT_DBLCLICK);
@@ -1590,8 +1602,9 @@ public:
     updateInfo();
   }
 
-  FilesApp() : AppFrame("Files", nextPos(470, 360), Size(470, 360), &inst) {
-    fl = new FileList(this, Point(cx, cy), Size(320, FileList::RH * 16 + 2));
+  uiButton * multiBtn;
+  FilesApp() : AppFrame("Files", nextPos(470, 420), Size(470, 420), &inst) {
+    fl = new FileList(this, Point(cx, cy), Size(320, FileList::RH * 19 + 2));
     fl->onPick = [this](const std::string & nm, bool isDir, bool twice) {
       if (isDir) { goInto(nm); return; }
       selName = nm; selDir = false;
@@ -1604,13 +1617,16 @@ public:
     button("New folder", bx, cy + 28,  122)->onClick = [this]() { newFolder(); };
     button("Rename",     bx, cy + 56,  122)->onClick = [this]() { rename(); };
     button("Delete",     bx, cy + 84,  122)->onClick = [this]() { del(); };
-    button("New note",   bx, cy + 124, 122)->onClick = []() { openNeat(nullptr); };
-    button("New sheet",  bx, cy + 152, 122)->onClick = []() { openTidy(nullptr); };
-    shareBtn = button("", bx, cy + 192, 122, 40);
+    button("Move to...", bx, cy + 112, 122)->onClick = [this]() { moveSel(); };
+    multiBtn = button("Select several", bx, cy + 140, 122);
+    multiBtn->onClick = [this]() { setMulti(!fl->multi); };
+    button("New note",   bx, cy + 174, 122)->onClick = []() { openNeat(nullptr); };
+    button("New sheet",  bx, cy + 202, 122)->onClick = []() { openTidy(nullptr); };
+    shareBtn = button("", bx, cy + 236, 122, 40);
     shareBtn->onClick = [this]() { fileServerSet(!fileServerOn()); updateShare(); };
-    button("Scroll up",  bx, cy + 240, 122)->onClick = [this]() { fl->scroll(-10); };
-    button("Scroll down", bx, cy + 268, 122)->onClick = [this]() { fl->scroll(10); };
-    info = label("", cx, cy + 306, 440, 18);
+    button("Scroll up",  bx, cy + 290, 122)->onClick = [this]() { fl->scroll(-10); };
+    button("Scroll down", bx, cy + 318, 122)->onClick = [this]() { fl->scroll(10); };
+    info = label("", cx, cy + 362, 440, 18);
     info->labelStyle().textFont = &FONT_std_12;
     updateShare();
   }
@@ -1656,7 +1672,77 @@ public:
     }
   }
 
+  void setMulti(bool on) {
+    fl->multi = on; fl->marked.clear(); fl->repaint();
+    multiBtn->setText(on ? "Select: ON" : "Select several");
+    multiBtn->buttonStyle().backgroundColor = on ? T.accent : T.face;
+    multiBtn->buttonStyle().textColor = on ? T.accentText : T.text;
+    multiBtn->repaint();
+    info->setText(on ? "Click files to tick them, then Move to... or Delete. Click Select: ON to stop." : ""); info->repaint();
+    if (!on) updateInfo();
+  }
+
+  // moves one file; between the SD card and the board's own storage it's copied, checked, then deleted
+  static bool moveFile(const std::string & from, const std::string & to) {
+    remove(to.c_str());
+    if (::rename(from.c_str(), to.c_str()) == 0) return true;
+    FILE * a = fopen(from.c_str(), "rb"), * b = a ? fopen(to.c_str(), "wb") : nullptr;
+    long want = fileSize(from.c_str()), got = 0;
+    uint8_t * buf = (a && b) ? (uint8_t *)malloc(2048) : nullptr;   // (only while moving: no memory kept for it)
+    bool ok = buf != nullptr;
+    if (ok) {
+      size_t n;
+      while ((n = fread(buf, 1, 2048, a)) > 0) { if (fwrite(buf, 1, n, b) != n) { ok = false; break; } got += n; }
+    }
+    free(buf);
+    if (a) fclose(a);
+    if (b) fclose(b);
+    ok = ok && got == want;
+    if (ok) remove(from.c_str()); else remove(to.c_str());
+    return ok;
+  }
+
+  // Move to...: pick the folder (and, if you like, a new name) in the file picker. With several ticked, they all go
+  // to the folder picked (the name in the picker doesn't matter then).
+  void moveSel() {
+    std::vector<std::string> names = fl->multi ? fl->marked : std::vector<std::string>();
+    if (names.empty() && !selName.empty() && !fl->multi && !selDir) names.push_back(selName);
+    if (names.empty()) { info->setText(fl->multi ? "Tick some files first, then Move to..." : "Click a file first, then Move to..."); info->repaint(); return; }
+    std::string title = names.size() == 1 ? "Move " + names[0] + " to..." : "Move " + std::to_string(names.size()) + " files to... (pick the folder)";
+    std::string to = askFile(title.c_str(), "Move here", names[0].c_str(), fl->dir);
+    if (to.empty()) return;
+    std::string destDir = to.substr(0, to.rfind('/'));
+    int moved = 0, failed = 0;
+    for (size_t k = 0; k < names.size(); ++k) {
+      std::string from = joinPath(fl->dir.c_str(), names[k].c_str());
+      std::string dest = names.size() == 1 ? to : joinPath(destDir.c_str(), names[k].c_str());
+      if (dest == from) continue;
+      if (fileSize(dest.c_str()) >= 0) {
+        std::string q = names[k] + " is already there. Replace it?";
+        if (gApp->messageBox("Move", q.c_str(), "Replace", "Skip", nullptr, uiMessageBoxIcon::Question) != uiMessageBoxResult::Button1) continue;
+      }
+      if (names.size() > 1) { char b[80]; snprintf(b, sizeof(b), "Moving %d of %d: %.40s", (int)k + 1, (int)names.size(), names[k].c_str()); info->setText(b); info->repaint(); }
+      if (moveFile(from, dest)) ++moved; else ++failed;
+    }
+    selName.clear();
+    fl->marked.clear();
+    fl->setDir(fl->dir);
+    char b[110];
+    snprintf(b, sizeof(b), "Moved %d file%s to %.50s%s", moved, moved == 1 ? "" : "s", destDir.c_str(), failed ? " - some couldn't be moved (room?)" : "");
+    info->setText(b); info->repaint();
+  }
+
   void del() {
+    if (fl->multi) {                               // several ticked: delete them all (after asking once)
+      if (fl->marked.empty()) { info->setText("Tick some files first, then Delete."); info->repaint(); return; }
+      std::string q = "Delete " + std::to_string(fl->marked.size()) + " ticked file" + (fl->marked.size() == 1 ? "" : "s") + "?";
+      if (gApp->messageBox("Delete", q.c_str(), "Delete", "Cancel", nullptr, uiMessageBoxIcon::Warning) != uiMessageBoxResult::Button1) return;
+      int bad = 0;
+      for (auto & n : fl->marked) if (remove(joinPath(fl->dir.c_str(), n.c_str()).c_str()) != 0) ++bad;
+      fl->marked.clear(); fl->setDir(fl->dir); updateInfo();
+      if (bad) gApp->messageBox("Delete", "Some files couldn't be deleted (open in another app, like Music?).", "OK", nullptr, nullptr, uiMessageBoxIcon::Warning);
+      return;
+    }
     if (selName.empty()) return;
     std::string q = std::string("Delete \"") + selName + "\"?";
     if (gApp->messageBox("Delete", q.c_str(), "Delete", "Cancel", nullptr, uiMessageBoxIcon::Warning) == uiMessageBoxResult::Button1) {
@@ -3297,14 +3383,14 @@ void openPing()
 class SwitchesApp : public AppFrame {
 public:
   static AppFrame * inst;
-  uiButton * sw[3];
-  uiLabel  * note[3];
+  uiButton * sw[4];
+  uiLabel  * note[4];
   uiLabel  * sdInfo, * mem;
 
   SwitchesApp() : AppFrame("Switches", Point(110, 50), Size(420, 360), &inst) {
-    static const char * names[3] = { "SD card", "Wireless mesh", "Blue light" };
-    for (int i = 0; i < 3; ++i) {
-      int y = cy + 4 + i * 96;
+    static const char * names[4] = { "SD card", "Wireless mesh", "Blue light", "OLED sleep" };
+    for (int i = 0; i < 4; ++i) {
+      int y = cy + 4 + (i ? 20 + i * 70 : 0);       // (room under the SD card for its free space)
       auto l = label(names[i], cx + 4, y + 8, 150, 24);
       l->labelStyle().textFont = &FONT_std_18;
       sw[i] = button("", cx + 250, y, 150, 38);
@@ -3342,10 +3428,13 @@ public:
       gSet.meshOn = !gSet.meshOn;
       settingsSave();
       comsSetOn(gSet.meshOn);
-    } else {
+    } else if (i == 2) {
       gSet.ledOn = !gSet.ledOn;
       settingsSave();
       ledSetOn(gSet.ledOn);
+    } else {
+      gSet.oledSleep = !gSet.oledSleep;
+      settingsSave();
     }
     refresh();
   }
@@ -3376,6 +3465,8 @@ public:
     else set(note[1], gSet.meshOn ? "Talking with Coms boards nearby (2.4 GHz). Uses a few KB." : "Off: no Coms mesh. Shelf messages on Wi-Fi still work.");
     show(2, gSet.ledOn, "ON", "OFF");
     set(note[2], gSet.ledOn ? "Breathing = ready, flicker = SD card busy. Uses ~2 KB." : "Off: the blue LED stays dark. Saves ~2 KB.");
+    show(3, gSet.oledSleep, "ON", "OFF");
+    set(note[3], gSet.oledSleep ? "The little screen goes off after 5 minutes. BOOT wakes it." : "Off: the little screen stays on.");
     char b[80];
     snprintf(b, sizeof(b), "Free memory now: %u KB   (switches are remembered)", (unsigned)(ramFree() / 1024));
     set(mem, b);

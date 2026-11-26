@@ -60,6 +60,7 @@ void settingsLoad()
   gSet.sdOn      = s_prefs.getBool("sdon", false);
   gSet.meshOn    = s_prefs.getBool("mesh", false);
   gSet.ledOn     = s_prefs.getBool("led", false);
+  gSet.oledSleep = s_prefs.getBool("oledslp", true);
   gSet.shelfOn   = s_prefs.getBool("shelf", false);
   gSet.tidyBands = s_prefs.getBool("tbands", false);
   gSet.tidyFreeze = s_prefs.getBool("tfreeze", false);
@@ -88,6 +89,7 @@ void settingsSave()
   s_prefs.putBool("sdon", gSet.sdOn);
   s_prefs.putBool("mesh", gSet.meshOn);
   s_prefs.putBool("led", gSet.ledOn);
+  s_prefs.putBool("oledslp", gSet.oledSleep);
   s_prefs.putBool("shelf", gSet.shelfOn);
   s_prefs.putBool("tbands", gSet.tidyBands);
   s_prefs.putBool("tfreeze", gSet.tidyFreeze);
@@ -588,6 +590,20 @@ public:
               if (mx >= slots[i].X1 && mx <= slots[i].X2) { uiFrame * f = s_minimized[i]; bringToFront(f); break; }
             break;
           }
+#ifdef TIDYOS_HTML5
+          if (!showingHint()) {                                     // the panel's music buttons: MP3, volume - / +, next
+            auto in = [&](const Rect & q) { return q.X2 > q.X1 && mx >= q.X1 && mx <= q.X2 && my >= q.Y1 && my <= q.Y2; };
+            int what = in(s_mp3Btn) ? 0 : in(s_volDnBtn) ? 1 : in(s_volUpBtn) ? 2 : in(s_nextBtn) ? 3 : -1;
+            if (what >= 0) {
+              std::string m = what == 0 ? musicQuickToggle(false) : what == 3 ? musicQuickNext() : musicQuickVol(what == 1 ? -1 : 1);
+              if ((what == 0 || what == 3) && m.rfind("Music: ", 0) == 0) deskNote("Playing", m.substr(7));
+              else if (what == 1 || what == 2) deskNote("Volume", m.substr(m.find(' ') + 1));
+              else deskNote("Music", m.empty() ? "Nothing playing" : m);
+              repaint(deskPanelRect());
+              break;
+            }
+          }
+#endif
           if (!showingHint() && mx >= s_affBtn.X1 && mx <= s_affBtn.X2 && my >= s_affBtn.Y1 && my <= s_affBtn.Y2) {
             s_affShown = s_affShown % 3 + 1;                      // the affirmation >> button
             repaint(deskPanelRect());
@@ -635,6 +651,13 @@ public:
         if (gOpenTaskMgr) { gOpenTaskMgr = false; openSystem(); }
         alarmTick();                                // Clock alarm + Print Screen
         deskDropTick();                             // files dropped on the page: where do they go?
+#ifdef TIDYOS_HTML5
+        if (gMusicNextReq) {                        // Next from the phone's lock screen / the computer's media keys
+          gMusicNextReq = false;
+          musicQuickNext();
+        }
+        if (m_tick % 10 == 0) musicQuickTick();     // the desktop's MP3 button: on to the next song when one ends
+#endif
 #ifdef TIDYOS_HTML5                                 // (the monitor edition has no IRAM to spare for sleep code)
         if (gSleepReq) {
           gSleepReq = false;
@@ -909,9 +932,9 @@ private:
       localtime_r(&now, &tmv);
       if (tmv.tm_year > 100) {
         int h = tmv.tm_hour % 12; if (h == 0) h = 12;
-        snprintf(b, sizeof(b), "%d:%02d %s", h, tmv.tm_min, tmv.tm_hour < 12 ? "AM" : "PM");
+        snprintf(b, sizeof(b), "%d:%02d:%02d %s", h, tmv.tm_min, tmv.tm_sec, tmv.tm_hour < 12 ? "AM" : "PM");   // (repainted every second)
       } else {
-        snprintf(b, sizeof(b), "--:--");
+        snprintf(b, sizeof(b), "--:--:--");
       }
       int w = cv->textExtent(&FONT_std_14, b);
       cv->drawText(&FONT_std_14, SCREEN_W - w - 8, by + 3, b);
@@ -1152,6 +1175,7 @@ static void splashLogo()
 static SemaphoreHandle_t s_barMux = nullptr;
 static volatile int  s_barShown = 0, s_barCeil = 0;
 static volatile bool s_barRun = false, s_barAlive = false;
+static volatile uint32_t s_barReal = 0;          // when a step last said how far along it really is
 
 static void drawBar(Canvas & cv, int percent)
 {
@@ -1162,6 +1186,12 @@ static void drawBar(Canvas & cv, int percent)
   if (percent > 100) percent = 100;
   int w = BAR_W * percent / 100;
   if (w > 0) cv.fillRectangle(BAR_X, BAR_Y, BAR_X + w - 1, BAR_Y + BAR_H - 1);
+  // the figure beside it, so the bar and the number always agree
+  char p[8]; snprintf(p, sizeof(p), "%d%%", percent);
+  cv.setBrushColor(T.desk);
+  cv.fillRectangle(BAR_X + BAR_W + 6, BAR_Y - 2, BAR_X + BAR_W + 52, BAR_Y + BAR_H + 1);
+  cv.setPenColor(T.deskText);
+  cv.drawText(&FONT_std_12, BAR_X + BAR_W + 8, BAR_Y + 1, p);
 }
 
 static void barTaskBody(void * arg)
@@ -1169,7 +1199,9 @@ static void barTaskBody(void * arg)
   while (s_barRun) {
     vTaskDelay(pdMS_TO_TICKS(300));
     if (xSemaphoreTake(s_barMux, pdMS_TO_TICKS(100)) != pdTRUE) continue;
-    if (s_barRun && s_barShown < s_barCeil) {
+    // creep only while a step has gone quiet (joining Wi-Fi, waiting on GitHub): while it
+    // reports real progress (the download), the bar shows exactly that
+    if (s_barRun && s_barShown < s_barCeil && millis() - s_barReal > 2500) {
       s_barShown = s_barShown + 1;
       Canvas cv(s_dc);
       drawBar(cv, s_barShown);
@@ -1250,7 +1282,8 @@ static void splash(const char * msg, int percent)
     if (percent > 100) percent = 100;
     if (percent > shown) shown = percent;
     s_barShown = shown;
-    s_barCeil  = percent >= 100 ? 100 : (shown + 15 > 97 ? 97 : shown + 15);
+    s_barCeil  = percent >= 100 ? 100 : (shown + 4 > 97 ? 97 : shown + 4);   // (a little creep while a step is quiet)
+    s_barReal  = millis();
   } else {
     s_barCeil = shown;
   }
@@ -1528,6 +1561,7 @@ void setup()
 #ifdef TIDYOS_HTML5
   esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);   // no Bluetooth in this edition: give its RAM to apps
 #endif
+  Serial.setRxBufferSize(2048);     // room for a whole block from the web flasher's file manager
   Serial.begin(115200);
   delay(200);
   crashBegin();     // did the last run crash? (Task Manager shows it)

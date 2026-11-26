@@ -26,7 +26,7 @@ static bool isPictureFile(const char * n)
 static bool isMusicFile(const char * n)
 {
   const char * e = fileExt(n);
-  return !strcmp(e, "mp3") || !strcmp(e, "m4a") || !strcmp(e, "wav") || !strcmp(e, "ogg") || !strcmp(e, "mid") || !strcmp(e, "midi");
+  return !strcmp(e, "mp3") || !strcmp(e, "m4a") || !strcmp(e, "wav") || !strcmp(e, "ogg") || !strcmp(e, "opus") || !strcmp(e, "mid") || !strcmp(e, "midi");
 }
 static bool isMidiFile(const char * n) { const char * e = fileExt(n); return !strcmp(e, "mid") || !strcmp(e, "midi"); }
 
@@ -586,7 +586,7 @@ void musicQuickTick()             // once a second: on to the next song when one
   if (MusicApp::inst || s_qPlaying.empty() || s_qPaused) return;
   int st, pos, dur;
   screenMediaState(st, pos, dur);
-  if (st == 2 && s_qLast != 2) { std::string n = randomSong(dirOf(s_qPlaying), baseName(s_qPlaying), true); if (!n.empty()) quickPlayFile(n); return; }
+  if (st == 2 && s_qLast != 2) { std::string n = randomSong(dirOf(s_qPlaying), baseName(s_qPlaying), isMidiFile(s_qPlaying.c_str())); if (!n.empty()) quickPlayFile(n); return; }
   s_qLast = st;
 }
 

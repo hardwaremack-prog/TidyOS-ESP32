@@ -9,6 +9,7 @@ std::string fileServerUrl();           // "http://192.168.1.40" or "" when off /
 void        netMdnsBegin();            // tidyos.local (shared with printer search)
 // Music / pictures in the browser: runs the file server without changing the sharing setting
 void        fileServerMedia(bool on);
+void        fileServerMediaReady();   // fileServerMedia(true), then waits (up to 1.5 s) until it listens
 std::string fileServerMediaPath(const std::string & file);
 std::string fileServerRunPath(const std::string & file);    // path-style URL for web pages (relative links work)   // "/api/file?path=..." on port fileServerPort()
 int         fileServerPort();

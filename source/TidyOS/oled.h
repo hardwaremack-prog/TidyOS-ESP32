@@ -22,6 +22,8 @@ static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 static int      s_page = 0, s_pageAge = 0;
 static SemaphoreHandle_t s_drawMx = nullptr;     // the desktop's once-a-second pages and the news ticker share s_buf
 static volatile bool s_newsMode = false;         // the news page: the send task redraws it ~25 times a second
+static volatile uint32_t s_wakeAt = 0;           // last BOOT press (or start-up): the screen sleeps 5 minutes after it
+static volatile bool s_asleep = false, s_wakeReq = false, s_sleepReq = false;   // (only the send task talks to the screen)
 static uint32_t s_newsAt = 0;
 static void drawNews();
 
@@ -35,7 +37,14 @@ static void cmds(std::initializer_list<uint8_t> list)
 
 static void sendTask(void *)
 {
+  bool wasDown = false;
   for (;;) {
+    bool down = digitalRead(0) == LOW;           // the BOOT button (only read here, never driven)
+    if (down && !wasDown) { s_wakeAt = millis(); if (s_asleep) s_wakeReq = true; }
+    wasDown = down;
+    if (s_sleepReq) { s_sleepReq = false; cmds({ 0xAE }); }
+    if (s_wakeReq) { s_wakeReq = false; s_asleep = false; cmds({ 0xAF }); }
+    if (s_asleep) { vTaskDelay(pdMS_TO_TICKS(40)); continue; }
     if (s_newsMode && s_drawMx && xSemaphoreTake(s_drawMx, pdMS_TO_TICKS(20)) == pdTRUE) {
       if (s_newsMode) drawNews();                  // (draws and pushes the next frame of the ticker)
       xSemaphoreGive(s_drawMx);
@@ -144,10 +153,12 @@ static void pageClock(time_t now)
   struct tm t; localtime_r(&now, &t);
   char b[24];
   hm(t, b, sizeof(b), false);
-  int w = textW(&FONT_std_24, b), w2 = textW(&FONT_std_12, t.tm_hour < 12 ? "AM" : "PM");
+  char sec[6]; snprintf(sec, sizeof(sec), ":%02d", t.tm_sec);       // the seconds, ticking every second
+  int w = textW(&FONT_std_24, b), w2 = textW(&FONT_std_12, ":00");
   int x = (128 - w - w2 - 3) / 2;
   text(&FONT_std_24, x, 2, b);
-  text(&FONT_std_12, x + w + 3, 12, t.tm_hour < 12 ? "AM" : "PM");
+  text(&FONT_std_12, x + w + 3, 2, sec);
+  text(&FONT_std_12, x + w + 3, 14, t.tm_hour < 12 ? "AM" : "PM");
   static const char * DN[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
   static const char * MN[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
   char d[40]; snprintf(d, sizeof(d), "%s %s %d", DN[t.tm_wday % 7], MN[t.tm_mon % 12], t.tm_mday);
@@ -346,6 +357,8 @@ void oledBegin()
   center(&FONT_std_16, 14, "TidyOS");
   center(&FONT_std_12, 34, "starting...");
   push();
+  pinMode(0, INPUT_PULLUP);
+  s_wakeAt = millis();
   xTaskCreatePinnedToCore(sendTask, "oled", 2560, nullptr, 1, nullptr, 0);
   Serial.printf("[TidyOS] OLED screen found at 0x%02X\n", s_addr);
 }
@@ -369,7 +382,12 @@ void oledSplash(const char * msg, int percent)
   fit(&FONT_std_12, 0, 26, msg);
   hline(0, 127, 52); hline(0, 127, 61);
   for (int y = 52; y <= 61; ++y) { px(0, y); px(127, y); }
-  if (percent > 0) box(2, 54, 2 + (123 * (percent > 100 ? 100 : percent)) / 100, 59);
+  if (percent > 100) percent = 100;
+  if (percent > 0) {
+    box(2, 54, 1 + (124 * percent) / 100, 59);                  // 2..125 inside the frame at 100%
+    char p[8]; snprintf(p, sizeof(p), "%d%%", percent);
+    text(&FONT_std_12, 127 - textW(&FONT_std_12, p), 38, p);    // the number, so bar and figure agree
+  }
   push();
 }
 
@@ -381,6 +399,17 @@ void oledTick()
   time_t now = time(nullptr);
   std::string song = musicNowPlaying();
   int unread = msgStarted() ? msgUnreadTotal() : 0;
+  // asleep after 5 minutes without a BOOT press (not while music plays; a new message wakes it)
+  static int lastUnread = 0;
+  if (unread > lastUnread || !song.empty()) s_wakeAt = millis();
+  lastUnread = unread;
+  if (gSet.oledSleep && !s_asleep && millis() - s_wakeAt > 300000) {
+    if (s_drawMx) xSemaphoreTake(s_drawMx, portMAX_DELAY);
+    s_newsMode = false; s_asleep = true; s_sleepReq = true;
+    if (s_drawMx) xSemaphoreGive(s_drawMx);
+  }
+  if (s_asleep && (!gSet.oledSleep || millis() - s_wakeAt < 300000)) s_wakeReq = true;
+  if (s_asleep || s_wakeReq) return;
   // 0 access, 1 clock, 2 weather, 3 world, 4 system, 5 music, 6 messages, 7 watch face, 8 temperatures, 9 news
   static const int ORDER[10] = { 0, 1, 7, 2, 8, 9, 3, 4, 5, 6 };
   bool timeOk = netClockSet();

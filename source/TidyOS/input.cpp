@@ -756,8 +756,11 @@ static void serialKey(VirtualKey vk, uint8_t ascii)
 //   !status                       Wi-Fi state, address and free memory
 #include "net.h"
 #include <WiFi.h>
+void serialFs(const std::string & c);     // serialfs.cpp: the web flasher's file manager
+void serialFsTick();
 static void serialCommand(const std::string & c)
 {
+  if (c.rfind("fs ", 0) == 0) { serialFs(c); return; }
   if (c.rfind("wifi ", 0) == 0) {
     std::string rest = c.substr(5);
     size_t bar = rest.rfind('|');
@@ -780,13 +783,14 @@ static void serialStep()       // one pass over the serial input (runs inside th
   static int esc = 0;
   static bool cmd = false, lineStart = true;
   static std::string cmdLine;
+  serialFsTick();
   {
     while (Serial.available()) {
       int ch = Serial.read();
       if (lineStart && ch == '!') { cmd = true; cmdLine.clear(); lineStart = false; continue; }
       if (cmd) {
         if (ch == '\r' || ch == '\n') { cmd = false; lineStart = true; serialCommand(cmdLine); }
-        else if (cmdLine.size() < 200) cmdLine += (char)ch;
+        else if (cmdLine.size() < 400) cmdLine += (char)ch;
         continue;
       }
       lineStart = (ch == '\r' || ch == '\n');
@@ -915,7 +919,7 @@ void inputAttach(uiApp * app, Keyboard * kbd, BitmappedDisplayController * dc)
   if (!started) {
     started = true;
     if (s_bleOn) xTaskCreatePinnedToCore(bleTask, "ble", 6144, nullptr, 3, nullptr, 0);
-    xTaskCreatePinnedToCore(repeatTask, "keyrep", 3072, nullptr, 4, nullptr, 0);
+    xTaskCreatePinnedToCore(repeatTask, "keyrep", 5120, nullptr, 4, nullptr, 0);
   }
 #ifdef TIDYOS_HTML5
   if (dc) dc->setMouseCursorPos(-100, -100);       // keep FabGL's pointer off screen

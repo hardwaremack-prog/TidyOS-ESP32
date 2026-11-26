@@ -167,11 +167,28 @@ static Rect s_affBtn;
 static const int PANEL_X = 344, PANEL_Y = 8, PANEL_W = 290, PANEL_H = 440;
 static Rect deskPanelRect() { return Rect(PANEL_X, PANEL_Y, PANEL_X + PANEL_W - 1, PANEL_Y + PANEL_H - 1); }
 
-// what the panel shows changes once a minute (or when weather arrives)
+#ifdef TIDYOS_HTML5
+// the music buttons beside the time (MP3 play / pause, volume - / +, next), and what one just did, shown in the
+// drop box for a few seconds
+static Rect s_mp3Btn, s_volDnBtn, s_volUpBtn, s_nextBtn;
+static char s_panNote1[24] = "", s_panNote2[100] = "";
+static uint32_t s_panNoteAt = 0;
+static bool panNoteOn() { return s_panNoteAt && millis() - s_panNoteAt < 4000; }
+static void deskNote(const char * a, const std::string & b) { strlcpy(s_panNote1, a, sizeof(s_panNote1)); strlcpy(s_panNote2, b.c_str(), sizeof(s_panNote2)); s_panNoteAt = millis() | 1; }
+bool musicQuickPlaying();
+std::string musicQuickToggle(bool midi);
+std::string musicQuickVol(int d);
+#endif
+
+// what the panel shows changes once a minute (or when weather arrives, a music button is pressed...)
 static int deskPanelSig()
 {
   time_t now = time(nullptr);
-  return (int)(now / 60) * 7 + s_wxVer + s_affShown * 100003;
+  int extra = 0;
+#ifdef TIDYOS_HTML5
+  extra = (panNoteOn() ? 1 : 0) * 3 + (musicQuickPlaying() ? 1 : 0) * 5 + (int)(s_panNoteAt & 0x3FF) * 11;
+#endif
+  return (int)(now / 60) * 7 + s_wxVer + s_affShown * 100003 + extra * 1009;
 }
 
 static void drawWorldMap(Canvas * cv, int x0, int y0, time_t now)
@@ -324,17 +341,59 @@ static void drawDeskPanel(Canvas * cv)
   static const char * MON[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
   snprintf(b, sizeof(b), "%d:%02d %s", t.tm_hour % 12 == 0 ? 12 : t.tm_hour % 12, t.tm_min, t.tm_hour < 12 ? "AM" : "PM");
   cv->drawText(&FONT_std_24, x, y, b);
+  const int clockW = cv->textExtent(&FONT_std_24, b) + 2;    // (the music buttons sit evenly after it)
   y += 30;
   snprintf(b, sizeof(b), "%s, %s %d, %d", DAY[t.tm_wday % 7], MON[t.tm_mon % 12], t.tm_mday, t.tm_year + 1900);
   cv->drawText(&FONT_std_14, x, y, b);
 #ifdef TIDYOS_HTML5
+  {                                                          // MP3, volume - / +, next: evenly between the time and the drop box
+    int left = x + clockW, right = r.X2 - 106;
+    const int D = 17, mw = 29, by = r.Y1 + 10;               // round buttons (MP3 a pill), 17 px: an odd size draws a round circle
+    int g = imax(2, (right - left - (mw + 3 * D)) / 5);
+    int bx = left + g + imax(0, (right - left - (mw + 3 * D) - 5 * g) / 2);
+    s_mp3Btn   = Rect(bx, by, bx + mw - 1, by + D - 1);
+    s_volDnBtn = Rect(s_mp3Btn.X2 + 1 + g, by, s_mp3Btn.X2 + g + D, by + D - 1);
+    s_volUpBtn = Rect(s_volDnBtn.X2 + 1 + g, by, s_volDnBtn.X2 + g + D, by + D - 1);
+    s_nextBtn  = Rect(s_volUpBtn.X2 + 1 + g, by, s_volUpBtn.X2 + g + D, by + D - 1);
+    bool on = musicQuickPlaying();
+    auto btn = [&](const Rect & q, const char * t, bool hot) {
+      int w = q.width(), h = q.height(), cy = q.Y1 + h / 2;
+      RGB888 fill = hot ? T.accent : T.face;
+      cv->setPenColor(T.shadow); cv->setBrushColor(fill);
+      cv->fillEllipse(q.X1 + h / 2, cy, h, h); cv->drawEllipse(q.X1 + h / 2, cy, h, h);
+      if (w > h) {                                           // a pill: two half circles joined by a box
+        cv->fillEllipse(q.X2 - h / 2, cy, h, h); cv->drawEllipse(q.X2 - h / 2, cy, h, h);
+        cv->fillRectangle(q.X1 + h / 2, q.Y1, q.X2 - h / 2, q.Y2);
+        cv->drawLine(q.X1 + h / 2, q.Y1, q.X2 - h / 2, q.Y1);
+        cv->drawLine(q.X1 + h / 2, q.Y2, q.X2 - h / 2, q.Y2);
+      }
+      cv->setPenColor(hot ? T.accentText : T.text);
+      cv->drawText(&FONT_std_12, (q.X1 + q.X2 + 1) / 2 - cv->textExtent(&FONT_std_12, t) / 2, cy - 6, t);
+    };
+    if (s_mp3Btn.X1 > left) {                                // (room for them beside the time)
+      btn(s_mp3Btn, "MP3", on);
+      btn(s_volDnBtn, "-", false);
+      btn(s_volUpBtn, "+", false);
+      btn(s_nextBtn, "N", false);
+    } else s_mp3Btn = s_volDnBtn = s_volUpBtn = s_nextBtn = Rect(0, 0, -1, -1);
+    cv->setBrushColor(T.win);
+  }
   {                                                          // the drop box, right of the time
     int bx1 = r.X2 - 106, by1 = r.Y1 + 6, bx2 = r.X2 - 8, by2 = r.Y1 + 34;
     cv->setPenColor(T.text);
     for (int k = bx1; k < bx2; k += 6) { cv->drawLine(k, by1, imin(k + 3, bx2), by1); cv->drawLine(k, by2, imin(k + 3, bx2), by2); }
     for (int k = by1; k < by2; k += 6) { cv->drawLine(bx1, k, bx1, imin(k + 3, by2)); cv->drawLine(bx2, k, bx2, imin(k + 3, by2)); }
-    cv->drawText(&FONT_std_12, bx1 + 6, by1 + 1, "Drop files here");
-    cv->drawText(&FONT_std_12, bx1 + 6, by1 + 14, gSDMounted ? "for (SD) card" : "(needs SD card)");
+    if (panNoteOn()) {                                       // what a music button just did
+      char l2[100]; strlcpy(l2, s_panNote2, sizeof(l2));
+      while (strlen(l2) > 3 && cv->textExtent(&FONT_std_12, l2) > bx2 - bx1 - 10) { l2[strlen(l2) - 4] = 0; strlcat(l2, "...", sizeof(l2)); }
+      cv->setPenColor(T.accent);
+      cv->drawText(&FONT_std_12, bx1 + 6, by1 + 1, s_panNote1);
+      cv->setPenColor(T.text);
+      cv->drawText(&FONT_std_12, bx1 + 6, by1 + 14, l2);
+    } else {
+      cv->drawText(&FONT_std_12, bx1 + 6, by1 + 1, "Drop files here");
+      cv->drawText(&FONT_std_12, bx1 + 6, by1 + 14, gSDMounted ? "for (SD) card" : "(needs SD card)");
+    }
   }
 #endif
   y += 24;
@@ -357,10 +416,10 @@ static void drawDeskPanel(Canvas * cv)
     y += 42;
   } else {
 #ifdef TIDYOS_HTML5
-    if (!netConnected()) {              // on the hotspot only: nothing to look things up with
-      cv->drawText(&FONT_std_14, x, y, "No Wi-Fi internet yet");
-      cv->drawText(&FONT_std_12, x, y + 18, "Weather, temperatures and headlines need Wi-Fi:");
-      cv->drawText(&FONT_std_12, x, y + 31, "Settings > Find networks > Connect.");
+    if (!netConnected() && !screenViewer()) {   // on the hotspot, no browser: nothing to look things up with
+      cv->drawText(&FONT_std_14, x, y, "No internet here yet");
+      cv->drawText(&FONT_std_12, x, y + 18, "Weather and headlines come through the web browser");
+      cv->drawText(&FONT_std_12, x, y + 31, "showing this desktop, or join Wi-Fi in Settings.");
       y += 4;
     } else
     cv->drawText(&FONT_std_14, x, y, screenViewer() ? "Weather: looking it up..." : "Weather: shows with the browser open");

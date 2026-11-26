@@ -54,6 +54,7 @@ struct Settings {
   bool   meshOn;      // Coms wireless mesh (ESP-NOW) on (off by default)
   bool   ledOn;       // blue status light on (off by default)
   bool shelfOn = false;   // Shelf messages over Wi-Fi (start-up switch)
+  bool oledSleep = true;  // the little OLED goes off after 5 minutes (BOOT wakes it)
   bool tidyBands = false; // Tidy: shade every other row
   bool hotspot = false;   // keep the TidyOS hotspot running (devices join TidyOS directly)
   bool tidyFreeze = false;// Tidy: keep row 1 at the top
@@ -122,6 +123,9 @@ extern volatile uint64_t gNetRx, gNetTx;     // TidyOS network traffic since sta
 extern volatile bool gOpenTaskMgr;
 extern volatile bool gRestartReq;
 extern volatile bool gSleepReq;
+extern volatile bool gMusicNextReq;   // screen.cpp: Next from the page's media controls
+std::string musicQuickNext();         // media_apps.h
+void musicQuickTick();
 extern const char * gSDWiring;              // which microSD wiring was found           // Ctrl+Shift+Esc pressed
 
 // Helpers used by every app window

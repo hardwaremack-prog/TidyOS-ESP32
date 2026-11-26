@@ -59,9 +59,10 @@ static volatile int  s_mState = -1, s_mPos = 0, s_mDur = 0;
 
 // ---------------------------------------------------------------- the page
 static const char PAGE[] = R"HTML(<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>TidyOS</title><style>
-html,body{margin:0;height:100%;background:#1c1c1c;color:#ddd;font:14px system-ui,sans-serif;overflow:hidden}
-#bar{height:36px;display:flex;align-items:center;gap:6px;padding:0 8px;background:#0055aa;color:#fff}
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><title>TidyOS</title><style>
+html,body{margin:0;height:100%;background:#1c1c1c;color:#ddd;font:14px system-ui,sans-serif;overflow:hidden;-webkit-text-size-adjust:100%;touch-action:none}
+#bar{height:36px;display:flex;align-items:center;gap:6px;padding:0 8px;background:#0055aa;color:#fff;overflow-x:auto;overflow-y:hidden;white-space:nowrap;scrollbar-width:none;touch-action:pan-x;box-sizing:border-box;width:100%}
+#bar::-webkit-scrollbar{display:none}#bar>*{flex:none}
 #bar b{font-size:16px;margin-right:6px}#st{margin-left:auto;font-size:12px;opacity:.9;white-space:nowrap}
 button{background:#fff;color:#0055aa;border:0;border-radius:5px;padding:5px 10px;font:inherit;cursor:pointer}
 #wrap{position:absolute;top:36px;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center}
@@ -70,10 +71,11 @@ canvas{background:#00aaaa;touch-action:none;outline:none;cursor:default}
 #home{display:none;position:absolute;top:36px;left:0;right:0;z-index:2;background:#ffd84d;color:#111;padding:8px 12px;font-size:15px;text-align:center}
 #home a{color:#0055aa;font-weight:600}
 #msg{position:absolute;top:36px;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:rgba(0,0,0,.65);font-size:18px;text-align:center;white-space:pre-line;padding:0 16px}
-@media(max-width:560px){#bt,#bf{display:none}}
+@media(max-width:560px){#bt,#bf,#st{display:none}#bar{gap:4px;padding:0 4px}#bar b{font-size:14px;margin-right:2px}button{padding:4px 7px;font-size:13px}}
+#zr{display:none;position:absolute;right:8px;bottom:8px;z-index:3;background:#0055aa;color:#fff;font-weight:600;opacity:.9}
 </style></head><body>
-<div id="bar"><b>TidyOS</b><button id="bk">Keyboard</button><button id="bt">Task Manager</button><button id="br">Restart</button><button id="bs">Sleep</button><button id="bf">Full screen</button><button id="bz">Size: fit</button><span id="st">Connecting...</span></div>
-<div id="home"></div><div id="iv" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;z-index:9;background:#000d;align-items:center;justify-content:center;cursor:zoom-out"><img style="max-width:96vw;max-height:94vh"></div><div id="wrap"><canvas id="c" width="640" height="480" tabindex="0"></canvas></div>
+<div id="bar"><b>TidyOS</b><button id="bk">Keyboard</button><button id="bt">Task Manager</button><button id="bfi" title="The SD card and the board's storage: download and upload files" onclick="window.open('/files','_blank')">&#128193; Files</button><button id="br">Restart</button><button id="bs">Sleep</button><button id="bf">Full screen</button><button id="bz">Size: fit</button><span id="st">Connecting...</span></div>
+<div id="home"></div><div id="iv" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;z-index:9;background:#000d;align-items:center;justify-content:center;cursor:zoom-out"><img style="max-width:96vw;max-height:94vh"></div><div id="wrap"><canvas id="c" width="640" height="480" tabindex="0"></canvas><button id="zr" title="Back to the whole screen">Fit</button></div>
 <input id="kb" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
 <div id="msg"><div id="mt">Connecting to TidyOS...</div><button id="mb" style="display:none">Use it here</button></div>
 <script>var MP=8081;
@@ -85,16 +87,17 @@ function show(t,b){mt.textContent=t;btn.style.display=b?'':'none';msg.style.disp
 // sizing: whole device pixels when that fills most of the window (every pixel the same size = crisp text),
 // smooth scaling otherwise; the Size button switches to exact 1:1 pixels (scroll if needed)
 var mode=0;try{mode=+localStorage.tidySize||0;}catch(x){}
+var Z=1,TX=0,TY=0;     // pinch zoom of the desktop: scale and shift (CSS px), set by two fingers
 // "sharp bilinear": blow the screen up by a whole number with hard pixels, then let the browser
 // shrink that a little smoothly. Every letter keeps the same shape at any window size.
 function fit(){var r=window.devicePixelRatio||1,w=innerWidth,h=innerHeight-36,s=Math.min(w/640,h/480)*r,wrap=document.getElementById('wrap');
  if(mode==1)s=Math.max(1,Math.round(r));
  if(mode==2)s=Math.max(1,Math.floor(s+0.001));          // sharp: whole screen pixels, no smoothing
- ZK=Math.max(1,Math.ceil(s-0.001));if(c.width!=640*ZK){c.width=640*ZK;c.height=480*ZK;}
+ ZK=Math.max(1,Math.min(Math.max(4,Math.ceil(s-0.001)),Math.ceil(s*Z-0.001)));if(c.width!=640*ZK){c.width=640*ZK;c.height=480*ZK;}   // zoomed in: drawn bigger, so it stays sharp
  c.style.width=(640*s/r)+'px';c.style.height=(480*s/r)+'px';c.style.imageRendering=mode==2?'pixelated':'auto';dirty=true;
  var big=640*s/r>w||480*s/r>h;wrap.style.overflow=mode==1?'auto':'hidden';wrap.style.alignItems=wrap.style.justifyContent=(mode==1&&big)?'flex-start':'center';
  document.getElementById('bz').textContent=mode==1?'Size: 1:1':mode==2?'Size: sharp':'Size: fit';}
-addEventListener('resize',fit);
+addEventListener('resize',function(){Z=1;TX=TY=0;if(typeof zApply=='function')zApply();fit();});
 function send(a){if(ws&&ws.readyState==1)ws.send(new Uint8Array(a));}
 function connect(){
  kicked=false;show('Connecting to TidyOS...');
@@ -145,7 +148,20 @@ function alarmBanner(on){var e=document.getElementById('alm');if(!e){e=document.
  e.style.display=on?'block':'none';document.title=on?'⏰ Alarm - TidyOS':'TidyOS';}
 function unlockSound(){if(!bA){try{bA=new Audio(beepWav());bA.volume=0;bA.play().then(function(){bA.pause();bA.volume=1;}).catch(function(){bA.volume=1;});}catch(e){}}}
 function mUrl(p){return location.protocol+'//'+location.hostname+':'+MP+p;}
-function auReport(){if(!au)return;var t=au.currentTime|0,u=isFinite(au.duration)?au.duration|0:0;send([8,au.ended?2:au.paused?0:1,t&255,t>>8&255,u&255,u>>8&255]);}
+function auReport(){if(!au)return;var t=au.currentTime|0,u=isFinite(au.duration)?au.duration|0:0;send([8,au.ended?2:au.paused?0:1,t&255,t>>8&255,u&255,u>>8&255]);
+ if('mediaSession' in navigator)try{navigator.mediaSession.playbackState=au.paused?'paused':'playing';}catch(e){}}
+// the phone's lock screen / notification player and a computer's media keys: the song's name, and
+// play, pause, stop and next work there too (next goes to TidyOS, which picks the song)
+function auMeta(v){if(!('mediaSession' in navigator))return;try{
+ var n=decodeURIComponent((v.split('path=')[1]||v).split('&')[0]).split('/').pop().replace(/\.[^.]+$/,''),a='TidyOS',t=n,i=n.indexOf(' - ');
+ if(i>0){a=n.slice(0,i);t=n.slice(i+3);}
+ navigator.mediaSession.metadata=new MediaMetadata({title:t,artist:a,album:'TidyOS'});
+ if(auMeta.set)return;auMeta.set=1;var ms=navigator.mediaSession,h=function(k,f){try{ms.setActionHandler(k,f);}catch(e){}};
+ h('play',function(){if(au)au.play().then(auReport).catch(function(){});});
+ h('pause',function(){if(au){au.pause();auReport();}});
+ h('stop',function(){if(au){au.pause();auReport();}});
+ h('nexttrack',function(){send([25]);});
+ h('previoustrack',function(){if(au){au.currentTime=0;auReport();}});}catch(e){}}
 var midiCur=null;
 function midiParse(d){var p=0,u16=function(){var v=d[p]<<8|d[p+1];p+=2;return v;},u32=function(){var v=(d[p]<<24|d[p+1]<<16|d[p+2]<<8|d[p+3])>>>0;p+=4;return v;},
  vlq=function(){var v=0,b;do{b=d[p++];v=v*128+(b&127);}while(b&128&&p<d.length);return v;};
@@ -288,7 +304,7 @@ function media(t){var k=t.charAt(0),v=t.substr(2),iv=document.getElementById('iv
   else{dropQ=[];note('Dropped files need an SD card in TidyOS (turn it on in Switches).',6000);}return;}
  if(k=='a'){midiStop();if(!au){au=new Audio();au.onended=auReport;setInterval(auReport,1000);
    au.onerror=function(){if(au.tries++<4&&au.getAttribute('src'))setTimeout(function(){au.load();au.play().catch(function(){auBlocked=true;});},1500);};}
-  au.tries=0;au.src=mUrl(v);au.play().catch(function(e){if(e&&e.name=='NotAllowedError')auBlocked=true;});}
+  au.tries=0;au.src=mUrl(v);auMeta(v);au.play().catch(function(e){if(e&&e.name=='NotAllowedError')auBlocked=true;});}
  else if(k=='p'&&au)au.pause();else if(k=='r'&&au)au.play().catch(function(){auBlocked=true;});
  else if(k=='s'&&au){au.pause();au.removeAttribute('src');au.load();send([8,255,0,0,0,0]);}
  else if(k=='v'&&au)au.volume=Math.max(0,Math.min(1,+v));else if(k=='k'&&au)au.currentTime=+v;
@@ -334,10 +350,50 @@ document.getElementById('bf').onclick=function(){var d=document.documentElement;
 // ---- mouse and touch
 function pos(e){var r=c.getBoundingClientRect();mx=Math.max(0,Math.min(639,(e.clientX-r.left)*640/r.width|0));my=Math.max(0,Math.min(479,(e.clientY-r.top)*480/r.height|0));}
 function btns(e){return e.pointerType=='mouse'?(e.buttons&7):(e.type=='pointerup'||e.type=='pointercancel'?0:1);}
-c.addEventListener('pointermove',function(e){pos(e);mb=btns(e);mDirty=true;});
-c.addEventListener('pointerdown',function(e){e.preventDefault();c.focus();try{c.setPointerCapture(e.pointerId);}catch(x){}pos(e);mb=btns(e);mDirty=false;send([2,mx&255,mx>>8,my&255,my>>8,mb,0]);});
-c.addEventListener('pointerup',function(e){pos(e);mb=btns(e);mDirty=false;send([2,mx&255,mx>>8,my&255,my>>8,mb,0]);});
-c.addEventListener('pointercancel',function(e){mb=0;mDirty=true;});
+// Touch: one finger is the mouse; two fingers pinch to zoom the desktop and drag it around. A finger's press waits
+// 80 ms, so the first finger of a pinch doesn't click; a tap shorter than that still clicks.
+// Zoomed in, one finger moves the screen too: a swipe pans, a tap clicks, and touch-and-hold (350 ms) then drag
+// is the mouse (dragging windows, selecting).
+var tp={},tn=0,gz=null,pend=null,tDown=false,pan=null,t0x=0,t0y=0;
+function zApply(){c.style.transformOrigin='0 0';c.style.transform=Z>1?'translate('+TX+'px,'+TY+'px) scale('+Z+')':'';document.getElementById('zr').style.display=Z>1?'block':'none';}
+function zClamp(){var w=document.getElementById('wrap').getBoundingClientRect(),cw=c.offsetWidth*Z,ch=c.offsetHeight*Z,bx=gz?gz.bx:c.getBoundingClientRect().left-TX,by=gz?gz.by:c.getBoundingClientRect().top-TY;
+ TX=cw<=w.width?w.left+(w.width-cw)/2-bx:Math.min(w.left-bx,Math.max(w.right-cw-bx,TX));
+ TY=ch<=w.height?w.top+(w.height-ch)/2-by:Math.min(w.top-by,Math.max(w.bottom-ch-by,TY));}
+function zReset(){Z=1;TX=TY=0;zApply();fit();}
+document.getElementById('zr').onclick=function(){zReset();c.focus();};
+function tPts(){var a=[];for(var k in tp)a.push(tp[k]);return a;}
+function mSend(){send([2,mx&255,mx>>8,my&255,my>>8,mb,0]);}
+c.addEventListener('pointermove',function(e){
+ if(e.pointerType=='touch'){if(tp[e.pointerId]){tp[e.pointerId]={x:e.clientX,y:e.clientY};}
+  if(gz){var p=tPts();if(p.length<2)return;var d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y),mx_=(p[0].x+p[1].x)/2,my_=(p[0].y+p[1].y)/2;
+   Z=Math.max(1,Math.min(6,gz.z*d/gz.d));TX=mx_-gz.bx-Z*gz.px;TY=my_-gz.by-Z*gz.py;zClamp();zApply();return;}
+  if(pan){TX=pan.tx+e.clientX-pan.x;TY=pan.ty+e.clientY-pan.y;zClamp();zApply();return;}
+  if(pend&&Z>1&&Math.hypot(e.clientX-t0x,e.clientY-t0y)>8){clearTimeout(pend);pend=null;pan={x:t0x,y:t0y,tx:TX,ty:TY};
+   TX=pan.tx+e.clientX-pan.x;TY=pan.ty+e.clientY-pan.y;zClamp();zApply();return;}   // zoomed in: a swipe moves the screen
+  pos(e);if(pend)return;mb=tDown?1:0;mDirty=true;return;}
+ pos(e);mb=btns(e);mDirty=true;});
+c.addEventListener('pointerdown',function(e){e.preventDefault();c.focus();try{c.setPointerCapture(e.pointerId);}catch(x){}
+ if(e.pointerType=='touch'){tp[e.pointerId]={x:e.clientX,y:e.clientY};tn++;
+  if(tn==2){                                         // a second finger: zoom, not a click
+   if(pend){clearTimeout(pend);pend=null;}
+   pan=null;
+   if(tDown){mb=0;mDirty=false;mSend();tDown=false;}
+   var p=tPts(),r=c.getBoundingClientRect(),bx=r.left-TX,by=r.top-TY,mx_=(p[0].x+p[1].x)/2,my_=(p[0].y+p[1].y)/2;
+   gz={d:Math.max(20,Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)),z:Z,bx:bx,by:by,px:(mx_-bx-TX)/Z,py:(my_-by-TY)/Z};return;}
+  if(tn>2)return;
+  pan=null;t0x=e.clientX;t0y=e.clientY;
+  pos(e);pend=setTimeout(function(){pend=null;if(gz||pan||tn!=1)return;mb=1;mDirty=false;mSend();tDown=true;},Z>1?350:80);return;}
+ pos(e);mb=btns(e);mDirty=false;mSend();});
+function tEnd(e,cancel){if(!tp[e.pointerId])return;delete tp[e.pointerId];tn=Math.max(0,tn-1);
+ if(gz){if(tn<2){gz=null;if(Z<1.08)zReset();else fit();}return;}             // zoom done: draw it sharp at this size
+ if(pan){pan=null;return;}                                                     // a swipe that moved the screen
+ if(pend){clearTimeout(pend);pend=null;if(!cancel){pos(e);mb=1;mSend();mb=0;mSend();}return;}   // a quick tap
+ if(tDown){pos(e);mb=0;mDirty=false;mSend();tDown=false;}}
+c.addEventListener('pointerup',function(e){if(e.pointerType=='touch'){tEnd(e,false);return;}pos(e);mb=btns(e);mDirty=false;mSend();});
+c.addEventListener('pointercancel',function(e){if(e.pointerType=='touch'){tEnd(e,true);return;}mb=0;mDirty=true;});
+document.addEventListener('gesturestart',function(e){e.preventDefault();});   // Safari: no page zoom (it blurs the bar); the desktop zooms itself
+document.addEventListener('gesturechange',function(e){e.preventDefault();});
+document.addEventListener('dblclick',function(e){if(e.target!=c)e.preventDefault();});
 c.addEventListener('wheel',function(e){e.preventDefault();pos(e);send([2,mx&255,mx>>8,my&255,my>>8,mb,e.deltaY>0?1:255]);},{passive:false});
 c.addEventListener('contextmenu',function(e){e.preventDefault();});
 connect();
@@ -488,6 +544,8 @@ static size_t queueChanges()
   return s_obLen;
 }
 
+volatile bool gMusicNextReq = false;     // the page's media controls asked for the next song
+
 // browser -> TidyOS
 static bool pollInput(WiFiClient & c)
 {
@@ -522,7 +580,8 @@ static bool pollInput(WiFiClient & c)
       case 18: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskCityTempsFromPage((const char *)p + 1); break; } // Moscow, LA, Tokyo
       case 17: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskTempsFromPage((const char *)p + 1); break; } // temperatures, last 4 days
       case 14: { p[keep < sizeof(p) ? keep : sizeof(p) - 1] = 0; deskNewsFromPage((const char *)p + 1); break; } // news headlines
-      case 19: if (keep >= 2) updateRelayProgress(p[1]); break;                      // the page's download of an update
+      case 19: if (keep >= 2) updateRelayProgress(p[1]); break;
+      case 25: gMusicNextReq = true; break;                    // Next from the phone's or computer's media controls
       case 5: inputWebReleaseAll(); break;
       case 6: if (keep >= 5) netSetClockFrom(p[1] | (p[2] << 8) | (p[3] << 16) | ((uint32_t)p[4] << 24)); break;
       case 8: if (keep >= 6) { s_mState = p[1] == 255 ? -1 : p[1]; s_mPos = p[2] | (p[3] << 8); s_mDur = p[4] | (p[5] << 8); } break;
@@ -605,6 +664,18 @@ static void handleHttp(WiFiClient c, const std::string & req)
     c.setTimeout(10);
     if (p == "/relay") netRelayHttp(c, q, early, clen);
     else updateRelayHttp(c, q, early, clen);
+    delay(5);
+    c.stop();
+    return;
+  }
+  if (p == "/files" || p == "/files/") {
+    // the file page (SD card + the board's storage, port 8081): start it for now (it stops by itself after 10 idle
+    // minutes unless Wi-Fi sharing is on in Settings) and send the browser there, on the address it used to reach us
+    fileServerMediaReady();
+    char r[200];
+    snprintf(r, sizeof(r), "HTTP/1.0 302 Found\r\nLocation: http://%s:%d/\r\nCache-Control: no-cache\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+             c.localIP().toString().c_str(), fileServerPort());
+    c.print(r);
     delay(5);
     c.stop();
     return;
