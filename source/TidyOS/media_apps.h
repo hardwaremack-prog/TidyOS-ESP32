@@ -31,7 +31,7 @@ static bool isMusicFile(const char * n)
 static bool isMidiFile(const char * n) { const char * e = fileExt(n); return !strcmp(e, "mid") || !strcmp(e, "midi"); }
 
 // a random song in dir (not cur); midiOnly: just .mid files. "" if there are none
-static std::string randomSong(const std::string & dir, const std::string & cur, bool midiOnly)
+static std::string randomSong(const std::string & dir, const std::string & cur, bool midiOnly, bool noMidi = false)
 {
   // one pass, keeping just one name (a big MIDI folder can hold thousands: listing them all ran out of memory)
   DIR * dd = opendir(dir.c_str());
@@ -41,7 +41,7 @@ static std::string randomSong(const std::string & dir, const std::string & cur, 
   uint32_t n = 0, scanned = 0, t0 = millis();
   while ((e = readdir(dd)) != nullptr && scanned < 4000 && millis() - t0 < 1500) {
     ++scanned;
-    if (e->d_name[0] == '.' || !isMusicFile(e->d_name) || (midiOnly && !isMidiFile(e->d_name))) continue;
+    if (e->d_name[0] == '.' || !isMusicFile(e->d_name) || (midiOnly && !isMidiFile(e->d_name)) || (noMidi && isMidiFile(e->d_name))) continue;
     if (!any[0]) strlcpy(any, e->d_name, sizeof(any));
     if (cur == e->d_name) continue;
     if (esp_random() % ++n == 0) strlcpy(pick, e->d_name, sizeof(pick));
@@ -492,6 +492,7 @@ void openMusic()
 // ---- music while you play a game (Sammy's Play music / Pause buttons). Uses the Music window when it's open.
 static std::string s_qPlaying;
 static bool s_qPaused = false;
+static bool s_qMidiBtn = false;          // which button started it (MP3 can fall back to a MIDI song): that button pauses it
 static int  s_qLast = 2;
 
 static float s_qVol = 0.8f;
@@ -518,6 +519,7 @@ std::string musicQuickPlay()
   if (!s_qPlaying.empty()) return "Music: " + baseName(s_qPlaying);
   std::string p = randomSong(mediaFolder(true), "", true);          // Sammy plays the MIDI folder, shuffled
   if (p.empty()) return "No .mid files in the MIDI folder on the card.";
+  s_qMidiBtn = true;
   quickPlayFile(p);
   return "Music: " + baseName(p);
 }
@@ -538,11 +540,14 @@ std::string musicQuickToggle(bool midi)
   }
   if (WiFi.status() != WL_CONNECTED && !screenViewer()) return "Music plays in the web browser.";
   if (!screenViewer()) return "Music plays in the web browser.";
-  bool same = !s_qPlaying.empty() && isMidiFile(s_qPlaying.c_str()) == midi;
+  bool same = !s_qPlaying.empty() && s_qMidiBtn == midi;
   if (same && !s_qPaused) { screenMedia("p"); s_qPaused = true; return "Music paused."; }
   if (same && s_qPaused)  { screenMedia("r"); s_qPaused = false; return "Music: " + baseName(s_qPlaying); }
-  std::string p = randomSong(mediaFolder(midi), "", midi);
+  // MP3: a song that isn't MIDI from the Music folder; only when there are none, a MIDI song instead
+  std::string p = midi ? randomSong(mediaFolder(true), "", true) : randomSong(mediaFolder(false), "", false, true);
+  if (p.empty() && !midi) p = randomSong(mediaFolder(true), "", true);
   if (p.empty()) return midi ? "No .mid files in the MIDI folder on the card." : "No music in the Music folder on the card.";
+  s_qMidiBtn = midi;
   quickPlayFile(p);
   return "Music: " + baseName(p);
 }
@@ -551,7 +556,8 @@ std::string musicQuickNext()
 {
   if (MusicApp::inst) { auto m = (MusicApp *)MusicApp::inst; m->skip(1); return m->playing.empty() ? "" : "Music: " + baseName(m->playing); }
   if (s_qPlaying.empty()) return "Press MP3 or MIDI first.";
-  std::string n = randomSong(dirOf(s_qPlaying), baseName(s_qPlaying), isMidiFile(s_qPlaying.c_str()));
+  bool m = isMidiFile(s_qPlaying.c_str());
+  std::string n = randomSong(dirOf(s_qPlaying), baseName(s_qPlaying), m, !m);
   if (n.empty()) return "No other songs there.";
   quickPlayFile(n);
   return "Music: " + baseName(n);
@@ -586,7 +592,7 @@ void musicQuickTick()             // once a second: on to the next song when one
   if (MusicApp::inst || s_qPlaying.empty() || s_qPaused) return;
   int st, pos, dur;
   screenMediaState(st, pos, dur);
-  if (st == 2 && s_qLast != 2) { std::string n = randomSong(dirOf(s_qPlaying), baseName(s_qPlaying), isMidiFile(s_qPlaying.c_str())); if (!n.empty()) quickPlayFile(n); return; }
+  if (st == 2 && s_qLast != 2) { bool m = isMidiFile(s_qPlaying.c_str()); std::string n = randomSong(dirOf(s_qPlaying), baseName(s_qPlaying), m, !m); if (!n.empty()) quickPlayFile(n); return; }
   s_qLast = st;
 }
 
