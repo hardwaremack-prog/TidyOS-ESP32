@@ -365,26 +365,63 @@ static void drawNewsTicker(Canvas * cv)
     if (i == s_tickIdx) cv->fillRectangle(dx, k.Y2 - 1, dx + 3, k.Y2); else cv->drawLine(dx, k.Y2, dx + 3, k.Y2);
   }
 }
+// tapping the NEWS tag turns the scroll around: the headline then starts at its end and slides back to
+// its start, and the headlines go the other way round (remembered)
+static bool s_tickRev = false;
+static Rect newsTagRect(Canvas * cv)
+{
+  if (s_tickRect.X2 <= s_tickRect.X1) return Rect(0, 0, -1, -1);
+  int x0 = s_tickRect.X1 + 9;
+  return Rect(x0 - 3, s_tickRect.Y1, x0 + cv->textExtent(&FONT_std_12, "NEWS") + 2, s_tickRect.Y2);
+}
+// where a headline starts: its beginning, or (turned round) as far along as it goes
+static void tickStart(Canvas * cv)
+{
+  s_tickPos = s_tickPx = 0; s_tickPhase = 0; s_tickAt = millis();
+  if (!s_tickRev || s_tickIdx >= s_newsCount) return;
+  const fabgl::FontInfo * f = &FONT_std_12;
+  const char * t = s_news[s_tickIdx];
+  int avail = s_tickRect.X2 - 8 - tickTextX(cv), n = strlen(t);
+  if (cv->textExtent(f, t) <= avail) return;
+  int p = 0;
+  while (p < n && cv->textExtent(f, t + p) > avail) ++p;            // the first letter from which the rest fits
+  if (p > 0) { --p; s_tickPos = p; s_tickPx = cv->textExtent(f, t + p) - avail; }
+}
+static void newsTickerTurn(Canvas * cv)
+{
+  s_tickRev = !s_tickRev;
+  s_prefs.putBool("newsrev", s_tickRev);
+  tickStart(cv);
+}
 // every 100 ms; true when the line changed and needs redrawing
 static bool newsTickerStep(Canvas * cv)
 {
+  static bool loaded = false;
+  if (!loaded) { loaded = true; s_tickRev = s_prefs.getBool("newsrev", false); if (s_tickRev) tickStart(cv); }
   if (!s_newsCount || s_tickRect.X2 <= s_tickRect.X1) return false;
-  if (s_tickIdx >= s_newsCount) { s_tickIdx = 0; s_tickPos = s_tickPx = 0; s_tickPhase = 0; s_tickAt = millis(); return true; }
+  if (s_tickIdx >= s_newsCount) { s_tickIdx = 0; tickStart(cv); return true; }
   const fabgl::FontInfo * f = &FONT_std_12;
   const char * t = s_news[s_tickIdx];
   int avail = s_tickRect.X2 - 8 - tickTextX(cv);
-  int rest = cv->textExtent(f, t + s_tickPos) - s_tickPx;           // what's still to come, from the left edge
+  bool fits = cv->textExtent(f, t) <= avail;
   uint32_t el = millis() - s_tickAt;
-  auto next = [&]() { s_tickIdx = (s_tickIdx + 1) % s_newsCount; s_tickPos = s_tickPx = 0; s_tickPhase = 0; s_tickAt = millis(); };
+  auto next = [&]() { s_tickIdx = s_tickRev ? (s_tickIdx + s_newsCount - 1) % s_newsCount : (s_tickIdx + 1) % s_newsCount; tickStart(cv); };
+  auto width = [&](int i) { char c[2] = { t[i], 0 }; return cv->textExtent(f, c); };
   if (s_tickPhase == 0) {
-    if (rest <= avail) { if (el >= 5000) { next(); return true; } return false; }   // fits: 5 s, then the next
+    if (fits) { if (el >= 5000) { next(); return true; } return false; }   // fits: 5 s, then the next
     if (el >= 1500) { s_tickPhase = 1; }
     return false;
   }
   if (s_tickPhase == 1) {
-    s_tickPx += 2;
-    for (;;) { char c[2] = { t[s_tickPos], 0 }; int w = cv->textExtent(f, c); if (!t[s_tickPos] || s_tickPx < w) break; s_tickPx -= w; ++s_tickPos; }
-    if (cv->textExtent(f, t + s_tickPos) - s_tickPx <= avail) { s_tickPhase = 2; s_tickAt = millis(); }
+    if (!s_tickRev) {                                                    // sliding left, to the end
+      s_tickPx += 2;
+      for (;;) { if (!t[s_tickPos] || s_tickPx < width(s_tickPos)) break; s_tickPx -= width(s_tickPos); ++s_tickPos; }
+      if (cv->textExtent(f, t + s_tickPos) - s_tickPx <= avail) { s_tickPhase = 2; s_tickAt = millis(); }
+    } else {                                                             // sliding right, back to the start
+      s_tickPx -= 2;
+      while (s_tickPx < 0) { if (s_tickPos == 0) { s_tickPx = 0; break; } --s_tickPos; s_tickPx += width(s_tickPos); }
+      if (s_tickPos == 0 && s_tickPx == 0) { s_tickPhase = 2; s_tickAt = millis(); }
+    }
     return true;
   }
   if (el >= 1500) { next(); return true; }

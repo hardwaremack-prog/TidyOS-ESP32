@@ -507,7 +507,7 @@ static void drawWorldPage()
   for (int i = 0; i < 3; ++i) {
     struct tm w; tzLocal(Z[i][1], now, w);
     char b[24];
-    int y = 24 + i * 13;
+    int y = 20 + i * 11;                         // (all three clear of the yellow band at the bottom)
     g.drawStr(0, y, Z[i][0]);
     snprintf(b, sizeof(b), "%d:%02d%s", w.tm_hour % 12 == 0 ? 12 : w.tm_hour % 12, w.tm_min, w.tm_hour < 12 ? "a" : "p");
     g.drawStr(74, y, b);

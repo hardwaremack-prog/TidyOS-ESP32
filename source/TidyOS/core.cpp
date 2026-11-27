@@ -613,6 +613,20 @@ public:
             }
           }
 #endif
+          if (!showingHint() && s_newsCount) {                       // the NEWS tag: turn the scroll around
+            Canvas cv(s_dc);
+            Rect q = newsTagRect(&cv);
+            if (q.X2 > q.X1 && mx >= q.X1 && mx <= q.X2 && my >= q.Y1 && my <= q.Y2) {
+              newsTickerTurn(&cv);
+#ifdef TIDYOS_HTML5
+              deskNote("News", s_tickRev ? "Scrolling right (backwards)" : "Scrolling left (normal)");
+              repaint(deskPanelRect());
+#else
+              repaint(newsTickerRect());
+#endif
+              break;
+            }
+          }
           if (!showingHint() && mx >= s_affBtn.X1 && mx <= s_affBtn.X2 && my >= s_affBtn.Y1 && my <= s_affBtn.Y2) {
             s_affShown = s_affShown % 3 + 1;                      // the affirmation >> button
             repaint(deskPanelRect());
