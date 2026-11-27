@@ -3,6 +3,9 @@
 #include "worldmap.h"
 #include "tzcalc.h"
 #include "net.h"
+#include <WiFi.h>
+#include <esp_wifi.h>
+#include <esp_timer.h>
 
 // weather arrives from the web page (it looks it up: ip-api.com for the place, Open-Meteo for the forecast)
 static struct { int temp = 0, code = -1, hi = 0, lo = 0; float lat = 0, lon = 0; bool haveLoc = false; char city[32] = ""; char err[48] = ""; } s_wx;
@@ -187,6 +190,7 @@ static int deskPanelSig()
   int extra = 0;
 #ifdef TIDYOS_HTML5
   extra = (panNoteOn() ? 1 : 0) * 3 + (musicQuickPlaying() ? 1 : 0) * 5 + (int)(s_panNoteAt & 0x3FF) * 11;
+  extra += (WiFi.status() == WL_CONNECTED ? 1 : 0) * 13 + (screenApOn() ? 1 : 0) * 17 + (screenViewer() ? 1 : 0) * 19 + (gSDMounted ? 1 : 0) * 23;   // (the resource box)
 #endif
   return (int)(now / 60) * 7 + s_wxVer + s_affShown * 100003 + extra * 1009;
 }
@@ -387,6 +391,69 @@ static bool newsTickerStep(Canvas * cv)
   return false;
 }
 
+#ifdef TIDYOS_HTML5
+// a little resource box under the news: uptime, memory, network, storage (as many rows as fit above the map)
+static void drawDeskStats(Canvas * cv, int x, int y, int xr, int yMax)
+{
+  const fabgl::FontInfo * f = &FONT_std_12;
+  const int LH = 14;
+  if (y + LH + 4 > yMax) return;
+  cv->setPenColor(T.text);
+  cv->drawLine(x, y, xr, y);
+  y += 3;
+  char v[96];
+  int kx = x, vx = x + cv->textExtent(f, "Disk") + 10;
+  auto row = [&](const char * k, const char * val) {
+    if (y + LH > yMax) return;
+    std::string t = val;
+    while (t.size() > 4 && cv->textExtent(f, t.c_str()) > xr - vx) { t.resize(t.size() - 4); t += "..."; }
+    cv->setBrushColor(T.win);
+    cv->setPenColor(T.accent); cv->drawText(f, kx, y, k);
+    cv->setPenColor(T.text);   cv->drawText(f, vx, y, t.c_str());
+    y += LH;
+  };
+  // up: days, hours, minutes since it started
+  unsigned long up = (unsigned long)(esp_timer_get_time() / 1000000ULL);
+  unsigned d = up / 86400, h = up / 3600 % 24, m = up / 60 % 60;
+  if (d) snprintf(v, sizeof(v), "%ud %uh %um", d, h, m); else if (h) snprintf(v, sizeof(v), "%uh %um", h, m); else snprintf(v, sizeof(v), "%um", m);
+  char cpu[24]; snprintf(cpu, sizeof(cpu), "   CPU %u MHz", (unsigned)getCpuFrequencyMhz());
+  strlcat(v, cpu, sizeof(v));
+  row("Up", v);
+  // memory: free now, the lowest it's been, and the biggest single piece
+  snprintf(v, sizeof(v), "%u KB free   low %u KB   piece %u KB", (unsigned)(ramFree() / 1024),
+           (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT) / 1024), (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+  row("RAM", v);
+  // network: the Wi-Fi it's on (signal, address), else the hotspot
+  if (WiFi.status() == WL_CONNECTED) {
+    IPAddress ip = WiFi.localIP();
+    wifi_ap_record_t ap; char ssid[33] = "Wi-Fi";
+    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) strlcpy(ssid, (const char *)ap.ssid, sizeof(ssid));
+    int rs = WiFi.RSSI();
+    const char * q = rs > -60 ? "strong" : rs > -72 ? "good" : rs > -82 ? "weak" : "poor";
+    snprintf(v, sizeof(v), "%u.%u.%u.%u  %d dBm %s  %s", ip[0], ip[1], ip[2], ip[3], rs, q, ssid);
+  } else if (screenApOn()) {
+    snprintf(v, sizeof(v), "Hotspot %s  (%d joined)  10.1.1.250", boardId().c_str(), (int)WiFi.softAPgetStationNum());
+  } else snprintf(v, sizeof(v), "Not connected");
+  row("Net", v);
+  // storage: free space on the SD card (or the board's own storage), looked at once a minute
+  static int64_t stT = 0, stU = 0; static uint32_t stAt = 0; static bool stSD = false;
+  if (!stAt || millis() - stAt > 60000 || stSD != gSDMounted) {
+    stAt = millis() | 1; stSD = gSDMounted; stT = stU = 0;
+    int64_t t = 0, u = 0;
+    if (gSDMounted ? fabgl::FileBrowser::getFSInfo(fabgl::DriveType::SDCard, 0, &t, &u)
+                   : (gFlashMounted && fabgl::FileBrowser::getFSInfo(fabgl::DriveType::SPIFFS, 0, &t, &u))) { stT = t; stU = u; }
+  }
+  auto sz = [](int64_t b, char * o, size_t n) {
+    if (b >= 1000000000LL) snprintf(o, n, "%.1f GB", b / 1e9); else if (b >= 1000000LL) snprintf(o, n, "%.0f MB", b / 1e6); else snprintf(o, n, "%u KB", (unsigned)(b / 1024));
+  };
+  if (stT > 0) {
+    char a[16], b[16]; sz(stT - stU, a, sizeof(a)); sz(stT, b, sizeof(b));
+    snprintf(v, sizeof(v), "%s %s free of %s   %s", gSDMounted ? "SD" : "Board", a, b, screenViewer() ? "browser on" : "no browser");
+  } else snprintf(v, sizeof(v), "No storage   %s", screenViewer() ? "browser on" : "no browser");
+  row("Disk", v);
+}
+#endif
+
 static void drawDeskPanel(Canvas * cv)
 {
   Rect r = deskPanelRect();
@@ -544,6 +611,9 @@ static void drawDeskPanel(Canvas * cv)
     s_tickRect = Rect(r.X1 + 1, y + 1, r.X2 - 1, y + 17);
     drawNewsTicker(cv);
   } else s_tickRect = Rect(0, 0, -1, -1);
+#ifdef TIDYOS_HTML5
+  drawDeskStats(cv, x, s_tickRect.X2 > s_tickRect.X1 ? s_tickRect.Y2 + 3 : y, r.X2 - 10, r.Y2 - 128);
+#endif
   // the map sits at the bottom
   drawWorldMap(cv, r.X1 + (PANEL_W - 288) / 2, r.Y2 - 124, now);
 }
